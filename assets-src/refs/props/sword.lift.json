@@ -1,0 +1,46 @@
+{
+  "forge_record": 1,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-22",
+  "created_by": "human",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": null,
+    "torch": null,
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/sword.png",
+      "sha256": "sha256:5afdf0f7191894b1e2068583b7dbc807cc662ccae9652d8305b9c9c27897159b",
+      "source": "reference painted by a cloud image model (xAI grok) on 2026-08-22 under xAI's consumer terms — user owns the output; edit-chained from a style board that does not ship here",
+      "prompt": "Keep the exact painted art style, palette treatment and lighting of this image. Show only a one-handed sword lying diagonally across the frame: a straight broad steel blade with a painted bright edge, a short crossguard, a leather-wrapped grip and a heavy pommel, Cyberpunk space-station set dressing: dark gunmetal alloy plating with rivets, hazard-orange and cyan accents, grime in the seams. — a cyan energy line etched down the fuller. The thing is alone, centered, seen from a three-quarter view slightly from above. Isolated single subject, plain flat light-grey background, no ground shadow, no other objects, no text. Hand-painted Warcraft 3 style low-poly game art, flat matte painted texture with lighting painted in, posterized color steps with hard edges, bold saturated palette, no photorealism, no gloss."
+    }
+  ],
+  "params": {
+    "attn_backend": null,
+    "decimation_target_vertices": 6000,
+    "pipeline_type": "1024_cascade",
+    "preset": null,
+    "prompt_from": "migration",
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 42,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/trellis/sword.glb",
+      "sha256": "sha256:3732144e4b6482257c3b61c53922fe2baa874016a7fcb4b63c5de3e2b14b7fea",
+      "bytes": 2591472
+    }
+  ],
+  "measured": {},
+  "fake": false,
+  "note": "migrated from the old repo's .trellis.json; the reference edit chain is not reproducible; the output path is relative to the repository the lift ran in, not this one"
+}

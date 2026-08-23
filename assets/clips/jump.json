@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "kind": "clip",
+  "name": "jump",
+  "prompt": "A person crouches and jumps straight up powerfully, tucking their knees at the peak, then lands and absorbs the impact",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "reconstructed",
+  "rig": "humanoid",
+  "generator": {
+    "tool": "ardy",
+    "repo": null,
+    "commit": null,
+    "model": null,
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "gen_jump.npz"
+  },
+  "source": {
+    "path": "assets-src/takes/jump.npz",
+    "sha256": "sha256:d8037fe346339e65d27162b2a22a76edd2279ce684c889d72f6ea86c806c470c",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 0.3,
+    "trim_end_s": 1.45,
+    "auto_trim": null,
+    "in_place": "detrend",
+    "y_mode": "detrend",
+    "loop": false,
+    "loop_blend_s": 0.0,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": null,
+    "clip": "jump"
+  },
+  "measured": {
+    "frames": 15,
+    "fps": 20.0,
+    "duration_s": 0.7,
+    "avg_speed_mps": 0.43374643,
+    "root_motion": {
+      "net_m": [
+        0.043,
+        -0.004
+      ],
+      "direction_deg": null,
+      "peak_speed_mps": 0.913,
+      "track_xz_m": [
+        [
+          -0.0,
+          -0.0
+        ],
+        [
+          -0.0,
+          0.018
+        ],
+        [
+          -0.001,
+          0.037
+        ],
+        [
+          -0.002,
+          0.051
+        ],
+        [
+          -0.001,
+          0.054
+        ],
+        [
+          0.001,
+          0.047
+        ],
+        [
+          0.006,
+          0.036
+        ],
+        [
+          0.01,
+          0.016
+        ],
+        [
+          0.012,
+          -0.023
+        ],
+        [
+          0.014,
+          -0.068
+        ],
+        [
+          0.016,
+          -0.096
+        ],
+        [
+          0.022,
+          -0.091
+        ],
+        [
+          0.029,
+          -0.063
+        ],
+        [
+          0.036,
+          -0.03
+        ],
+        [
+          0.043,
+          -0.004
+        ]
+      ]
+    },
+    "mesh": null
+  },
+  "events": [],
+  "content_hash": "sha256:2334fc79fabf6f3954cbadc6c0e8c1a334f9cc41de97410ce8a1b7e25696df6e",
+  "note": "migrated from the old repository's gen_jump (sweep file a_person_crouches_and_jumps__d2.5_c2_s0_6.npz; no take record survives, so seed, cfg and duration are unknown); the launch core only: one frame of stance before the crouch, ending knees-tucked at the apex where a fall loop would take over"
+}

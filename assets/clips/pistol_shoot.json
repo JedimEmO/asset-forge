@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "kind": "clip",
+  "name": "pistol_shoot",
+  "prompt": "A person aims a pistol with both hands, arms straight and level at shoulder height. The gun fires and the recoil flips the hands and muzzle sharply upward toward the sky, elbows staying mostly extended, then the arms come back down level to re-aim forward. The feet stay planted.",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "reconstructed",
+  "rig": "humanoid",
+  "generator": {
+    "tool": "ardy",
+    "repo": null,
+    "commit": null,
+    "model": null,
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "gen_pistol_shoot.npz"
+  },
+  "source": {
+    "path": "assets-src/takes/pistol_shoot.npz",
+    "sha256": "sha256:adbb67ebd043972f99ce98b882865ec4059a7fdb2f6344ddab5b28fac96fd226",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 0.9,
+    "trim_end_s": 0.95,
+    "auto_trim": null,
+    "in_place": "off",
+    "y_mode": "off",
+    "loop": false,
+    "loop_blend_s": 0.0,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": "0:0,0.35:0.12,0.6:0.3,1.1:0.6",
+    "clip": "pistol_shoot"
+  },
+  "measured": {
+    "frames": 13,
+    "fps": 20.0,
+    "duration_s": 0.6,
+    "avg_speed_mps": 0.16332117,
+    "root_motion": {
+      "net_m": [
+        0.006,
+        0.012
+      ],
+      "direction_deg": null,
+      "peak_speed_mps": 0.356,
+      "track_xz_m": [
+        [
+          -0.0,
+          -0.0
+        ],
+        [
+          0.004,
+          -0.01
+        ],
+        [
+          -0.01,
+          -0.002
+        ],
+        [
+          -0.024,
+          0.009
+        ],
+        [
+          -0.031,
+          0.013
+        ],
+        [
+          -0.033,
+          0.015
+        ],
+        [
+          -0.032,
+          0.016
+        ],
+        [
+          -0.025,
+          0.017
+        ],
+        [
+          -0.016,
+          0.017
+        ],
+        [
+          -0.007,
+          0.017
+        ],
+        [
+          -0.0,
+          0.016
+        ],
+        [
+          0.004,
+          0.015
+        ],
+        [
+          0.006,
+          0.012
+        ]
+      ]
+    },
+    "mesh": null
+  },
+  "events": [],
+  "content_hash": "sha256:0cdd8d4f04cb55129b8e86a3c24ba06b892899d78e9003393423d643c64dc40a",
+  "note": "migrated from the old repository's gen_pistol_shoot (sweep file a_person_aims_a_pistol_with__d3_c2_s1_4.npz; no take record survives, so seed, cfg and duration are unknown); retimed on the post-trim timeline so the up-kick peaks about 0.12 s in and the return to aim lands at 0.6 s; trims found by the old action search"
+}

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "kind": "sfx",
+  "name": "door_metal",
+  "prompt": "a heavy metal door closing with a latch",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_sound_effect",
+    "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+    "seed": 101,
+    "duration_s": 2.0,
+    "steps": 100,
+    "cfg": 4.0
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 2.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "events": null,
+  "content_hash": "sha256:8fb419a84e69fe7d9860d5787f70a29f5bb2ba53a8dffba08e8546b57f0e748b",
+  "note": null
+}

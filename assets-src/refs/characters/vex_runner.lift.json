@@ -1,0 +1,46 @@
+{
+  "forge_record": 1,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-20",
+  "created_by": "human",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": null,
+    "torch": null,
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/characters/vex_runner.png",
+      "sha256": "sha256:12a7cfcc0ed10d46ed930421e69f9e3103968708af0c5a1801572e5a0983ca0b",
+      "source": "reference painted by a cloud image model (xAI grok) on 2026-08-18 under xAI's consumer terms — user owns the output; edit-chained from a style board that does not ship here",
+      "prompt": "Keep this exact character — same painted style, same magenta visor, teal mohawk, cybernetic arm with teal circuits, spiked pauldron, gunmetal jacket and boots, same flat light-grey background, same strict T-pose with both arms straight out horizontal — but change the proportions: make him taller and less squat, about six head heights tall, with longer straight legs and a longer torso, shoulders higher, so his total arm span from fingertip to fingertip is roughly equal to his height. Both arms stay straight out horizontal at shoulder height. Front view, whole body in frame, no ground shadow, no text."
+    }
+  ],
+  "params": {
+    "attn_backend": null,
+    "decimation_target_vertices": 25000,
+    "pipeline_type": "1024_cascade",
+    "preset": null,
+    "prompt_from": "migration",
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 7,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/trellis/vex_runner.glb",
+      "sha256": "sha256:51ad3bedc8a6b30466214f722efebd730a11a6ec14f9230b805a20b90e84d776",
+      "bytes": 3292316
+    }
+  ],
+  "measured": {},
+  "fake": false,
+  "note": "migrated from the old repo's .trellis.json; the reference edit chain is not reproducible; the output path is relative to the repository the lift ran in, not this one; lifted at seed 7 after seed 42 left the rear skull absent"
+}

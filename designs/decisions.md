@@ -204,3 +204,34 @@ rots. 2026-08-22.
 written here. **Why:** a retirement that spans a red tree is one nobody can
 bisect, and a reason that lives only in a commit message is one nobody
 finds. 2026-08-22.
+
+**A `just` recipe's `*flags` re-splits quoted values.** `just promote-clip
+x y --note "two words"` reaches the shell as three arguments, and an
+apostrophe in the value ends in `Syntax error: Unterminated quoted string`.
+The skills say so and send a multi-word `--note`/`--prompt` to the `forge`
+binary directly. **Why:** learned on the end-to-end run, where a note on a
+re-promoted walk failed before the door was reached; a recipe that takes
+free text needs a positional, the way `sweep` and `sfx` take their prompt.
+2026-08-23.
+
+**Every step reads the project's rig profile.** `forge gen rig|export|prop`
+(and `motion review`) defaulted to `<toolkit>/rigs/humanoid` while
+`forge rig check`, promote and the manifest read the project's
+`assets-src/rigs/<rig>` named in `forge.toml`. Identical files after
+`forge init`, so nothing showed; a project that edited its copy would have
+rigged against one contract and been checked against another. `forge gen`
+now hands the project's profile to the Python side (`FORGE_RIG_PROFILE`,
+unless the user already set it). **Why:** two readers of one fact with
+different defaults is the shape of every silent mismatch this ledger
+records. 2026-08-23.
+
+**A recipe never calls `just` recursively.** `just sweep` used to end in
+a bare `just review "$dir"`; run from a `forge init` project as
+`just --justfile <toolkit>/justfile --working-directory . sweep …` that
+inner call said `error: no justfile found` after every take was written.
+Recipes now call the tool (`forge gen motion review …`) directly. The same
+run found `promote-audio` stopped by its own `record="${{file}}"` (the
+shell saw `$out/…` under `set -u`); fixed the same day. **Why:** the
+justfile's header promises the `--justfile` form, and the end-to-end run
+was the first time anyone used it — a recipe that works only from the
+toolkit checkout is a recipe that works only for its author. 2026-08-23.

@@ -124,6 +124,15 @@ fn spawn_with(
     let mut command = launcher(project)?;
     command.args(argv);
     command.arg("--project").arg(&project.root);
+    // The Python side defaults its rig profile to the toolkit's own
+    // rigs/humanoid; the project's forge.toml may name a different one (or an
+    // edited copy under assets-src/rigs). Rigging against one contract and
+    // checking against another is the kind of disagreement nobody notices
+    // until a body fails rig check, so the project's profile is handed over
+    // explicitly. A user's own FORGE_RIG_PROFILE still wins.
+    if std::env::var_os("FORGE_RIG_PROFILE").is_none() {
+        command.env("FORGE_RIG_PROFILE", project.rig_dir());
+    }
     if json {
         command.arg("--json");
     }

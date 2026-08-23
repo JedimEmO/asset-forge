@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "kind": "body",
+  "name": "vex_runner",
+  "prompt": "Keep this exact character — same painted style, same magenta visor, teal mohawk, cybernetic arm with teal circuits, spiked pauldron, gunmetal jacket and boots, same flat light-grey background, same strict T-pose with both arms straight out horizontal — but change the proportions: make him taller and less squat, about six head heights tall, with longer straight legs and a longer torso, shoulders higher, so his total arm span from fingertip to fingertip is roughly equal to his height. Both arms stay straight out horizontal at shoulder height. Front view, whole body in frame, no ground shadow, no text.",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": "humanoid",
+  "generator": {
+    "tool": "trellis2",
+    "model": "microsoft/TRELLIS.2-4B",
+    "trellis_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "resolution": 1024,
+    "pipeline_type": "1024_cascade",
+    "seed": 7,
+    "decimation_target_vertices": 25000,
+    "texture_size": 1024,
+    "remesh": true,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "image": "assets-src/refs/characters/vex_runner.png",
+    "image_sha256": "sha256:12a7cfcc0ed10d46ed930421e69f9e3103968708af0c5a1801572e5a0983ca0b",
+    "lift_sha256": "sha256:51ad3bedc8a6b30466214f722efebd730a11a6ec14f9230b805a20b90e84d776",
+    "post": null
+  },
+  "source": {
+    "path": "assets-src/blender/vex_runner.blend",
+    "sha256": "sha256:16bcb05be32c81895fc88439916f294d06c2d75e7893e681e818f7ea52f24f11",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 24100,
+      "triangles": 24288,
+      "bones_skinned": 55,
+      "lowest_y": 0.0,
+      "bounds": [
+        [
+          -0.9564328,
+          0.0,
+          -0.26964617
+        ],
+        [
+          0.9564328,
+          1.8,
+          0.26964602
+        ]
+      ]
+    }
+  },
+  "events": null,
+  "content_hash": "sha256:27f1b0cad645599396a2954651490db0a1bba2a9ee44f6d9b4d34ed4971526f2",
+  "note": "the sample body: rigged in the old repository's headless-Blender auto-rig (no rig or export record survives, so the post step is unrecorded); stature 1.80 m"
+}

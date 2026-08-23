@@ -153,7 +153,12 @@ sweep prompt *flags: _build
     dir="out/sweeps/${seed}-${tag}"
     mkdir -p "$dir"
     {{forge}} gen motion sweep --out-dir "$dir" --prompt "{{prompt}}" {{flags}}
-    just review "$dir"
+    # Not `just review`: from a user project this justfile is run as
+    # `just --justfile <toolkit>/justfile --working-directory .`, and a bare
+    # `just` inside a recipe would look for a justfile in the project and
+    # find none. Call the tool directly.
+    {{forge}} gen motion review "$dir"/*.npz --sheet "$dir"/sheet.png --metrics "$dir"/metrics.json
+    echo "sheet: $dir/sheet.png  metrics: $dir/metrics.json"
 
 # The metrics table (foot contact, drift, frozen joints) and a contact sheet
 # of every take; `--intent loop` judges for a cycle. The user's eye outranks
@@ -354,7 +359,7 @@ promote-clip name take *flags: _build
 promote-audio kind name file *flags: _build
     #!/usr/bin/env bash
     set -euo pipefail
-    record="${{file}}"; record="${record%.*}.json"
+    record="{{file}}"; record="${record%.*}.json"
     case " {{flags}} " in
         *" --record "*|*" --record="*) {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}} ;;
         *) if [ -f "$record" ]; then

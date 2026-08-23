@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "kind": "model",
+  "name": "barrel",
+  "prompt": "Keep the exact painted art style, palette treatment and lighting of this image. Show only the wooden barrel from this set, alone, centered, seen from a three-quarter view slightly from above. Isolated single subject, plain flat light-grey background, no ground shadow, no other objects, no text. Hand-painted Warcraft 3 style low-poly game art, flat matte painted texture with lighting painted in, posterized color steps with hard edges, bold saturated palette, no photorealism, no gloss.",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "trellis2",
+    "model": "microsoft/TRELLIS.2-4B",
+    "trellis_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "resolution": 1024,
+    "pipeline_type": "1024_cascade",
+    "seed": 42,
+    "decimation_target_vertices": 6000,
+    "texture_size": 1024,
+    "remesh": true,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "image": "assets-src/refs/props/barrel.png",
+    "image_sha256": "sha256:cbafe261429ed3f4f5b7daaf037baf061b6f602901c2017d93476d61b62c833b",
+    "lift_sha256": "sha256:5833e79225632aab54a10196ba31efe155e6d3fd074ec5077a1895066b79dbca",
+    "post": null
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 4463,
+      "triangles": 5832,
+      "bones_skinned": 0,
+      "lowest_y": 0.0,
+      "bounds": [
+        [
+          -0.44467086,
+          0.0,
+          -0.43753165
+        ],
+        [
+          0.44467086,
+          0.9,
+          0.43753165
+        ]
+      ]
+    }
+  },
+  "events": null,
+  "content_hash": "sha256:2e799e5da996e47de73aa1f6d092a5cf1b1b31abcf96e1c6badd427071f87c00",
+  "note": "a floor prop: normalized in the old repository's Blender prop importer with the floor at the origin (--height 0.90); no prop record survives"
+}
