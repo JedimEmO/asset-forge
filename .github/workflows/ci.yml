@@ -1,14 +1,16 @@
 # The pass/fail half of `just ci`, run on every push and pull request.
 #
-# Three jobs, one question each, so a failure names itself: formatting,
-# clippy with warnings as errors, the test suite. The toolchain comes from
-# rust-toolchain.toml — the pin lives in one place, and each job reads it
-# from the file rather than repeating it here.
+# Four jobs, one question each, so a failure names itself: formatting,
+# clippy with warnings as errors, the test suite, and the headless gate. The
+# toolchain comes from rust-toolchain.toml — the pin lives in one place, and
+# each job reads it from the file rather than repeating it here.
 #
-# The headless GPU job — mesa-vulkan-drivers (lavapipe), WGPU_BACKEND=vulkan,
-# running smoke, sheet, views, rig check, audit, manifest --check, verify and
-# the FORGE_FAKE=1 generate paths — is added in P6, once those recipes exist.
-# Nothing here needs a secret: no backend is installed, no model is fetched.
+# The headless job renders with no display server on mesa's lavapipe
+# (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset) and
+# then runs the engine-free gates on the committed library: audit,
+# manifest --check, verify. The P3 renders (sheet, views, rig check) and the
+# P2 FORGE_FAKE=1 generate paths join it as their recipes land. Nothing here
+# needs a secret: no backend is installed, no model is fetched.
 
 name: ci
 
@@ -65,3 +67,30 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
+
+  headless:
+    name: headless
+    runs-on: ubuntu-latest
+    # Proven locally under `env -u DISPLAY -u WAYLAND_DISPLAY` on llvmpipe;
+    # not yet seen green on a GitHub runner. Left as a hard failure on
+    # purpose: a smoke that is allowed to fail is a smoke nobody reads, and
+    # the first red run is the one that tells us what the runner lacks.
+    continue-on-error: false
+    env:
+      WGPU_BACKEND: vulkan
+    steps:
+      - uses: actions/checkout@v4
+      # lavapipe is the software Vulkan adapter; libvulkan1 is the loader
+      # that finds it. The rest is what every job needs to link Bevy.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers libvulkan1
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
+      # No display: the recipe itself unsets DISPLAY and WAYLAND_DISPLAY, and
+      # a runner has neither to begin with.
+      - run: just smoke
+      - run: just audit manifest-check verify

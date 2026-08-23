@@ -32,6 +32,7 @@
 //! reproduces the file byte for byte. The contract is generated, never typed.
 
 pub mod export;
+pub mod fixture;
 pub mod measure;
 
 use std::{

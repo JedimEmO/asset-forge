@@ -1,0 +1,28 @@
+[package]
+name = "forge_motion"
+description = "Motion takes as data: read an ARDY .npz, apply the edit knobs, derive footsteps, and bake the result into a .glb clip on a rig — no engine, no Blender"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# .npy members inside a .npz are stored uncompressed, so this is only used to
+# find them; no inflate path is exercised.
+zip = { workspace = true }
+glam = { workspace = true }
+# Reader and writer for the glTF container. Default features stay off: a
+# baked clip carries a three-vertex anchor triangle and no images, and the
+# rig file it reads rest transforms from carries none this crate decodes.
+gltf = { workspace = true }
+
+[dev-dependencies]
+# Tests only: the oracle fixtures are sidecar json off disk, and the cskel27
+# constants are held to `rigs/humanoid/motion_skeleton.json`. The bake itself
+# never sees json — it takes already-parsed types — so consumers do not link
+# this.
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "forge"
+description = "The one command line over the library crates: init, catalog, the four promote doors, the manifest and every engine-free check — the studio and the MCP server join it as subcommands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# The binary is the toolkit's front door, not a library anyone depends on.
+publish = false
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+# Everything the commands do lives in the library crates; this binary is the
+# flag table, the project lookup and the exit code. No logic of its own means
+# the MCP server and the studio cannot disagree with it.
+forge_library = { workspace = true }
+forge_audio = { workspace = true }
+forge_rig = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

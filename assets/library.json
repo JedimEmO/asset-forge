@@ -1,0 +1,370 @@
+{
+  "schema": 1,
+  "forge_version": "0.1.0",
+  "library_version": "0.1.0",
+  "generated": "2026-08-23",
+  "rig": {
+    "profile": "humanoid",
+    "version": 1,
+    "bone_count": 55,
+    "glb_sha256": "sha256:0387ec13c06130cd0984569d0cf1a509249df783a4f1fe14c191001e13ea7970",
+    "bones": [
+      {
+        "name": "LeftToeBase",
+        "parent": 1,
+        "driven": true
+      },
+      {
+        "name": "LeftFoot",
+        "parent": 2,
+        "driven": true
+      },
+      {
+        "name": "LeftLeg",
+        "parent": 3,
+        "driven": true
+      },
+      {
+        "name": "LeftUpLeg",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "RightToeBase",
+        "parent": 5,
+        "driven": true
+      },
+      {
+        "name": "RightFoot",
+        "parent": 6,
+        "driven": true
+      },
+      {
+        "name": "RightLeg",
+        "parent": 7,
+        "driven": true
+      },
+      {
+        "name": "RightUpLeg",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "LeftHandEnd",
+        "parent": 24,
+        "driven": true
+      },
+      {
+        "name": "LeftHandIndex3",
+        "parent": 10,
+        "driven": false
+      },
+      {
+        "name": "LeftHandIndex2",
+        "parent": 11,
+        "driven": false
+      },
+      {
+        "name": "LeftHandIndex1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle3",
+        "parent": 13,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle2",
+        "parent": 14,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky3",
+        "parent": 16,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky2",
+        "parent": 17,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing3",
+        "parent": 19,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing2",
+        "parent": 20,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb3",
+        "parent": 22,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb2",
+        "parent": 23,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb1",
+        "parent": 24,
+        "driven": true
+      },
+      {
+        "name": "LeftHand",
+        "parent": 25,
+        "driven": true
+      },
+      {
+        "name": "LeftForeArm",
+        "parent": 26,
+        "driven": true
+      },
+      {
+        "name": "LeftArm",
+        "parent": 27,
+        "driven": true
+      },
+      {
+        "name": "LeftShoulder",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "Head",
+        "parent": 29,
+        "driven": true
+      },
+      {
+        "name": "Neck",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "RightHandEnd",
+        "parent": 46,
+        "driven": true
+      },
+      {
+        "name": "RightHandIndex3",
+        "parent": 32,
+        "driven": false
+      },
+      {
+        "name": "RightHandIndex2",
+        "parent": 33,
+        "driven": false
+      },
+      {
+        "name": "RightHandIndex1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle3",
+        "parent": 35,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle2",
+        "parent": 36,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky3",
+        "parent": 38,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky2",
+        "parent": 39,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing3",
+        "parent": 41,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing2",
+        "parent": 42,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb3",
+        "parent": 44,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb2",
+        "parent": 45,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb1",
+        "parent": 46,
+        "driven": true
+      },
+      {
+        "name": "RightHand",
+        "parent": 47,
+        "driven": true
+      },
+      {
+        "name": "RightForeArm",
+        "parent": 48,
+        "driven": true
+      },
+      {
+        "name": "RightArm",
+        "parent": 49,
+        "driven": true
+      },
+      {
+        "name": "RightShoulder",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "Spine3",
+        "parent": 51,
+        "driven": true
+      },
+      {
+        "name": "Spine2",
+        "parent": 52,
+        "driven": true
+      },
+      {
+        "name": "Spine1",
+        "parent": 53,
+        "driven": true
+      },
+      {
+        "name": "Spine",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "Hips",
+        "parent": null,
+        "driven": true
+      }
+    ],
+    "sockets": [
+      {
+        "name": "back",
+        "bone": "Spine3",
+        "translation": [
+          -0.055,
+          0.12,
+          -0.115
+        ],
+        "rotation": [
+          0.6903455,
+          0.1530459,
+          -0.6903455,
+          0.1530459
+        ]
+      },
+      {
+        "name": "hand_l",
+        "bone": "LeftHand",
+        "translation": [
+          0.0,
+          0.055,
+          0.005
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      {
+        "name": "hand_r",
+        "bone": "RightHand",
+        "translation": [
+          0.0,
+          0.055,
+          0.005
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      {
+        "name": "head",
+        "bone": "Head",
+        "translation": [
+          0.0,
+          0.12,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "hip_l",
+        "bone": "Hips",
+        "translation": [
+          0.14,
+          -0.03,
+          -0.02
+        ],
+        "rotation": [
+          -0.7263839,
+          0.0,
+          0.0,
+          0.6872892
+        ]
+      }
+    ]
+  },
+  "bodies": [],
+  "models": [],
+  "clips": [],
+  "audio": []
+}

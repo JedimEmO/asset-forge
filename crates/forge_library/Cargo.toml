@@ -1,0 +1,40 @@
+[package]
+name = "forge_library"
+description = "The library core: sidecar schema 1, the scan-derived catalog, the project file, the four promote doors, the manifest projection, verify, audit and rebake — no engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# forge.toml, the project root marker.
+toml = { workspace = true }
+# Only the file-integrity hash. sha2 rather than a cheaper checksum because the
+# claim a sidecar makes is "this is the file I measured", and a hash somebody
+# could collide on purpose makes that claim worthless.
+sha2 = { workspace = true }
+# The rig profile: the contract a body is held to, the sockets the manifest
+# publishes, and the measure that reads a .glb without an engine.
+forge_rig = { workspace = true }
+# The native bake: promote applies the recipe and serializes the .glb itself,
+# so shipping a clip needs no generator installed at all. Also the edit recipe:
+# a record is only shippable if its recipe parses into the same Edit the baker
+# applies, so this crate has to speak it.
+forge_motion = { workspace = true }
+# The consumer contract. The manifest module projects the catalog into these
+# types, so what the library writes is by construction what a game reads.
+forge_manifest = { workspace = true }
+# Decode-and-measure, for the one number an audio record carries that has to
+# be measured rather than declared: its duration.
+forge_audio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# Constructing synthetic takes in unit tests; the same version forge_motion uses.
+glam = { workspace = true }
+
+[lints]
+workspace = true

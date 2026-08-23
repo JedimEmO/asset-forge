@@ -1,0 +1,52 @@
+{
+  "schema": 3,
+  "kind": "animation",
+  "name": "gen_walk",
+  "prompt": "A person is walking.",
+  "tags": [
+    "loop"
+  ],
+  "created": "2026-07-30",
+  "created_by": "unknown",
+  "provenance": "reconstructed",
+  "generator": {
+    "tool": "ardy",
+    "repo": "https://github.com/nv-tlabs/ardy",
+    "commit": "693f74d",
+    "model": "core",
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "walk__d8_c2_s0_1.npz"
+  },
+  "source": {
+    "path": "assets-src/ardy/gen_walk.npz",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 3.95,
+    "trim_end_s": 1.4,
+    "auto_trim": "loop",
+    "in_place": "strip",
+    "loop": true,
+    "loop_blend_s": 0.1,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": null,
+    "clip": "Walk-loop"
+  },
+  "measured": {
+    "frames": 53,
+    "fps": 20.0,
+    "duration_s": 2.6,
+    "avg_speed_mps": 1.045,
+    "root_motion": null
+  },
+  "events": null,
+  "content_hash": "sha256:b4e547ff7fe0fe09d0b736a79471707cb18f45e9a9b604b8cd1f56b9a96b48ce",
+  "review": null,
+  "note": null
+}

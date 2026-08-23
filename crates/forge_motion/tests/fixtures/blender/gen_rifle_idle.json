@@ -1,0 +1,56 @@
+{
+  "schema": 3,
+  "kind": "animation",
+  "name": "gen_rifle_idle",
+  "prompt": "A person stands in a rifle shooting stance, left foot forward, holding a rifle shouldered with both hands — right hand at the grip near the chest, left arm extended forward supporting the barrel — aiming down the sights with the head lowered to the cheek. They hold the aim steadily with only a subtle breathing sway, feet planted.",
+  "tags": [
+    "loop"
+  ],
+  "created": "2026-08-02",
+  "created_by": "agent:claude",
+  "provenance": "reconstructed",
+  "generator": {
+    "tool": "ardy",
+    "repo": "https://github.com/nv-tlabs/ardy",
+    "commit": null,
+    "model": null,
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "a_person_stands_in_a_rifle_s__d4_c2_s0_4.npz"
+  },
+  "source": {
+    "path": "assets-src/ardy/gen_rifle_idle.npz",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 0.5,
+    "trim_end_s": 0.0,
+    "auto_trim": null,
+    "in_place": "detrend",
+    "loop": true,
+    "loop_blend_s": 0.4,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": null,
+    "clip": "gen_rifle_idle-loop"
+  },
+  "measured": {
+    "frames": 70,
+    "fps": 20.0,
+    "duration_s": 3.45,
+    "avg_speed_mps": 0.007,
+    "root_motion": null
+  },
+  "events": null,
+  "content_hash": "sha256:661ec53365d82916f430c0a85899807051166d2bc620627225c16359d6f0881d",
+  "review": {
+    "submission": "20260802-gen_rifle_idle-7819",
+    "approved_by": "mmy",
+    "date": "2026-08-02"
+  },
+  "note": "Companion to gen_pistol_idle: shouldered-rifle aim loop. Take 4 of 8 — cleanest loop numbers of the batch (foot skate 0.001, loop gap 0.012, loop velocity gap 0.02) and a mid-height stance. First 0.5s trimmed as settle; detrend so the breathing sway survives without drift; 0.4s tail blend closes the loop. Extras if the stance reads wrong: take 2 sits lower with the forward arm flatter, take 3 flares the rear elbow higher, take 7 stands most upright."
+}

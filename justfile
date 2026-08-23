@@ -14,6 +14,12 @@ forge := "target/debug/forge"
 default:
     @just --list
 
+# The binary is wiring and printing; every recipe below that starts with
+# {{forge}} builds it first. forge_capture rides along so `smoke` and the
+# P3 renders find their crate already compiled.
+_build:
+    cargo build -q -p forge -p forge_capture
+
 # ------------------------------------------------------------------ setup --
 
 # `--adopt-env` / `--adopt-checkout` onboard an install that already exists.
@@ -34,9 +40,14 @@ doctor *flags: (_later "P2" "forge doctor aggregating forge gen doctor --json")
 gpu: (_later "P2" "forge gpu over nvidia-smi")
 
 # Not an asset, a law — the one mesh-shaped thing in the library nobody lifts.
+# Until P2 brings `forge gen rig-build` (Blender) this is the data half: the
+# contract re-derived from the committed rig.glb — a diff here means the rig
+# changed — and the fixture mannequin every test stands on.
 #
-# Rebuild the canonical rig in Blender and re-export the profile (rigs/humanoid/).
-rig: (_later "P2" "forge gen rig-build + forge rig export-contract")
+# Re-export the profile's contract and write its mannequin (rigs/humanoid/).
+rig: _build
+    cargo run -q -p forge_rig --example export_contract -- rigs/humanoid
+    {{forge}} rig fixture out/fixture/mannequin.glb
 
 # --------------------------------------------------------------- generate --
 
@@ -121,48 +132,85 @@ bones clip *flags: (_later "P3" "forge bones")
 # Validate a mesh against the rig profile: `just check-mesh out/export/x.glb`
 check-mesh glb *flags: (_later "P3" "forge rig check")
 
+# Exits non-zero if the file is silent, clipped or will not decode; the plot
+# lands beside the others in out/audio/.
+#
 # Inspect one audio file: measure it and plot it. `just audio out/audio/x.wav`
-audio file *flags: (_later "P1" "forge audio")
+audio file *flags: _build
+    {{forge}} audio inspect {{file}} --out out/audio/$(basename "{{file}}" | sed 's/\.[^.]*$//').png {{flags}}
 
+# An empty library passes: a project that ships no sound is not a broken one.
+#
 # Measure every audio asset. Exits non-zero if any is silent or clipped.
-audio-list *flags: (_later "P1" "forge audio --list")
+audio-list *flags: _build
+    {{forge}} audio list {{flags}}
 
-# Plot every audio asset into out/audio/.
-audio-plots *flags: (_later "P1" "forge audio over the catalog")
+# Plot every audio asset into out/audio/. Exits non-zero naming any defective one.
+audio-plots dir="out/audio": _build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    mkdir -p {{dir}}
+    failed=()
+    while IFS= read -r f; do
+        name=$(basename "$f"); name="${name%.*}"
+        if ! {{forge}} audio inspect "$f" --out {{dir}}/$name.png >/dev/null 2>&1; then
+            failed+=("$name")
+        fi
+    done < <(find assets/audio -type f \( -name '*.wav' -o -name '*.ogg' -o -name '*.mp3' -o -name '*.flac' \) | sort)
+    echo "wrote $(ls {{dir}}/*.png 2>/dev/null | wc -l) plots to {{dir}}"
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "defective: ${failed[*]}" >&2
+        exit 1
+    fi
 
 # What the library holds: `just catalog --kind sfx --filter door`
-catalog *flags: (_later "P1" "forge catalog")
+catalog *flags: _build
+    {{forge}} catalog {{flags}}
 
 # ------------------------------------------------------------------- ship --
 
 # The rig gates run first, then the write, then the manifest. Refuses an
 # existing name unless told `--overwrite`, and echoes both records when it does.
+# What this recipe ends as: the Blender export (P2, `forge gen export`) and the
+# engine-side rig check (P3, `forge rig check`) in front of the engine-free
+# door that already exists — `forge promote body <glb> <name> --blend
+# --lift-record --rig-record --export-record`, or `forge promote model` for a
+# prop. Until then, call that door directly on a .glb you have checked.
 #
 # File a rigged body or a normalized prop into the library with its record.
-promote-mesh name *flags: (_later "P1" "forge promote body | forge promote model")
+promote-mesh name *flags: (_later "P2/P3" "forge gen export + forge rig check, then forge promote body | forge promote model")
 
-# Native bake, no Blender. `just promote-clip walk out/sweeps/walk/take_3.npz --loop --strip 0.2,3.4`
+# Native bake, no Blender. The shipped recipe is the starting point when the
+# name exists; the flags you state land on top; the whole recipe is echoed.
+# `just promote-clip walk out/sweeps/walk/take_3.npz --loop --loop-blend 0.2 --trim-start 0.2`
 #
 # Bake one take into a clip with a recipe and file it.
-promote-clip name take *flags: (_later "P1" "forge promote clip")
+promote-clip name take *flags: _build
+    {{forge}} promote clip {{take}} {{name}} {{flags}}
 
+# `just promote-audio sfx door_slam out/audio/door_slam.wav --record out/audio/door_slam.json`
+#
 # File one sound from out/audio/ as sfx, music or voice, with its record.
-promote-audio kind name file *flags: (_later "P1" "forge promote audio")
+promote-audio kind name file *flags: _build
+    {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}}
 
 # Project the library into assets/library.json. Run it after any hand edit.
-manifest: (_later "P1" "forge manifest")
+manifest: _build
+    {{forge}} manifest
 
 # A body has no recipe to re-derive from — it is the file that was rigged
 # and approved — and is skipped by name, with the re-ship spelled out.
 #
 # Re-bake every shipped clip from its own record. Native, no Blender.
-rebake *flags: (_later "P1" "forge rebake")
+rebake *flags: _build
+    {{forge}} rebake {{flags}}
 
 # Idempotent, and honest: values that were only ever defaults are nulled,
 # never carried forward. `--dry-run` reports without writing.
 #
 # Bring every sidecar up to the current schema.
-migrate *flags: (_later "P1" "forge migrate")
+migrate *flags: _build
+    {{forge}} migrate {{flags}}
 
 # ----------------------------------------------------------------- verify --
 
@@ -183,18 +231,22 @@ check:
 test:
     cargo test --workspace
 
-# Everything else rests on this, so it gets its own recipe.
+# Everything else rests on this, so it gets its own recipe. The display is
+# removed from the environment on purpose: if this passes, nothing in the
+# capture path needs X11 or Wayland — an adapter (llvmpipe is enough), yes.
 #
 # Prove offscreen rendering works with no display server at all.
-smoke: (_later "P1" "forge_capture smoke example")
+smoke:
+    env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q -p forge_capture --example smoke
 
 # Rebuild every shipped clip from its own record and compare against the glb,
 # by pose on the rig to under a millimetre; and hold every shipped body to
 # the claim its record makes — the bytes that were approved, the source that
 # is still there.
 #
-# Every clip rebuilds, every body is what it claims. `--fit` searches for the recipe.
-audit *flags: (_later "P1" "forge audit")
+# Every clip rebuilds, every body is what it claims.
+audit *flags: _build
+    {{forge}} audit {{flags}}
 
 # Every contract bone at its depth, the rest pose, the weights, stature and
 # feet, the reference walk binding 27/27. An empty directory passes: a
@@ -204,24 +256,25 @@ audit *flags: (_later "P1" "forge audit")
 check-bodies *flags: (_later "P3" "forge rig check over assets/bodies")
 
 # Fail if the committed manifest no longer matches a rebuild of the library.
-manifest-check: (_later "P1" "forge manifest --check")
+manifest-check: _build
+    {{forge}} manifest --check
 
 # Sidecars, hashes, the rig profile's drift, the reference ledger — a PNG
 # without a row in assets-src/SOURCES.md fails.
 #
 # Every engine-free check on the library.
-verify *flags: (_later "P1" "forge verify")
+verify *flags: _build
+    {{forge}} verify {{flags}}
 
 # The gate to run before committing. Everything in it is a pass/fail
 # question with no judgement in it, and the whole recipe is minutes, not
 # tens of minutes.
 #
 # What it covers today: formatting, clippy over the workspace, the test
-# suite. What joins it, in the phase that makes it real:
-#   smoke           P1   offscreen rendering with no display server
-#   audit           P1   every clip rebuilds from its own record to < 1 mm
-#   manifest-check  P1   the committed manifest matches a rebuild
-#   verify          P1   sidecars, hashes, profile drift, the reference ledger
+# suite, offscreen rendering with no display server, every clip rebuilding
+# from its own record, the committed manifest against a rebuild, and the
+# engine-free verify — sidecars, hashes, profile drift, the reference ledger.
+# What still joins it, in the phase that makes it real:
 #   check-bodies    P3   the rig profile held against every shipped body
 # so that it ends as:
 #   ci: fmt-check check test smoke audit check-bodies manifest-check verify
@@ -244,8 +297,8 @@ verify *flags: (_later "P1" "forge verify")
 # enough) but no display and no Blender. Deliberate — it is the check that
 # catches what a component assertion cannot.
 #
-# The pre-commit gate: fmt-check, clippy, tests.
-ci: fmt-check check test
+# The pre-commit gate: fmt-check, clippy, tests, smoke, audit, manifest-check, verify.
+ci: fmt-check check test smoke audit manifest-check verify
 
 # forge_studio, forge_mcp and forge stay `publish = false`.
 #

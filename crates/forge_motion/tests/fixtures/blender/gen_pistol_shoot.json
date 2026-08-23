@@ -1,0 +1,54 @@
+{
+  "schema": 3,
+  "kind": "animation",
+  "name": "gen_pistol_shoot",
+  "prompt": "A person aims a pistol with both hands, arms straight and level at shoulder height. The gun fires and the recoil flips the hands and muzzle sharply upward toward the sky, elbows staying mostly extended, then the arms come back down level to re-aim forward. The feet stay planted.",
+  "tags": [],
+  "created": "2026-08-02",
+  "created_by": "agent:claude",
+  "provenance": "reconstructed",
+  "generator": {
+    "tool": "ardy",
+    "repo": "https://github.com/nv-tlabs/ardy",
+    "commit": null,
+    "model": null,
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "a_person_aims_a_pistol_with__d3_c2_s1_4.npz"
+  },
+  "source": {
+    "path": "assets-src/ardy/gen_pistol_shoot.npz",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 0.9,
+    "trim_end_s": 0.95,
+    "auto_trim": "action",
+    "in_place": "off",
+    "loop": false,
+    "loop_blend_s": 0.0,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": "0:0,0.35:0.12,0.6:0.3,1.1:0.6",
+    "clip": "Pistol_Shoot"
+  },
+  "measured": {
+    "frames": 13,
+    "fps": 20.0,
+    "duration_s": 0.6,
+    "avg_speed_mps": 0.163,
+    "root_motion": null
+  },
+  "events": null,
+  "content_hash": "sha256:682b89a2edd219f560111c7672cf9c84d9a7ac32573dfd076fee6ad4a5a38087",
+  "review": {
+    "submission": "20260802-gen_pistol_shoot-bf96",
+    "approved_by": "mmy",
+    "date": "2026-08-02"
+  },
+  "note": "Second attempt after rejection of 20260802-gen_pistol_shoot-04d8 (\"arms are kicked down, I want the recoil to go up\"). This take kicks UP: from level aim the hands rise above the shoulder line with elbows mostly extended (orig 1.05-1.25s), then settle back down to level aim. Trimmed to 0.90-2.00s of the source, retimed (post-trim timeline) so the up-kick peaks ~0.12s in and recovery to aim lands at 0.6s total. Exaggerate left at 1.0 this time to keep the kick direction faithful to the take. Check: first visible motion after frame 0 should be hands rising, not dropping."
+}

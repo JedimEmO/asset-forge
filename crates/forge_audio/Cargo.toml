@@ -1,0 +1,24 @@
+[package]
+name = "forge_audio"
+description = "Decode game audio, measure it, and render it as something you can look at — no engine, no sound card"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+forge_raster = { workspace = true }
+# Decode only — deliberately no audio *output* backend, so analysis stays
+# usable in CI and on machines with no sound card.
+symphonia = { workspace = true }
+rustfft = { workspace = true }
+
+[dev-dependencies]
+# Only to read a rendered plot back and check its dimensions; the crate itself
+# writes PNGs through forge_raster.
+image = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

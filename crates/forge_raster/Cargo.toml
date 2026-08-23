@@ -1,0 +1,14 @@
+[package]
+name = "forge_raster"
+description = "A tiny CPU raster surface with a built-in bitmap font, for labelled asset-review images"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+image = { workspace = true }
+
+[lints]
+workspace = true

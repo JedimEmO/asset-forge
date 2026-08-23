@@ -1,0 +1,125 @@
+{
+  "schema": 5,
+  "kind": "animation",
+  "name": "gen_jump",
+  "prompt": "A person crouches and jumps straight up powerfully, tucking their knees at the peak, then lands and absorbs the impact",
+  "tags": [],
+  "created": "2026-08-02",
+  "created_by": "agent:claude",
+  "provenance": "reconstructed",
+  "generator": {
+    "tool": "ardy",
+    "repo": null,
+    "commit": null,
+    "model": null,
+    "seed": null,
+    "duration_s": null,
+    "cfg": null,
+    "sample": null,
+    "sweep_take": "a_person_crouches_and_jumps__d2.5_c2_s0_6.npz"
+  },
+  "source": {
+    "path": "assets-src/ardy/gen_jump.npz",
+    "skeleton": "cskel27"
+  },
+  "recipe": {
+    "trim_start_s": 0.3,
+    "trim_end_s": 1.45,
+    "auto_trim": null,
+    "in_place": "detrend",
+    "y_mode": "detrend",
+    "loop": false,
+    "loop_blend_s": 0.0,
+    "exaggerate": 1.0,
+    "arm_bend_deg": 0.0,
+    "lean_deg": 0.0,
+    "shoulder_back_deg": 0.0,
+    "retime": null,
+    "clip": "gen_jump"
+  },
+  "measured": {
+    "frames": 15,
+    "fps": 20.0,
+    "duration_s": 0.7,
+    "avg_speed_mps": 0.43374643,
+    "root_motion": {
+      "net_m": [
+        0.043,
+        -0.004
+      ],
+      "direction_deg": null,
+      "peak_speed_mps": 0.913,
+      "track_xz_m": [
+        [
+          -0.0,
+          -0.0
+        ],
+        [
+          -0.0,
+          0.018
+        ],
+        [
+          -0.001,
+          0.037
+        ],
+        [
+          -0.002,
+          0.051
+        ],
+        [
+          -0.001,
+          0.054
+        ],
+        [
+          0.001,
+          0.047
+        ],
+        [
+          0.006,
+          0.036
+        ],
+        [
+          0.01,
+          0.016
+        ],
+        [
+          0.012,
+          -0.023
+        ],
+        [
+          0.014,
+          -0.068
+        ],
+        [
+          0.016,
+          -0.096
+        ],
+        [
+          0.022,
+          -0.091
+        ],
+        [
+          0.029,
+          -0.063
+        ],
+        [
+          0.036,
+          -0.03
+        ],
+        [
+          0.043,
+          -0.004
+        ]
+      ]
+    },
+    "mesh": null
+  },
+  "events": [],
+  "content_hash": "sha256:bf240a9a72a8c09af486113d8dc6eaee51d33e2e265da7edbcd7c80fb4ff0fb3",
+  "review": {
+    "submission": "20260802-gen_jump-9f5d",
+    "approved_by": "agent:claude",
+    "date": "2026-08-02"
+  },
+  "note": "Launch core only. Take 6 of 8 (seed 0). Pelvis arc: stance 0.96 m held to 0.30 s, crouch bottom 0.75 m at 0.55 s, feet leave the ground at 0.70 s (foot_contacts 4 -> 0), apex 1.36 m at 0.95 s = +0.40 m rise, second-highest of the batch. Trim 0.30-1.00 s keeps one frame of stance before the crouch and one frame of hang past apex: the clip opens in a stance pose (no pop blending out of idle) and ends knees-tucked at the top, where the fall loop takes over. 0.70 s shipped against a 0.40 s gameplay jump = 1.75x retime. Chosen over take 1 (higher apex +0.46 m but its crouch descent alone spans 0.40 s, forcing the trim to open in a deep squat, and its foot contacts shuffle after touchdown) and over take 4 (+0.45 m apex but 0.34 m of horizontal travel, wrong for a standing vertical jump). Take 6 flags clean, skate 0.03 m/s, lean 36 deg. Root X/Z detrended; root Y left for the y_mode knob. NOT visually verified with render_animation_strip: that tool only reads library clips, and the direct write is blocked by a stale MCP server image."
+}

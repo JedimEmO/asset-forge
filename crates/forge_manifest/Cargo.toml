@@ -1,0 +1,21 @@
+[package]
+name = "forge_manifest"
+description = "The consumer contract: the typed, versioned manifest a game reads at assets/library.json"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["gamedev", "assets", "manifest", "animation"]
+categories = ["game-development", "parser-implementations"]
+
+[dependencies]
+# Deliberately the whole dependency list. This is the one authoring-side crate
+# a game's build pulls in transitively, so it must never drag an engine or a
+# pipeline with it.
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
