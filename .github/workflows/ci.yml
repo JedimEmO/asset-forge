@@ -1,0 +1,67 @@
+# The pass/fail half of `just ci`, run on every push and pull request.
+#
+# Three jobs, one question each, so a failure names itself: formatting,
+# clippy with warnings as errors, the test suite. The toolchain comes from
+# rust-toolchain.toml — the pin lives in one place, and each job reads it
+# from the file rather than repeating it here.
+#
+# The headless GPU job — mesa-vulkan-drivers (lavapipe), WGPU_BACKEND=vulkan,
+# running smoke, sheet, views, rig check, audit, manifest --check, verify and
+# the FORGE_FAKE=1 generate paths — is added in P6, once those recipes exist.
+# Nothing here needs a secret: no backend is installed, no model is fetched.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Bevy's audio and input backends link against ALSA and libudev even in
+      # a windowless build; without the headers the workspace does not compile.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace

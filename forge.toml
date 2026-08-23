@@ -1,0 +1,22 @@
+# asset-forge project file. This is the root marker: `forge` walks up from the
+# working directory until it finds one, and every path below is relative to
+# it. Convention covers the rest — kind → directory (bodies | models | clips |
+# audio/sfx | audio/music | audio/voice), sidecar = same stem `.json`,
+# `library.json` at the asset root.
+
+[project]
+name = "asset-forge"            # the library's name, written into library.json
+library_version = "0.1.0"       # bumped by hand when shipped assets change; written into library.json
+rig = "humanoid"                # the rig profile every body is skinned to, by directory name under paths.rigs
+
+[paths]
+assets = "assets"               # the shipped library: one file + one sidecar per asset, library.json at its root
+sources = "assets-src"          # what assets are made from: reference PNGs, lift records, takes, .blend files
+out = "out"                     # gitignored scratch: lifts, props, exports, sweeps, sheets, views, audio
+rigs = "rigs"                   # rig profiles (a user project gets rigs = "assets-src/rigs" from `forge init`)
+
+[studio]
+stage_body = "vex_runner"       # the body clips are posed on by default, by name under assets/bodies
+
+[backends]
+dir = "backends"                # one subdirectory per generator: backend.toml, install.sh, probe.py

@@ -1,0 +1,21 @@
+/target
+/out
+__pycache__/
+*.pyc
+
+# Blender writes a .blend1 backup beside every save; the .blend is the source
+*.blend1
+
+# machine-local MCP enablement
+.claude/settings.local.json
+
+# What install.sh leaves behind per backend: the interpreter symlink, the
+# upstream checkout, the merged text encoders and the install receipt. None
+# of it is source, all of it is machine-local, and backends.local.toml is
+# this machine's interpreter overrides.
+backends/*/.env
+backends/*/.checkout
+backends/*/.text-encoders
+backends/*/installed.json
+backends.local.toml
+python/.venv
