@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["gamedev", "rig", "skeleton", "gltf", "animation"]
+categories = ["game-development", "rendering::data-formats"]
 
 [dependencies]
 serde = { workspace = true }

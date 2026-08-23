@@ -8,10 +8,6 @@
 # `just --justfile <this file> --working-directory . sheet walk`: the binary
 # is found beside this file, the library is the one under the working
 # directory, because `forge` walks up from there to its forge.toml.
-#
-# A recipe that answers "not yet: lands in P<n>" is a promise, not a bug: the
-# phases are in the plan, and the name is reserved here so the skills can be
-# written against it before the code exists. One is left: publish-check.
 
 forge := justfile_directory() / "target/debug/forge"
 
@@ -598,13 +594,51 @@ ci-fake: _build mcp-check
     "$forge" manifest --check
     "$forge" verify
 
-# forge_studio, forge_mcp and forge stay `publish = false`.
+# forge_studio, forge_mcp and forge stay `publish = false`; the seven named
+# below are the registry surface. One `cargo package` call with every crate
+# on it is the honest form, not a shortcut: cargo packages them in
+# dependency order and verifies each dependent against the siblings it just
+# packaged, through a temporary registry under target/package/tmp-registry,
+# so forge_library builds against the forge_rig .crate and not the path. A
+# dependent packaged on its own fails at verify with "no matching package
+# named forge_raster found", because its path dependency becomes a registry
+# dependency in the .crate and nothing is on the registry yet — which is
+# also why `cargo publish` has to go one crate at a time in the order
+# printed, waiting for the index between them.
 #
-# Pre-release gate: every crate meant for the registry must package in isolation.
-publish-check: (_later "P6" "cargo package for the seven library crates")
-
-# Every stub above ends here: the name is reserved, the phase is named.
-[no-exit-message]
-_later phase what:
-    @echo "not yet: lands in {{phase}} ({{what}})" >&2
-    @exit 1
+# What is not in a .crate, and why that is fine: the root LICENSE-* files
+# (cargo packages nothing above the crate directory; `license` in
+# [workspace.package] is the claim, and crates.io shows it), and rigs/ (the
+# tests that read it run here, not from a downloaded crate). forge_motion
+# carries its oracle fixtures (tests/fixtures/, ~1.3 MiB) on purpose: the
+# bake tests are that crate's proof, and it stays far under the 10 MiB
+# registry cap the loop below holds every .crate to. `--allow-dirty` so
+# the gate runs on a working tree; a release runs it on a clean one.
+#
+# Pre-release gate: every crate meant for the registry packages and builds in isolation.
+publish-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    order=(forge_raster forge_manifest forge_rig forge_motion forge_audio forge_capture forge_library)
+    args=()
+    for crate in "${order[@]}"; do args+=(-p "$crate"); done
+    cargo package "${args[@]}" --allow-dirty
+    version=$(cargo metadata --no-deps --format-version 1 \
+        | python3 -c 'import json, sys; print({p["name"]: p["version"] for p in json.load(sys.stdin)["packages"]}["forge_raster"])')
+    cap=$((10 * 1024 * 1024))
+    echo
+    echo "publish order — cargo publish -p <crate>, one at a time, in this order:"
+    n=0
+    for crate in "${order[@]}"; do
+        n=$((n + 1))
+        file="target/package/$crate-$version.crate"
+        [ -f "$file" ] || { echo "  $n. $crate — no $file" >&2; exit 1; }
+        bytes=$(stat -c %s "$file")
+        printf '  %d. %-15s %8d KiB  %s\n' "$n" "$crate" "$((bytes / 1024))" "$file"
+        if [ "$bytes" -gt "$cap" ]; then
+            echo "$crate: $((bytes / 1024)) KiB is over the 10 MiB crates.io cap" >&2
+            exit 1
+        fi
+    done
+    echo "publish-check: $n crates package and build in isolation at $version"

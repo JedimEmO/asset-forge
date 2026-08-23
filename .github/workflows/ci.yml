@@ -1,22 +1,29 @@
-# The pass/fail half of `just ci`, run on every push and pull request.
+# The pass/fail half of `just ci`, plus the release gate, on every push to
+# main and every pull request.
 #
-# Four jobs, one question each, so a failure names itself: formatting,
-# clippy with warnings as errors, the test suite, and the headless gate. The
-# toolchain comes from rust-toolchain.toml — the pin lives in one place, and
-# each job reads it from the file rather than repeating it here.
+# Five jobs, one question each, so a failure names itself: formatting,
+# clippy with warnings as errors, the test suite (Rust, then the Python
+# layer, then the MCP handshake and the fake pipelines), the headless gate,
+# and publish-check. The toolchain comes from rust-toolchain.toml — the pin
+# lives in one place, and each job reads it from the file rather than
+# repeating it here. Every job that compiles shares one rust-cache key: the
+# workspace is the same in all of them, and a warm cache is the difference
+# between minutes and tens of minutes with Bevy in the graph.
 #
 # The headless job renders with no display server on mesa's lavapipe
 # (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset):
 # the capture smoke, a contact sheet of every shipped clip (non-zero on one
 # that binds to nothing or never moves), `forge views` on the committed test
 # fixture — the unit cube TRELLIS made from a test image, culling off — and
-# then the gates on the committed library: audit (by bytes and by pose, on
-# the fixture mannequin), check-bodies (the rig profile held against every
-# shipped body), manifest --check, verify. The test job also runs
-# `just ci-fake`: the four generate pipelines on FORGE_FAKE=1 placeholders
-# in a throwaway project — python3 is on the runner, no backend is
-# installed, no Blender, no GPU. Nothing here needs a secret, and no model
-# is fetched.
+# then the gates on the committed library: check-bodies (the rig profile
+# held against every shipped body), audit (by bytes and by pose, on the
+# fixture mannequin), manifest --check, verify. The test job runs
+# `just mcp-check` (the server handshakes over stdio and lists its tools)
+# and `just ci-fake`: the four generate pipelines on FORGE_FAKE=1
+# placeholders in a throwaway project — python3 is on the runner, no backend
+# is installed, no Blender, no GPU. The publish-check job is `cargo package`
+# over the seven registry crates, each verified against the .crate files of
+# its siblings. Nothing here needs a secret, and no model is fetched.
 
 name: ci
 
@@ -24,6 +31,12 @@ on:
   push:
     branches: [main]
   pull_request:
+
+# A push on top of a running run supersedes it; the old one is cancelled
+# rather than finishing second.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -58,6 +71,8 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
@@ -72,18 +87,23 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
       - uses: taiki-e/install-action@just
       - run: cargo test --workspace
-      # The Python layer's own tests (stdlib only, no backend) and the fake
-      # pipelines end to end: mesh→prop→model, mesh→rig→export→body,
-      # sweep→review→clip, sfx→audio, then audit, manifest --check, verify
-      # in the throwaway project.
+      # The Python layer's own tests (stdlib only, no backend).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python3 -m pip install --quiet "pytest>=8"
       - run: python3 -m pytest -q
         working-directory: python
+      # `forge mcp` handshakes over stdio and lists exactly the tools the
+      # skills are written against. No GPU: the list is the test.
+      - run: just mcp-check
+      # The fake pipelines end to end: mesh→prop→model, mesh→rig→export→body,
+      # sweep→review→clip, sfx→audio, then audit, manifest --check, verify
+      # in the throwaway project.
       - run: just ci-fake
 
   headless:
@@ -99,15 +119,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # lavapipe is the software Vulkan adapter; libvulkan1 is the loader
-      # that finds it. The rest is what every job needs to link Bevy.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers libvulkan1
+      # that finds it; vulkan-tools brings vulkaninfo, so a red run can say
+      # which adapter the runner actually had. The rest is what every job
+      # needs to link Bevy.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers libvulkan1 vulkan-tools
       - id: toolchain
         run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
       - uses: taiki-e/install-action@just
+      # What the runner has before anything asks for it; informational.
+      - run: vulkaninfo --summary || true
       # No display: the smoke recipe itself unsets DISPLAY and WAYLAND_DISPLAY,
       # and a runner has neither to begin with. The renders after it find the
       # same adapter the smoke did.
@@ -115,9 +141,38 @@ jobs:
       # Every shipped clip as a sheet on the stage body; an empty library
       # renders nothing and passes.
       - run: just sheets
+      # The rig profile held against every shipped body. No renderer.
+      - run: just check-bodies
       # The seven views of a raw lift, the way `forge-character` looks at one
       # before the rig: a path under out/ gets culling off by default, so the
       # fixture is copied there first.
       - run: mkdir -p out/lifts && cp crates/forge_studio/tests/fixtures/testbox.glb out/lifts/testbox.glb && target/debug/forge views out/lifts/testbox.glb
-      - run: just check-bodies
-      - run: just audit manifest-check verify
+      # Every clip rebuilds from its own record, by bytes and by pose.
+      - run: just audit
+      # The committed manifest against a rebuild of the library.
+      - run: just manifest-check
+      # Sidecars, hashes, the rig profile's drift, the reference ledger.
+      - run: just verify
+
+  publish-check:
+    name: publish-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # forge_capture's verify build links Bevy, so the same headers as the
+      # workspace build.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
+      - uses: taiki-e/install-action@just
+      # `cargo package` over the seven registry crates in dependency order,
+      # each verified in isolation against the .crate files of its siblings;
+      # prints the publish order and every package's size, and fails on one
+      # over the 10 MiB cap.
+      - run: just publish-check

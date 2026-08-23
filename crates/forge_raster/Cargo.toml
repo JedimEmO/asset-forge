@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["raster", "bitmap-font", "png", "gamedev", "contact-sheet"]
+categories = ["multimedia::images", "rendering", "game-development"]
 
 [dependencies]
 image = { workspace = true }

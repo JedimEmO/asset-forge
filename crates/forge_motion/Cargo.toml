@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["gamedev", "animation", "gltf", "motion", "npz"]
+categories = ["game-development", "rendering::data-formats", "encoding"]
 
 [dependencies]
 # .npy members inside a .npz are stored uncompressed, so this is only used to

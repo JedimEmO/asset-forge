@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["audio", "gamedev", "analysis", "spectrogram", "loudness"]
+categories = ["multimedia::audio", "game-development", "visualization"]
 
 [dependencies]
 forge_raster = { workspace = true }
