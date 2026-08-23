@@ -23,7 +23,7 @@
 //!   frame of animation into the correction.
 //!
 //! Verified against a Blender-baked `.glb` of the same take: 0.0001° across all
-//! 27 bones — and, since the bake went native, against [`forge_motion::bake`]
+//! 27 bones — and, since the bake went native, against [`forge_motion::bake()`]
 //! to under a millimetre by `tests/npz_fidelity.rs`, which is the test the
 //! whole instant-preview design rests on.
 

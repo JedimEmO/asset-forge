@@ -39,12 +39,26 @@ exclusivity over these exact pixels, and no third party with a claim
 against shipping them. For source references that trade is fine; nothing
 derived from them is encumbered by the images.
 
-The full prompts are in each `<name>.lift.json` (`inputs[0].prompt`). The
-edit chain that produced each PNG — the style board, the intermediate edits
-— is not reproducible and does not ship; that is why the lift record claims
-the PNG's hash and nothing upstream of it. The lift's texture baker is
-nvdiffrast (NVIDIA Source Code License, non-commercial); every lift record
-names it, and `backends/README.md` has the table.
+The full prompts are in each `<name>.lift.json` (`inputs[0].prompt`),
+verbatim from the repository this one was distilled from — examples of
+prompt shape (subject, framing, background rules), not style guidance for
+this toolkit; a record is never edited to tidy them. The edit chain that
+produced each PNG — the style board, the intermediate edits — is not
+reproducible and does not ship; that is why the lift record claims the
+PNG's hash and nothing upstream of it.
+
+**What nvdiffrast means for the shipped meshes, plainly.** The textures on
+all three lifted samples (`vex_runner`, `sword`, `barrel`) were baked
+through nvdiffrast 0.4.0, which ships under the NVIDIA Source Code License
+— non-commercial use only. So: the geometry's provenance is clean
+(TRELLIS.2 is MIT, code and weights), but **the sample textures are not
+licensed for commercial use or commercial redistribution**. They ship for
+demonstration, so the tools have something to show on a fresh clone. A
+commercial project does not reuse these samples; it lifts its own
+references once a replacement baker lands, or ships its own textures.
+Every lift record names the baker (`texture_baker: "nvdiffrast (NVIDIA
+Source Code License, non-commercial)"`), `assets/LICENSE.md` says the same
+per sample kind, and `backends/README.md` has the component table.
 
 ## Clips (`takes/`, `assets/clips/`)
 

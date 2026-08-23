@@ -9,7 +9,7 @@
     "commit": "fake",
     "python": null,
     "torch": null,
-    "model": null,
+    "model": "microsoft/TRELLIS.2-4B",
     "model_revision": null
   },
   "inputs": [
@@ -22,9 +22,16 @@
     }
   ],
   "params": {
+    "attn_backend": null,
+    "decimation_target_vertices": null,
+    "pipeline_type": null,
+    "preset": null,
+    "prompt_from": null,
+    "remesh": null,
     "resolution": null,
     "seed": null,
-    "texture_baker": null
+    "texture_baker": null,
+    "texture_size": null
   },
   "outputs": [
     {

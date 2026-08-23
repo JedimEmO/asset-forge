@@ -55,7 +55,7 @@ pub use binding::{BonesReport, ClipDiff, SkeletonPaths, bones_report};
 pub use render::{
     RenderError, SheetRequest, Shot, Stage, ViewsRequest, render_clip_sheet, render_views,
 };
-pub use views::{HeadView, View};
+pub use views::{Facing, HeadView, View};
 
 /// The one Bevy type a caller needs to name to fill a request — a cell
 /// size — re-exported so the `forge` binary can build a [`SheetRequest`]

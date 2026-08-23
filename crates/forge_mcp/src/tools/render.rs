@@ -106,11 +106,14 @@ impl ForgeServer {
     #[tool(
         description = "Render a body or model from the angles a reviewer walks to — front, \
                        back, both sides, plus three head close-ups — composed into one \
-                       labelled contact sheet returned as an inline image. Takes a library \
-                       name from list_models or a path to any .glb; a path under out/ (a raw \
-                       lift) renders with culling off, so a missing back shows as the inside \
-                       of the front. Use it to judge proportion, silhouette, face, and \
-                       whether the surface is actually there. Headless; takes 10-60s."
+                       labelled contact sheet returned as an inline image. FRONT is the +Z \
+                       side of the file, the way a promoted body or prop faces at rest; a \
+                       raw lift may come out of the lifter facing any way, so read its tiles \
+                       by what they show. Takes a library name from list_models or a path to \
+                       any .glb; a path under out/ (a raw lift) renders with culling off, so \
+                       a missing back shows as the inside of the front. Use it to judge \
+                       proportion, silhouette, face, and whether the surface is actually \
+                       there. Headless; takes 10-60s."
     )]
     async fn render_model(&self, Parameters(args): Parameters<RenderModelArgs>) -> CallToolResult {
         let catalog = Catalog::scan(&self.config.project);
@@ -651,7 +654,7 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         let text = frame_text(&result);
         assert!(
-            text.contains("available meshs") || text.contains("mannequin"),
+            text.contains("available meshes") || text.contains("mannequin"),
             "{text}"
         );
 

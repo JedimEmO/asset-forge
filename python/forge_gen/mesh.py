@@ -127,11 +127,11 @@ def add_parser(subparsers) -> None:
     parser.add_argument("image", help="the reference PNG (a committed source; flat background, subject alone)")
     parser.add_argument("--out", required=True, metavar="GLB", help="where the lifted .glb goes")
     parser.add_argument("--record", required=True, metavar="JSON", help="where the lift record goes (beside the PNG as <name>.lift.json is where promote looks)")
-    parser.add_argument("--preset", choices=sorted(PRESETS), default=DEFAULT_PRESET, help=f"the register: {', '.join(f'{k} = {v.resolution}³/{v.verts} verts/{v.texture}²' for k, v in PRESETS.items())} (default {DEFAULT_PRESET})")
+    parser.add_argument("--preset", choices=sorted(PRESETS), default=None, help=f"the register: {', '.join(f'{k} = {v.resolution}³/{v.verts} verts/{v.texture}²' for k, v in PRESETS.items())} (default {DEFAULT_PRESET})")
     parser.add_argument("--resolution", type=int, choices=sorted(PIPELINE_TYPES), metavar="512|1024", help="voxel grid; 1536 is refused (24 GB)")
     parser.add_argument("--verts", type=int, metavar="N", help="decimation target, VERTICES, before the bake (the preset's unless given)")
     parser.add_argument("--texture", type=int, choices=TEXTURE_SIZES, metavar="512|1024", help="texture atlas size (the preset's unless given)")
-    parser.add_argument("--seed", type=int, default=42, help="the sampler seed; one front view underdetermines a shape, and the seed is the knob (default 42)")
+    parser.add_argument("--seed", type=int, default=None, help="the sampler seed; one front view underdetermines a shape, and the seed is the knob (default 42)")
     parser.add_argument("--source", metavar="TEXT", help="where the image came from, for the record's input (e.g. 'grok image_edit from the style board')")
     parser.add_argument("--prompt", metavar="TEXT", help="the prompt the image was made with; default: the first paragraph of a sibling <ref>.txt when one exists")
 
@@ -154,6 +154,9 @@ class Settled:
     source: str | None
     prompt: str | None
     prompt_from: str | None
+    #: Which knobs the caller stated (vs. resolved from the preset/default) —
+    #: what a ``--fake`` record may claim without lying.
+    stated: frozenset = frozenset()
 
     @property
     def pipeline_type(self) -> str:
@@ -198,7 +201,18 @@ def settle(args) -> Settled:
     if out.suffix.lower() != ".glb":
         raise UsageError(f"--out {out} must end in .glb — the exporter picks its format by extension")
     record = Path(args.record).expanduser().resolve()
-    preset = PRESETS[args.preset]
+    stated = frozenset(
+        knob
+        for knob, given in (
+            ("preset", args.preset is not None),
+            ("resolution", args.resolution is not None),
+            ("decimation_target_vertices", args.verts is not None),
+            ("texture_size", args.texture is not None),
+            ("seed", args.seed is not None),
+        )
+        if given
+    )
+    preset = PRESETS[args.preset or DEFAULT_PRESET]
     resolution = args.resolution if args.resolution is not None else preset.resolution
     if resolution not in RESOLUTIONS:
         raise UsageError(
@@ -218,14 +232,15 @@ def settle(args) -> Settled:
         image=image,
         out=out,
         record=record,
-        preset=args.preset,
+        preset=args.preset or DEFAULT_PRESET,
         resolution=resolution,
         verts=verts,
         texture=texture,
-        seed=args.seed,
+        seed=args.seed if args.seed is not None else 42,
         source=args.source,
         prompt=prompt,
         prompt_from=prompt_from,
+        stated=stated,
     )
 
 
@@ -264,6 +279,21 @@ def lift_params(settled: Settled, *, attn_backend: str | None) -> dict:
     }
 
 
+def fake_lift_params(settled: Settled) -> dict:
+    """The params of a run that ran nothing: ``null`` for every knob the caller did not state.
+
+    Same keys as :func:`lift_params`, so the Rust projection reads the same
+    shape — but a ``--fake`` run consumed no seed, opened no voxel grid and
+    loaded no baker, and a record that said ``seed 42, texture_baker
+    nvdiffrast`` about it would be argparse defaults laundered into
+    measurements (the licence claim being the least defensible). What the
+    caller explicitly asked for is kept: a stated knob is a fact about the
+    request even when nothing ran.
+    """
+    real = lift_params(settled, attn_backend=None)
+    return {key: (real[key] if key in settled.stated else None) for key in real}
+
+
 def build_record(settled: Settled, *, created_by: str | None, backend: dict, measured: dict, attn_backend: str | None, fake: bool) -> dict:
     """The lift record: kind ``lift``, tool ``trellis2``, the image as its one input, the glb as its one output.
 
@@ -283,7 +313,7 @@ def build_record(settled: Settled, *, created_by: str | None, backend: dict, mea
             model_revision=backend.get("model_revision"),
         )
     records.add_input(rec, "image", settled.image, source=settled.source, prompt=settled.prompt)
-    rec["params"] = lift_params(settled, attn_backend=attn_backend)
+    rec["params"] = fake_lift_params(settled) if fake else lift_params(settled, attn_backend=attn_backend)
     records.add_output(rec, settled.out)
     rec["measured"] = dict(measured)
     return rec
@@ -353,8 +383,14 @@ def run(args) -> dict:
 
 
 def run_fake(args) -> dict:
-    """No env, no torch: a placeholder glb that passes ``verify_glb`` and a record that says ``fake``."""
+    """No env, no torch: a placeholder glb that passes ``verify_glb`` and a record that says ``fake``.
+
+    The record's params are ``null`` except what the caller stated
+    (:func:`fake_lift_params`), and a target only an earlier ``--fake`` run
+    wrote may be overwritten — never a real lift or its record.
+    """
     settled = settle(args)
+    placeholders.refuse_real(settled.out, settled.record)
     placeholders.placeholder_glb(settled.out, name=settled.image.stem)
     info = glb.verify_glb(settled.out)
     measured = {

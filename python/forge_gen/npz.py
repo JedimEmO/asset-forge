@@ -5,8 +5,9 @@ byte reinterpret each — which is why ``forge_motion::Take::read`` can read
 one without an ndarray stack, and why this module can write one with
 ``zipfile`` and ``struct``. ``write_take`` is the ``--fake`` stand-in: a
 still figure in the profile's rest pose, the exact member names, dtypes and
-shapes a real take carries, so the CI path sweep → review → promote runs on a
-file the Rust reader accepts.
+shapes a real take carries — plus one extra 0-d member ``forge_gen_fake``
+that brands it a placeholder — so the CI path sweep → review → promote runs
+on a file the Rust reader accepts and no real take is ever mistaken for it.
 
 The member table (from a real take, ``gen_roll.npz``):
 
@@ -213,4 +214,8 @@ def write_take(
     arrays["global_root_heading"] = f32(list(heading) * frames, (frames, 2))
     arrays["fps"] = int_scalar(fps)
     arrays["text"] = str_scalar(prompt)
+    # One member no real take carries, so a placeholder is recognisable as
+    # one (`placeholders.is_placeholder`) and `--fake` can refuse to
+    # overwrite a real take. Readers pick members by name and never see it.
+    arrays["forge_gen_fake"] = int_scalar(1)
     return write_npz(path, arrays)

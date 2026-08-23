@@ -352,7 +352,7 @@ impl Generator {
 
 /// What ARDY was asked for.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ArdyParams {
     /// Upstream repository the checkpoint came from.
     pub repo: Option<String>,
@@ -386,7 +386,7 @@ pub struct ArdyParams {
 /// nor Blender's glTF export is byte-stable. `rebake` skips these on exactly
 /// that ground.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LiftParams {
     /// Model identifier, e.g. `microsoft/TRELLIS.2-4B`.
     pub model: Option<String>,
@@ -424,7 +424,7 @@ pub struct LiftParams {
 
 /// A headless-Blender step recorded on a lifted asset.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PostStep {
     /// The tool, always `blender`.
     pub tool: String,
@@ -437,7 +437,7 @@ pub struct PostStep {
 
 /// What ACE-Step was asked for.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AceStepParams {
     /// Language-model stage checkpoint.
     pub lm_model: Option<String>,
@@ -463,7 +463,7 @@ pub struct AceStepParams {
 
 /// What MOSS `SoundEffect` was asked for.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SoundEffectParams {
     /// Checkpoint identifier.
     pub model: Option<String>,
@@ -481,7 +481,7 @@ pub struct SoundEffectParams {
 /// What MOSS TTS was asked for. The spoken line itself is the sidecar's
 /// `prompt`, since that is what a reader searches for.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SpeechParams {
     /// Checkpoint identifier.
     pub model: Option<String>,
@@ -494,7 +494,10 @@ pub struct SpeechParams {
     /// The designed voice's record (`assets-src/voices/<name>/voice.json`)
     /// when the reference was made by `forge gen voice`, so the line's
     /// provenance chains back to the description and the seed. `null` for a
-    /// brought clip. Additive at schema 1: an older sidecar reads as `null`.
+    /// brought clip. Added while schema 1 was current, before unknown keys
+    /// were refused; from here on, saying more is a schema bump — a reader
+    /// that refuses an unknown key must be able to say "you are behind"
+    /// rather than dropping a field it would unauthor on rewrite.
     pub voice_record: Option<String>,
     /// Language, when it was not inferred.
     pub language: Option<String>,
@@ -507,7 +510,7 @@ pub struct SpeechParams {
 /// what makes a shipped clip editable at all, and it is still there long
 /// after the sweep that produced it was swept away.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Source {
     /// Project-relative path to the durable input, e.g.
     /// `assets-src/takes/roll.npz` or `assets-src/blender/vex_runner.blend`.
@@ -527,7 +530,7 @@ pub struct Source {
 /// outputs. Mixing them is how you end up with a "recipe" that cannot be
 /// replayed because two of its fields are results.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Measured {
     /// Frames in the built clip, after trimming.
     pub frames: Option<u32>,
@@ -555,7 +558,7 @@ pub struct Measured {
 /// the whole block ([`Measured::mesh`]), the same way [`RootMotion`] states
 /// what it always knows and options only what it may not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct MeshMeasured {
     /// Vertices across every primitive, counted on the mesh as written to the
     /// file, so the number agrees with what any glTF inspector reports.
@@ -600,6 +603,7 @@ impl From<&forge_rig::measure::GlbMeasurement> for MeshMeasured {
 /// and a library browser that had to special-case those per kind would grow a
 /// branch per kind forever.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Sidecar {
     /// Schema version. Always [`SCHEMA`] when written by this build.
     pub schema: u64,
@@ -775,6 +779,34 @@ mod tests {
     fn a_newer_schema_is_refused_naming_the_number() {
         let error = parse(r#"{"schema": 6}"#).expect_err("must refuse");
         assert!(error.to_string().contains('6'), "{error}");
+    }
+
+    #[test]
+    fn a_typoed_key_is_refused_not_read_as_a_default() {
+        // A serializer round-trip is the honest source of a valid document.
+        let valid = serde_json::to_value(Sidecar::new(Kind::Clip, "walk")).expect("json");
+
+        // An unknown key at the top level.
+        let mut with_stray = valid.clone();
+        with_stray
+            .as_object_mut()
+            .expect("object")
+            .insert(String::from("totally_made_up"), serde_json::json!(1));
+        let error = Sidecar::from_value(with_stray, Path::new("test.json"))
+            .expect_err("an unknown key is a refusal, not silence");
+        assert!(error.to_string().contains("totally_made_up"), "{error}");
+
+        // A renamed recipe knob would otherwise become the default — a
+        // default standing in for a measurement, the exact failure mode the
+        // schema exists to refuse.
+        let mut with_typo = valid;
+        with_typo.as_object_mut().expect("object").insert(
+            String::from("recipe"),
+            serde_json::json!({"trimstart_s": 0.4}),
+        );
+        let error = Sidecar::from_value(with_typo, Path::new("test.json"))
+            .expect_err("a typo'd recipe key is a refusal");
+        assert!(error.to_string().contains("trimstart_s"), "{error}");
     }
 
     #[test]

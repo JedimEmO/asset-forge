@@ -251,3 +251,24 @@ shell saw `$out/…` under `set -u`); fixed the same day. **Why:** the
 justfile's header promises the `--justfile` form, and the end-to-end run
 was the first time anyone used it — a recipe that works only from the
 toolkit checkout is a recipe that works only for its author. 2026-08-23.
+
+**Not published to crates.io.** The crates stay unpublished; a game
+depends on the toolkit by git or path. **Why:** two of the seven library
+names (`forge_manifest`, `forge_audio`) already exist on the registry
+(crates.io treats `-` and `_` as one name), and renaming them to squat
+free names would trade the code's real names for a registry nobody here
+needs — the toolkit ships a binary, a Python layer and a rig profile
+together, and a git or path dependency is the honest shape for a thing
+that is only whole as a checkout. `just publish-check` stays as the
+packaging-hygiene gate (each library crate builds in isolation), not as a
+release step. 2026-08-23.
+
+**The code licence does not cover the samples.** MIT OR Apache-2.0 is
+scoped to the code, in so many words, at the top of both LICENSE files and
+in README §Licence; the sample assets under `assets/` and `assets-src/`
+are governed by `assets-src/SOURCES.md`, summarised per kind in
+`assets/LICENSE.md`. **Why:** the sample meshes' textures were baked
+through nvdiffrast (non-commercial), so an unqualified MIT grant over the
+repository handed a stranger files the repo's own records say may not be
+sold — the licence and the records told two different stories, and the
+records were right. 2026-08-23.

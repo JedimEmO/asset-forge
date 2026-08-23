@@ -694,9 +694,15 @@ impl RigFindings {
 
     /// Whether the model on the stage satisfies the contract outright — every
     /// check passed, notes and warnings aside.
+    ///
+    /// At least one real check must have run: a stage that produced only
+    /// notes — a static model, say — made no claim, and "conforms to the rig
+    /// contract" over a barrel would be an invented pass.
     #[must_use]
     pub fn conforms(&self) -> bool {
-        self.generation > 0 && self.findings.iter().all(Finding::passed)
+        self.generation > 0
+            && self.findings.iter().any(|finding| !finding.is_note())
+            && self.findings.iter().all(Finding::passed)
     }
 
     /// The checks that failed, in report order.

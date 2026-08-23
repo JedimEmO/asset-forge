@@ -32,8 +32,12 @@ def test_numpy_reads_what_we_write(tmp_path):
             f"{name}.npy" for name in (
                 "local_rot_mats", "global_rot_mats", "posed_joints", "root_positions", "smooth_root_pos",
                 "foot_contacts", "global_root_heading", "fps", "text",
+                # The one member no real take carries: the placeholder brand
+                # that lets --fake refuse to overwrite a real take.
+                "forge_gen_fake",
             )
         )
+        assert placeholders.is_placeholder(path)
 
 
 def test_our_reader_agrees_with_numpy_on_every_dtype(tmp_path):

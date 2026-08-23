@@ -37,6 +37,47 @@ pub(crate) struct GenResult {
     pub(crate) payload: Option<Value>,
 }
 
+/// Whether the command line is only asking for help text.
+pub(crate) fn wants_help(args: &GenArgs) -> bool {
+    args.rest.iter().any(|a| a == "--help" || a == "-h")
+}
+
+/// Print a generator's help without a project.
+///
+/// `forge gen sfx --help` is an agent reading a flag table before choosing
+/// a directory; argparse answers it without ever touching a library, so the
+/// project discovery the real call needs is not a reason to refuse. The
+/// toolkit still has to be findable — the help lives in the Python layer.
+pub(crate) fn help(args: &GenArgs) -> Outcome {
+    let Some(toolkit) = crate::toolkit::gen_dir() else {
+        return Err(Failure::from_gen(
+            GenExit::MissingTool,
+            format!(
+                "the toolkit's python/forge_gen was not found from this executable — set \
+                 {HOME_ENV} to the asset-forge checkout"
+            ),
+        ));
+    };
+    let mut command = Command::new("python3");
+    command.arg(toolkit.join("python").join("forge_gen"));
+    command.args(&args.rest);
+    let status = command.status().map_err(|e| {
+        Failure::from_gen(
+            GenExit::MissingTool,
+            format!(
+                "python3 could not be started: {e} — the Python layer needs python3 >= 3.11 on PATH"
+            ),
+        )
+    })?;
+    match status.code() {
+        Some(0) | None => Ok(()),
+        Some(code) => Err(Failure::from_gen(
+            GenExit::from_code(code).unwrap_or(GenExit::Usage),
+            format!("forge-gen exited {code}"),
+        )),
+    }
+}
+
 /// Run one generator command and relay its verdict.
 pub(crate) fn run(project: &Project, args: &GenArgs) -> Outcome {
     let wants_json = args.rest.iter().any(|a| a == "--json");

@@ -28,10 +28,6 @@ pub(crate) const RENDER_TIMEOUT: Duration = Duration::from_mins(3);
 /// before it draws anything; a music track renders for minutes. The
 /// generate tools' ceiling, defined beside the render one so the two are
 /// read together.
-#[allow(
-    dead_code,
-    reason = "the ceiling for tools/generate.rs, which may state its own"
-)]
 pub(crate) const GENERATE_TIMEOUT: Duration = Duration::from_mins(20);
 
 /// Hard ceiling on `doctor`: every backend is probed inside its own
@@ -62,16 +58,27 @@ pub(crate) fn report(message: impl Into<String>) -> CallToolResult {
 /// `noun` is the singular thing being looked up — `clip`, `body`, `sound`
 /// — because "available clips (3)" reads and "available (3)" does not.
 pub(crate) fn refuse_unknown(noun: &str, wanted: &str, valid: &[String]) -> CallToolResult {
+    let plural = plural(noun);
     if valid.is_empty() {
         return refuse(format!(
-            "no {noun} matching {wanted:?} — and there are no {noun}s at all yet"
+            "no {noun} matching {wanted:?} — and there are no {plural} at all yet"
         ));
     }
     refuse(format!(
-        "no {noun} matching {wanted:?}.\navailable {noun}s ({}):\n  {}",
+        "no {noun} matching {wanted:?}.\navailable {plural} ({}):\n  {}",
         valid.len(),
         valid.join("\n  ")
     ))
+}
+
+/// The plural of a lookup noun: `mesh` takes -es, everything else here -s.
+/// One rule, because "available meshs" shipped once.
+fn plural(noun: &str) -> String {
+    if noun.ends_with('s') || noun.ends_with("sh") || noun.ends_with("ch") || noun.ends_with('x') {
+        format!("{noun}es")
+    } else {
+        format!("{noun}s")
+    }
 }
 
 /// What became of an attempt to inline an image.

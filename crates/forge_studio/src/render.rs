@@ -25,7 +25,7 @@ use crate::stage::{
     CAMERA_FOV_DEG, FRAME_PADDING, find_animation_root, ground_under, seek, spawn_stage,
     stylize_gltf_default_material, uncull_materials, world_bounds,
 };
-use crate::views::{HeadView, View};
+use crate::views::{Facing, HeadView, View};
 
 /// Frames to wait for assets before declaring them stuck.
 const MAX_LOAD_FRAMES: u32 = 900;
@@ -479,9 +479,17 @@ pub fn render_views(stage: &Stage, request: &ViewsRequest) -> Result<Shot, Rende
     ground_under(app.world_mut(), lo.y);
     let (centre, radius) = enclosing(lo, hi);
 
+    // A rest pose faces the contract's +Z; a subject held in a clip pose was
+    // turned 180° by the bake and faces −Z. The labels follow the subject.
+    let facing = if request.pose.is_some() {
+        Facing::MinusZ
+    } else {
+        Facing::PlusZ
+    };
     let mut cells = Vec::with_capacity(cells_total as usize);
     for &view in &request.views {
-        let transform = view.camera_transform(centre, radius, CAMERA_FOV_DEG, FRAME_PADDING);
+        let transform =
+            view.camera_transform(facing, centre, radius, CAMERA_FOV_DEG, FRAME_PADDING);
         cells.push(capture_cell(
             &mut app,
             transform,
@@ -494,7 +502,7 @@ pub fn render_views(stage: &Stage, request: &ViewsRequest) -> Result<Shot, Rende
         let head_radius = HEAD_FRAME * height * 0.5;
         for view in HeadView::ALL {
             let transform =
-                view.camera_transform(focus, head_radius, CAMERA_FOV_DEG, FRAME_PADDING);
+                view.camera_transform(facing, focus, head_radius, CAMERA_FOV_DEG, FRAME_PADDING);
             cells.push(capture_cell(
                 &mut app,
                 transform,
@@ -667,10 +675,10 @@ const HEAD_FRACTION: f32 = 0.125;
 /// Where a head close-up should look, and how wide to frame it.
 ///
 /// **The `Head` bone decides, not the bounding box.** Deriving the focus from
-/// the whole-body bounds put it 5 cm behind the face: the subject faces −Z and
-/// the Z extent is dominated by the *feet*, so the mid-point sits behind the
-/// skull and a camera aimed there renders a head that is too close and
-/// cropped. The bone is exactly where the head is, and the mesh's top gives
+/// the whole-body bounds put it 5 cm behind the face: the clip-posed subject
+/// faces −Z and the Z extent is dominated by the *feet*, so the mid-point sits
+/// behind the skull and a camera aimed there renders a head that is too close
+/// and cropped. The bone is exactly where the head is, and the mesh's top gives
 /// its size — so the frame is measured on both axes rather than assumed on
 /// either, and it follows whatever pose the clip is in.
 ///
@@ -704,8 +712,8 @@ fn head_sphere(app: &mut CaptureApp, lo: Vec3, hi: Vec3) -> (Vec3, f32) {
     let half = above * 1.25;
     (
         // Centre between crown and estimated chin, nudged a little forward
-        // (−Z is the way a subject faces) so the frame centres on the face
-        // rather than on the skull's axis.
+        // (−Z is the way a clip-posed subject faces) so the frame centres on
+        // the face rather than on the skull's axis.
         Vec3::new(head.x, hi.y - half, head.z - half * 0.15),
         // Margin past the half-height, so the frame holds the whole head
         // plus a little collar — which is what makes a jaw line judgeable.
@@ -731,7 +739,9 @@ fn capture_head_row(
     let mut cells = Vec::with_capacity(FACES.len());
     seek(app.world_mut(), anim_root, node, time);
     for view in FACES {
-        let transform = view.camera_transform(focus, radius, CAMERA_FOV_DEG, FRAME_PADDING);
+        // The subject is posed by a baked clip, which plays facing −Z.
+        let transform =
+            view.camera_transform(Facing::MinusZ, focus, radius, CAMERA_FOV_DEG, FRAME_PADDING);
         cells.push(capture_cell(
             app,
             transform,
@@ -753,7 +763,14 @@ fn capture_poses(
 ) -> Result<Vec<SheetCell>, RenderError> {
     let mut cells = Vec::with_capacity(times.len() * request.views.len().max(1));
     for &view in &request.views {
-        let transform = view.camera_transform(centre, radius, CAMERA_FOV_DEG, FRAME_PADDING);
+        // Sheets always pose a clip, and a baked clip plays facing −Z.
+        let transform = view.camera_transform(
+            Facing::MinusZ,
+            centre,
+            radius,
+            CAMERA_FOV_DEG,
+            FRAME_PADDING,
+        );
         let camera = place_camera(app, transform);
 
         for (index, &t) in times.iter().enumerate() {

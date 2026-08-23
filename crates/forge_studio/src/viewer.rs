@@ -1,9 +1,9 @@
 //! The window itself: what it is called, and how to photograph it.
 //!
-//! What used to live here — the clip list, the transport, the metadata panel —
-//! is now [`crate::studio`], which the audio player has since joined. These two
-//! pieces stay because they are about the *window* rather than about any panel
-//! in it.
+//! Only these two pieces live here because they are about the *window* rather
+//! than about any panel in it; everything drawn inside the window — the
+//! library column, the transport, the metadata panel, the audio player — is
+//! [`crate::studio`]'s.
 
 use std::path::PathBuf;
 

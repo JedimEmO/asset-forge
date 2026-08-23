@@ -31,6 +31,12 @@ importer asked to keep glTF's own bone directions (``TEMPERANCE``), add
 nothing, and save the ``.blend``. It is how a ``rig.blend`` is re-made for a
 new Blender when the rig itself has not changed.
 
+Like every generator command, a run leaves a record beside what it wrote —
+``<rig.blend>.rig_build.json``: the source clip hashed as an input, the
+Blender build hash as the backend, the ``[fingers]`` knobs as params and the
+bone count as a measurement — so the profile's own rig is no longer the one
+artefact in the chain with no provenance.
+
 **Validating a Blender bump.** A ``.blend`` is not byte-stable across
 Blender versions and neither is a glTF export, so a rebuilt rig is proven
 by its *contract*, not its bytes: run ``forge-gen rig-build``, then ``forge
@@ -55,7 +61,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from forge_gen import profile as profile_mod  # noqa: E402
+from forge_gen import placeholders, profile as profile_mod, records  # noqa: E402
 from forge_gen.blender import _common  # noqa: E402
 from forge_gen.exit_codes import BackendFailed, InputRejected, UsageError  # noqa: E402
 
@@ -68,8 +74,6 @@ TAG = "rig-build"
 #: reference armature in ``rig.blend``.
 DEFAULT_ARMATURE_DATA = "StandardRig"
 
-#: Bytes a ``--fake`` .blend starts with (see ``rig.py``).
-FAKE_BLEND_HEADER = b"BLENDER-v000RENDH"
 
 
 # --------------------------------------------------------------- arguments --
@@ -123,6 +127,7 @@ def _spec(args) -> dict:
         "out_dir": out_dir,
         "out_blend": out_dir / profile.rig_blend.name,
         "out_glb": out_dir / profile.rig_glb.name,
+        "record": out_dir / (profile.rig_blend.name + ".rig_build.json"),
         "armature_node": str(bones["armature_node"]),
         "armature_data": str(bones.get("armature_data") or DEFAULT_ARMATURE_DATA),
         "reference_stature": float(bones["reference_stature_m"]),
@@ -151,44 +156,45 @@ def run(args) -> dict:
     return _common.outer_result(inner)
 
 
-def _is_fake_file(path: Path) -> bool:
-    try:
-        with open(path, "rb") as handle:
-            return handle.read(len(FAKE_BLEND_HEADER)) == FAKE_BLEND_HEADER
-    except OSError:
-        return False
+def _record_params(spec: dict) -> dict:
+    """Every knob the build was given, from the profile's ``[fingers]`` and the mode."""
+    return {
+        "profile": spec["profile"].name,
+        "mode": spec["mode"],
+        "armature_node": spec["armature_node"],
+        "knuckle_offset_m": spec["knuckle_offset"],
+        "thumb_segments_m": list(spec["thumb_segments"]),
+        "finger_chains": [chain["name"] for chain in spec["chains"]],
+        "rebuild_tolerance_m": spec["rebuild_tolerance"],
+        "y_up": spec["y_up"],
+    }
 
 
 def run_fake(args) -> dict:
-    """Placeholder rig files — but never over a real one.
+    """Placeholder rig files and a record that says so — but never over a real one.
 
     ``rig-build`` writes into a profile directory by default, and a fake run
     that replaced a real ``rig.blend`` with a stub would break every rig
-    and export after it. A target that exists and is not itself a fake is
-    refused.
+    and export after it. A target that exists and is not itself a
+    placeholder is refused (``placeholders.refuse_real``).
     """
     from forge_gen.blender import export as export_mod
 
     spec = _spec(args)
-    _common.existing_file(spec["source"], what="source clip" if spec["mode"] == "build" else "rig")
+    source = _common.existing_file(spec["source"], what="source clip" if spec["mode"] == "build" else "rig")
     outputs: list[Path] = [spec["out_blend"]] if spec["mode"] == "from-rig" else [spec["out_blend"], spec["out_glb"]]
-    for target in outputs:
-        if target.exists() and not _is_fake_file(target) and not (target.suffix == ".glb" and _is_fake_glb(target)):
-            raise UsageError(f"--fake refuses to overwrite {target}: it is a real rig file, not a placeholder")
-    spec["out_dir"].mkdir(parents=True, exist_ok=True)
-    spec["out_blend"].write_bytes(FAKE_BLEND_HEADER + b"\n# forge-gen --fake placeholder; not a Blender file\n")
+    placeholders.refuse_real(*outputs, spec["record"])
+    placeholders.placeholder_blend(spec["out_blend"])
     if spec["mode"] == "build":
         export_mod.fake_body_glb(spec["out_glb"], spec["profile"], name="Body")
-    return {"record": None, "outputs": [os.fspath(p) for p in outputs], "fake": True}
-
-
-def _is_fake_glb(path: Path) -> bool:
-    from forge_gen import glb as glb_mod
-
-    try:
-        return str(glb_mod.verify_glb(path).get("generator") or "").startswith("forge-gen --fake")
-    except (glb_mod.GlbError, OSError):
-        return False
+    rec = placeholders.fake_record("rig", _common.TOOL, backend=_common.BACKEND_NAME, created_by=getattr(args, "created_by", None))
+    records.add_input(rec, "clip" if spec["mode"] == "build" else "rig", source)
+    rec["params"] = _record_params(spec)
+    rec["measured"] = {"bones": None, "fingers_added": None, "stature_m": None, "contract_drift_m": None}
+    for target in outputs:
+        records.add_output(rec, target)
+    records.write(rec, spec["record"])
+    return {"record": os.fspath(spec["record"]), "outputs": [os.fspath(p) for p in outputs], "fake": True}
 
 
 # ------------------------------------------------------------------- inner --
@@ -254,9 +260,26 @@ def run_in_blender(argv: list[str]) -> dict:
         _common.export_glb(spec["out_glb"], materials="NONE", y_up=spec["y_up"])
         _common.log(TAG, f"wrote {spec['out_glb']}")
         outputs.append(spec["out_glb"])
+
+    # The profile's own rig gets a record like every other generated
+    # artefact: which Blender, which fixture clip (hashed), which [fingers]
+    # knobs, and what came out. Records.py's docstring is "every run of a
+    # generator leaves one of these beside what it produced" — the rig this
+    # whole pipeline hangs off was the one exception.
+    rec = _common.new_record("rig", created_by=args.created_by)
+    records.add_input(rec, "clip" if spec["mode"] == "build" else "rig", source)
+    rec["params"] = _record_params(spec)
+    rec["measured"] = {
+        "bones": len(arm_obj.data.bones),
+        "fingers_added": added,
+        "stature_m": round(stature, 4),
+        "contract_drift_m": drift,
+    }
+    record_path = _common.finish_record(rec, outputs=outputs, record_path=spec["record"])
+    _common.log(TAG, f"wrote {record_path}")
     _common.log(TAG, "next — forge rig export-contract, then cargo test -p forge_rig (the drift test) before committing")
     return _common.success(
-        None,
+        record_path,
         outputs,
         bones=len(arm_obj.data.bones),
         fingers_added=added,

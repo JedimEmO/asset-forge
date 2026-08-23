@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-08-23
 
 The first cut: the asset pipeline one game grew over three weeks, distilled
 into a toolkit with one job — local generation and judging of game assets,
@@ -10,9 +10,10 @@ reader shipped.
 
 ### Ships
 
-**Crates** (seven for crates.io, three `publish = false`; Bevy pinned to
-`=0.19.0`; toolchain 1.96.1; `just publish-check` packages every registry
-crate in isolation):
+**Crates** (ten; not published to crates.io — depend on them by path or
+git, see `designs/decisions.md`; Bevy pinned to `=0.19.0`; toolchain
+1.96.1; `just publish-check` packages each of the seven library crates in
+isolation as a hygiene gate):
 
 - `forge_raster` — a CPU canvas with a 5×7 bitmap font, for labelled review
   images. No dependencies beyond `image`.
@@ -30,7 +31,7 @@ crate in isolation):
 - `forge_audio` — decode (WAV, OGG, MP3, FLAC), measure, plot. No output
   backend, so it runs where there is no sound card.
 - `forge_capture` — windowless Bevy frame capture and contact-sheet
-  composition; the one registry crate that links Bevy.
+  composition; the one library crate that links Bevy.
 - `forge_library` — sidecar schema 1, the scan-derived catalog, the project
   file (`forge.toml`), the four direct promote doors (body, model, clip,
   audio — each refuses an existing name unless told `--overwrite`), the
@@ -67,9 +68,10 @@ never in the tree):
 - `forge doctor` (ok | partial | missing | broken per backend, Blender,
   ffmpeg, the GPU, the rig profile) and `forge gpu` (who holds the card;
   exits 1 when the largest backend would not fit).
-- `FORGE_FAKE=1` — every `forge gen` writes placeholders that pass the same
-  validators as real output; `just ci-fake` runs the four pipelines end to
-  end on them with no GPU, no backend and no Blender.
+- `FORGE_FAKE=1` — every `forge gen` writes branded placeholders that pass
+  the same validators as real output (a fake never overwrites a real file);
+  `just ci-fake` runs the five pipelines — prop, character, clip, sfx and
+  voice→speech — end to end on them with no GPU, no backend and no Blender.
 
 **The rig profile as data** — `rigs/humanoid/`: `contract.json` (55 bones,
 generated from `rig.glb`), `sockets.json`, `motion_skeleton.json`,
@@ -88,25 +90,29 @@ with its record beside it, and `forge verify` holds every
 brought clip); a shipped line carries the clip as its `source` and the
 voice record in its generator block.
 
-**Skills** — six under `.claude/skills/`, every command checked against the
-justfile and every log line captured from a real run: `forge-setup`,
+**Skills** — seven under `.claude/skills/`, every command checked against
+the justfile and every log line captured from a real run: `forge-setup`,
 `forge-prop`, `forge-character`, `forge-clip`, `forge-audio`,
-`forge-review`. Plus `CLAUDE.md` with the one-way rule and `.mcp.json` for
-the server.
+`forge-voice`, `forge-review`. Plus `CLAUDE.md` with the one-way rule and
+`.mcp.json` for the server.
 
 **The sample library** — one body (`vex_runner`: `.glb`, `.blend`, the
 reference PNG and its lift record), two models (`sword` at the grip,
 `barrel` on the floor), six clips (`walk`, `roll`, `pistol_shoot`, `idle`,
 `jump`, `death`) baked from the takes committed under `assets-src/takes/`
 with honest `reconstructed` provenance, two sound effects and one music
-track rendered here with seeds (`recorded`). `assets/library.json` projected
-from it and checked in CI.
+track rendered here with seeds (`recorded`), one designed voice
+(`assets-src/voices/crypt_warden/` — MOSS-VoiceGenerator from a description
+at seed 7, with its record) and one line cloned from it
+(`audio/voice/warden_greeting.wav`, `recorded`). `assets/library.json`
+projected from it and checked in CI.
 
-**CI** — `just ci` (fmt, clippy `-D warnings`, tests, the offscreen smoke,
-audit, check-bodies, manifest-check, verify) and the GitHub Actions
-workflow: fmt, clippy, test (Rust, pytest, `mcp-check`, `ci-fake`), a
-headless job on lavapipe (smoke, sheets, check-bodies, views on the
-committed fixture, audit, manifest-check, verify), and publish-check.
+**CI** — `just ci`, one gate matching what GitHub Actions runs: fmt,
+clippy `-D warnings` + rustdoc `-D warnings`, Rust tests, pytest, the
+offscreen smoke, audit, check-bodies, manifest-check, verify, `mcp-check`
+and `ci-fake`. The workflow adds a headless job on lavapipe (smoke,
+sheets, check-bodies, views on the committed fixture, audit,
+manifest-check, verify) and publish-check.
 
 ### Deliberately not in 0.1.0
 
@@ -140,6 +146,7 @@ Everything is tested on one Linux machine with one 24 GB NVIDIA card; the
 headless CI job is proven locally on llvmpipe and not yet seen green on a
 GitHub runner. DINOv3 is gated, so a fresh clone cannot lift until
 `hf auth login`. The ACE-Step server stays resident (~8 GB) until
-`forge gen music --stop-server`. The tests of the published crates read
+`forge gen music --stop-server`. The library crates' tests read
 `rigs/humanoid/` from the repository and are not meant to run from a
-downloaded `.crate`.
+packaged `.crate` (which is fine: the crates are not published — use them
+by path or git).

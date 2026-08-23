@@ -268,6 +268,7 @@ mod tests {
                 note: None,
                 created_by: Actor::Human,
                 overwrite: false,
+                allow_defective: false,
             },
         )
         .expect("promote the sound");

@@ -67,6 +67,19 @@ pub struct Metrics {
 }
 
 impl Metrics {
+    /// Silent or clipped: the two measurements that are defects, not
+    /// observations.
+    ///
+    /// A build that ships either has a real problem — this is the rule
+    /// `forge audio inspect|list` exit on and the promote door refuses on,
+    /// kept here so every caller means the same thing by "defective".
+    /// Everything else [`Metrics::warnings`] reports is worth a look, not a
+    /// red build.
+    #[must_use]
+    pub fn is_defective(&self) -> bool {
+        self.silent || self.longest_clip_run >= CLIP_RUN
+    }
+
     /// Problems worth a human's attention, most serious first.
     ///
     /// Deliberately conservative: a warning nobody trusts is worse than none.

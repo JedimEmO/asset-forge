@@ -30,6 +30,17 @@ not.
   after the env built fine. 2026-08-18.
 - **Resolve absence before the GPU.** A missing env exits 3 in about
   100 ms; the launcher never imports torch to find out. 2026-08-23.
+- **The ambient shell can shadow a backend's `[env]` — and on this machine
+  it did.** The launcher applies a plain `[env]` value with `setdefault`,
+  so a variable already exported by the shell wins: an anaconda-base
+  `CC`/`CXX` in the ambient environment shadowed trellis2's gcc-13 trio
+  and fed nvdiffrast's JIT a mixed CUDA host toolchain. Load-bearing
+  values now go in `[env.force]` in `backend.toml` (applied
+  unconditionally; overlap with `[env]` is refused) — trellis2 forces
+  `CC`, `CXX`, `CUDAHOSTCXX`, `CUDA_HOME`, `PYTHONNOUSERSITE` — and
+  `forge doctor` prints a `warn env:<KEY> …` row for every ambient value
+  that shadows a remaining plain `[env]` one. A backend variable the run
+  cannot work without belongs in `[env.force]`, not `[env]`. 2026-08-23.
 
 ## TRELLIS.2 (`backends/trellis2`, conda, commit `75fbf018`)
 
@@ -75,7 +86,8 @@ not.
   non-commercial.** It is the texture baker, and nothing in the lift works
   without it. The installer requires `--yes` or interactive consent with
   the licence printed, `forge doctor` warns while it is installed, and
-  every lift record carries `texture_baker: "nvdiffrast (non-commercial)"`.
+  every lift record carries `texture_baker: "nvdiffrast (NVIDIA Source
+  Code License, non-commercial)"` — the exact string `mesh.py` writes.
   A replacement baker is a follow-up. 2026-08-23.
 - **No `extension_webp` on export.** Upstream demos embed WebP textures;
   `bevy_gltf` does not decode them. A plain `.export()` on the trimesh

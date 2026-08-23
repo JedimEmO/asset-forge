@@ -110,6 +110,27 @@ def test_json_error_payload_is_the_last_line_and_fake_env_is_read(monkeypatch, t
     assert json.loads(out.getvalue().strip().splitlines()[-1])["record"] == "fake", "--fake before the command works too"
 
 
+def test_argparse_refusals_keep_the_json_contract():
+    """Exit 2 from argparse itself was the one refusal with no JSON last line."""
+    done = _run("sfx", "--json", "--no-such-flag")
+    assert done.returncode == exit_codes.USAGE
+    last = json.loads(done.stdout.strip().splitlines()[-1])
+    assert last["ok"] is False and last["error"] == "usage" and "--no-such-flag" in last["message"]
+    done = _run("rig", "--json")  # missing required arguments
+    assert done.returncode == exit_codes.USAGE
+    assert json.loads(done.stdout.strip().splitlines()[-1])["error"] == "usage"
+    # Without --json the contract asks for nothing on stdout but the usage text.
+    done = _run("sfx", "--no-such-flag")
+    assert done.returncode == exit_codes.USAGE and not done.stdout.strip()
+
+
+def test_old_python_is_refused_with_the_interpreter_named(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "version_info", (3, 10, 12))
+    assert cli.main(["doctor", "--json"]) == exit_codes.MISSING_TOOL
+    err = capsys.readouterr().err
+    assert "needs python3 >= 3.11" in err and "3.10.12" in err and sys.executable in err
+
+
 def test_project_flag_must_be_a_directory(tmp_path):
     done = _run("doctor", "--project", str(tmp_path / "nope"), "--json")
     assert done.returncode == exit_codes.USAGE

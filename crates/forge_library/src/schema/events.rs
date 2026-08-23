@@ -47,6 +47,7 @@ pub fn valid_event_name(name: &str) -> bool {
 
 /// One named instant on a clip's timeline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnimEvent {
     /// When it happens on the **built clip**, seconds from frame 0. This is
     /// the value a game samples, and it is recomputed at every bake.
@@ -223,6 +224,7 @@ impl<'de> Deserialize<'de> for AudioRef {
 /// instruction to it: the recipe's `in_place` says what to remove, and this
 /// records what was removed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootMotion {
     /// Net XZ travel from the first built frame to the last, metres, as
     /// `[x, z]` in the built clip's ground plane — rig space, character

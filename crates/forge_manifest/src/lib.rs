@@ -52,6 +52,7 @@ pub const SCHEMA: u64 = 1;
 
 /// Everything a game needs to know about a shipped asset library.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// Schema version. Always [`SCHEMA`] when written by this build.
     pub schema: u64,
@@ -92,6 +93,7 @@ pub struct Manifest {
 /// attach a sword to `hand_r`, or walk the skeleton to find the head, must
 /// not have to learn the profile's on-disk layout to do it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RigInfo {
     /// The rig profile's name, e.g. `humanoid`.
     pub profile: String,
@@ -118,6 +120,7 @@ pub struct RigInfo {
 /// from the `.glb` it already loads, and restating them here would make the
 /// manifest a second source of truth for numbers the file carries exactly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RigBone {
     /// The bone's name — the exact string clips target, so it is the identity.
     pub name: String,
@@ -135,6 +138,7 @@ pub struct RigBone {
 /// children), rotation `[x, y, z, w]` carrying a prop's authoring frame —
 /// long axis +Y, front −Z, grip at the origin — into bone space.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RigSocket {
     /// The socket's name — the string a game passes at the attach call site.
     pub name: String,
@@ -148,6 +152,7 @@ pub struct RigSocket {
 
 /// One shipped animation clip.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClipEntry {
     /// File stem — the name everything refers to the clip by.
     pub name: String,
@@ -178,6 +183,7 @@ pub struct ClipEntry {
 /// An unmeasured track is an explicit `null` fps and an empty list, per the
 /// null-means-unknown rule; neither field is ever skipped on write.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootMotionInfo {
     /// How net root travel was removed at bake time.
     pub mode: RootMotionMode,
@@ -228,6 +234,7 @@ impl RootMotionMode {
 
 /// One named instant on a clip's timeline — a footstep, a fire moment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManifestEvent {
     /// Event name, e.g. `footstep_left`.
     pub name: String,
@@ -307,6 +314,7 @@ impl fmt::Display for AudioLink {
 
 /// One shipped sound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AudioEntry {
     /// File stem — the name everything refers to the sound by.
     pub name: String,
@@ -360,6 +368,7 @@ impl AudioKind {
 /// One shipped model — a prop, a fixture, anything a game spawns that does
 /// not stand on the rig contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelEntry {
     /// File stem — the name everything refers to the model by.
     pub name: String,
@@ -382,6 +391,7 @@ pub struct ModelEntry {
 /// two make different promises, and a consumer that wants "a thing every
 /// clip plays on" should not have to guess which models qualify.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BodyEntry {
     /// File stem — the name everything refers to the body by.
     pub name: String,
@@ -714,6 +724,20 @@ mod tests {
             matches!(error, ManifestError::NewerSchema { found: 99, .. }),
             "{error:?}"
         );
+    }
+
+    /// A typo'd or renamed key at the current schema is a parse refusal,
+    /// not a default: an entry field that silently read as its default
+    /// would be the manifest inventing a fact about an asset.
+    #[test]
+    fn a_typoed_key_at_the_current_schema_is_refused() {
+        let bytes = sample().to_vec_pretty().expect("serialize");
+        let text = String::from_utf8(bytes).expect("utf8");
+        let with_stray = text.replacen("\"clips\":", "\"totally_made_up\": 1, \"clips\":", 1);
+        assert_ne!(with_stray, text, "the insertion must have landed");
+        let error = Manifest::from_slice(with_stray.as_bytes()).expect_err("must refuse");
+        let message = error.to_string();
+        assert!(message.contains("totally_made_up"), "{message}");
     }
 
     #[test]

@@ -32,11 +32,58 @@ def repo_root() -> Path:
 
 
 def default_dir() -> Path:
-    """``$FORGE_RIG_PROFILE`` when set, else ``<repo>/rigs/humanoid``."""
+    """The rig profile in force when none is named.
+
+    ``$FORGE_RIG_PROFILE`` when set (what the Rust ``forge gen`` exports),
+    else the *project's* profile — ``forge.toml``'s ``[paths] rigs`` and
+    ``[project] rig``, from ``--project`` when it was given or the nearest
+    ``forge.toml`` above the working directory — and the toolkit's own
+    ``rigs/humanoid`` only as the final fallback. ``python3 python/forge_gen``
+    run bare used to skip the project half and silently hold a body to the
+    toolkit's contract instead of the project's.
+    """
     override = os.environ.get("FORGE_RIG_PROFILE")
     if override:
         return Path(override).expanduser().resolve()
+    root = _project_root()
+    if root is not None:
+        named = _project_profile_dir(root)
+        if named is not None:
+            return named
     return repo_root() / "rigs" / DEFAULT_NAME
+
+
+def _project_root() -> Path | None:
+    """The project in force: ``--project`` (via ``records.set_project``), else the nearest ``forge.toml`` above cwd."""
+    from forge_gen import records
+
+    known = records.project()
+    if known is not None:
+        return known
+    current = Path.cwd().resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / "forge.toml").is_file():
+            return candidate
+    return None
+
+
+def _project_profile_dir(root: Path) -> Path | None:
+    """``<root>/<paths.rigs>/<project.rig>`` from the project's ``forge.toml``, or ``None`` when it does not parse.
+
+    Returned even when the directory is absent: a project that names a
+    profile it does not have should fail loudly with that path in the
+    message, not fall back to the toolkit's copy and pass the wrong gates.
+    """
+    try:
+        with open(root / "forge.toml", "rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    paths = data.get("paths") if isinstance(data.get("paths"), dict) else {}
+    project = data.get("project") if isinstance(data.get("project"), dict) else {}
+    rigs = str(paths.get("rigs", "rigs"))
+    rig = str(project.get("rig", DEFAULT_NAME))
+    return (root / rigs / rig).resolve()
 
 
 @dataclass

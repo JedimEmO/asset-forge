@@ -88,13 +88,16 @@ showing means the surface is missing`, then `4 cells, 384x512 each`,
 dimension ≈ 1 and `lowest y` near −0.5 — not metres yet), tiles `FRONT`
 `BACK` `LEFT` `RIGHT`.
 
-**The imaged face lands on the `BACK` tile.** The `FRONT` camera sits on
-the −Z side and a lift comes out with its pictured side toward +Z — so a
-terminal's screen, a crate's stencilled face, a counter's front show in
-`BACK`, and `FRONT` is the far side TRELLIS had to invent. That is the
-tile to judge:
+**The imaged face lands on the `FRONT` tile.** The `FRONT` tile shows the
+file's +Z side and a lift comes out with its pictured side toward +Z — so
+a terminal's screen, a crate's stencilled face, a counter's front show in
+`FRONT`, and `BACK` is the far side TRELLIS had to invent. (A raw lift is
+not yet normalized, so its labels name the file's axes, not the content's
+facing: read the tiles by what they show, and a lift that came out facing
+elsewhere is turned with `--yaw-deg` at step 3.) `BACK` is the tile to
+judge:
 
-- **Far side present?** `FRONT` is what TRELLIS invented: expect a plausible
+- **Far side present?** `BACK` is what TRELLIS invented: expect a plausible
   but smeared surface (the back of a chair lifted from its front shows a
   mirrored blur of the seat's paint — that is normal). With culling off, a
   *missing* back shows as the inside of the imaged face instead: unlit,
@@ -105,11 +108,12 @@ tile to judge:
   speck floating beside it.
 - **For a weapon, read the axes now.** `--long-axis` names the lift's
   hilt→tip axis in Blender's frame (what the importer sees): up in the
-  `FRONT` tile is `z`; toward the `RIGHT` tile's camera is `x` (toward
-  `LEFT`'s is `-x`); toward the `BACK` camera is `-y` (toward `FRONT`'s is
-  `y`). A sword lying tip-to-the-right in the sheet is `--long-axis x`; a
-  pistol pointing at the `BACK` camera is `--long-axis -y`. Note which way
-  the edge or the sights face too; that is the roll. Step 3 needs both.
+  `FRONT` tile is `z`; toward the `LEFT` tile's camera is `x` (toward
+  `RIGHT`'s is `-x`); toward the `FRONT` camera is `-y` (toward `BACK`'s is
+  `y`). A sword lying tip-to-the-right in the `FRONT` tile is
+  `--long-axis x`; a pistol pointing at the `FRONT` camera is
+  `--long-axis -y`. Note which way the edge or the sights face too; that
+  is the roll. Step 3 needs both.
 
 ## Step 3 — normalize and file: `just prop-import <name> --height M | --length M [placement] [flags]`
 
@@ -185,16 +189,20 @@ records, `bounds_m`) and refreshes `assets/library.json`.
   `CANDELABRA.GLB  4 VIEWS  CULL ON  0.64 X 1.20 X 0.44 M`. Right way up,
   right size (metres now), origin where the placement said (`lowest y
   0.000` for a floor prop; negative by the grip height for a weapon). A
-  weapon stands hilt-down along +Y with its edge toward the `FRONT`
-  camera: edge-on in `FRONT`/`BACK`, the flat in `LEFT`/`RIGHT`. The flat
-  in `FRONT` means the roll is 90° off.
+  shipped prop's `FRONT` tile is the +Z side, `LEFT`/`RIGHT` the subject's
+  own left (+X) and right (−X). A weapon stands hilt-down along +Y with
+  its edge on the authoring front (glTF −Z, the `BACK` camera's side):
+  edge-on in `FRONT`/`BACK`, the flat in `LEFT`/`RIGHT`. The flat in
+  `FRONT` means the roll is 90° off.
 - `just studio --model <name>` — for the user; orbitable, beside the stage
-  body for scale. Their eye outranks the sheet. (The terminal prints rig
-  findings for whatever is loaded, so a prop lists `contract bone …
-  missing` and `no skinned mesh` — that is a model, not a defect.)
+  body for scale. Their eye outranks the sheet. (For a model the terminal
+  prints one note — `static model: no rig, nothing to hold to the
+  contract` — instead of rig findings; that is a model, not a defect.)
 - `just manifest-check` (`1 checked, ok` / `assets/library.json matches a
   rebuild of the library`), `just verify` (`N checked, ok`; the ledger
-  row), then `just ci`.
+  row), `just audit`. Those three are the project's gates; `just ci` is
+  the toolkit's own gate, run from the checkout — its dev recipes always
+  act on the checkout, never on your project.
 
 ## Step 5 — commit set (only when the user asks)
 
@@ -221,8 +229,11 @@ or hangs a ceiling one is the game's business.
 - The far side is invented from one view. Sweep seeds, do not sculpt.
 - 12 000 triangles is the ceiling and 6 000 vertices the register; a prop
   that needs more is two props.
-- `forge views` labels `FRONT` from −Z, so the pictured side is the `BACK`
-  tile — read the tiles as described in step 2, not by their names.
+- `forge views` labels `FRONT` as the file's +Z side — the contract's
+  front. On a raw lift (not yet normalized) that is where the pictured
+  side usually lands, but the labels name the file's axes, not the
+  content's facing: read the tiles as described in step 2, and turn a
+  wrong-facing lift with `--yaw-deg` at step 3.
 - Models claim integrity, not reproduction (Blender's export is not
   byte-stable); `just audit` holds them to the approved hash (`note
   <name>   model skipped: integrity-only, no recipe`) and `just rebake`

@@ -784,13 +784,27 @@ fn sync_clips(
 /// Runs after the library is discovered because "audio first" has to be able
 /// to fail over to a clip — a project with no audio at all opened with
 /// `--audio` should still show its clips rather than an empty window.
-pub(super) fn focus_first(
+///
+/// When the stage subject is a static model, no clip is selected at all: a
+/// clip on a barrel binds nothing, and the panel would open on "NOTHING
+/// BOUND" about a mesh that was never meant to move. A sound still is —
+/// there is nothing model-shaped about listening.
+pub fn focus_first(
     config: Res<StudioConfig>,
     library: Res<ClipLibrary>,
     audio: Res<AudioLibrary>,
+    models: Res<ModelLibrary>,
+    active: Res<ActiveModel>,
     mut selection: ResMut<Selection>,
 ) {
-    let clip = library.items.first().map(|item| item.key.clone());
+    let stage_is_model = models
+        .get(&active.path)
+        .is_some_and(|entry| entry.kind == Kind::Model);
+    let clip = library
+        .items
+        .first()
+        .filter(|_| !stage_is_model)
+        .map(|item| item.key.clone());
     let sound = audio.assets().first().map(|asset| asset.key.clone());
     let first = if config.audio {
         sound.or(clip)

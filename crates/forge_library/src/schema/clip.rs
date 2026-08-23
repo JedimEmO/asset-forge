@@ -182,7 +182,7 @@ pub enum AutoTrim {
 /// contract down as `Default` makes it one statement that a test can check,
 /// instead of five literals scattered through a parser that nothing checks.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ClipRecipe {
     /// Seconds cut from the start. Takes tend to open with a settle.
     pub trim_start_s: f32,

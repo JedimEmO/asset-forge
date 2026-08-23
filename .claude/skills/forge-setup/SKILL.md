@@ -15,11 +15,20 @@ guesses at what the table can say.
 
 - Linux, an NVIDIA card, `nvidia-smi` on PATH. 24 GB for the 1024³ lifts;
   16 GB is enough for clips and audio.
+- Rust via rustup (`rust-toolchain.toml` pins 1.96.1 and rustup fetches
+  it), `just`, and Bevy's headers — Debian/Ubuntu:
+  `sudo apt install libasound2-dev libudev-dev pkg-config`. Every recipe
+  builds `./target/debug/forge` first (minutes the first time — it links
+  Bevy), and `.mcp.json` launches that binary: on a fresh clone, run any
+  recipe once before the MCP server can start.
 - A system `python3` ≥ 3.11 (the launcher is stdlib-only and never imports
-  torch); `conda` for `trellis2` only (the other four are venvs).
+  torch; an older interpreter is refused with exit 6 naming the version
+  and the path — put a newer python3 first on PATH); `conda` for
+  `trellis2` only (the other four are venvs).
 - Blender ≥ 4.2 on PATH or `$BLENDER_BIN`, and `ffmpeg` — host tools, not
   backends; doctor lists them and nothing installs them.
-- Disk, per backend, before you start:
+- Disk, per backend, before you start (~80 GB and change for all five;
+  `just setup` with no name prints this bill and refuses without `--yes`):
 
   | Backend | Env + clone | Weights | Where |
   |---|---|---|---|
@@ -84,7 +93,8 @@ Lines under a row:
   **`nvdiffrast is non-commercial`** is the one that matters: TRELLIS.2's
   texture bake runs through nvdiffrast 0.4.0 under the NVIDIA Source Code
   License (1-Way Commercial), every lift record carries
-  `texture_baker: "nvdiffrast (non-commercial)"`, and a commercial project
+  `texture_baker: "nvdiffrast (NVIDIA Source Code License,
+  non-commercial)"`, and a commercial project
   cannot ship a lifted texture until a replacement baker exists. The line
   stays for as long as it is installed; it is not a defect to fix, it is a
   decision to make before lifting. `Built with Meta Llama 3` is ARDY's
@@ -106,6 +116,15 @@ Lines under a row:
   hunt for it.
 - `hint: the env's torch cannot see the GPU: driver, CUDA build of torch,
   or another process holding the card` — `nvidia-smi` first; then `just gpu`.
+- A `hint:` under a row that still reads `ok` is a hint, not a gate: the
+  generate will run. Act on it when it recurs — it usually names a link or
+  editable install that moved.
+- `warn env:<KEY>: the shell's <KEY>=… shadows backend.toml's …` — an
+  ambient shell variable is overriding one of the backend's plain `[env]`
+  values for the inner process. A warning, not a failure; the values a run
+  cannot work without (trellis2's `CC`/`CXX`/`CUDAHOSTCXX`/`CUDA_HOME`)
+  are in `[env.force]` and cannot be shadowed. Unset the ambient variable
+  if the run misbehaves — `designs/hosting.md` has the trap, dated.
 - `gpu … warn: GPU busy: pid N <name> X GB` — somebody holds more than
   2 GB. Believe it.
 
@@ -122,7 +141,9 @@ Exit 3. That hint is step 2.
 ### 2. Install or adopt — `just setup <backend> [flags]`
 
 `just setup` with no name runs every `backends/*/install.sh` in turn with
-the same flags; one at a time is easier to read. Installers are idempotent
+the same flags — after printing the ~80 GB disk bill and, without `--yes`,
+refusing with exit 2 (it names `--no-models` and the one-backend
+alternative). One at a time is easier to read. Installers are idempotent
 (`set -euo pipefail`, a finished env is a no-op) and every trap they encode
 is dated in `designs/hosting.md`. Common flags:
 

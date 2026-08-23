@@ -87,14 +87,18 @@ pub(crate) fn run(root: Option<&Path>, args: &InitArgs) -> Outcome {
             );
         }
         None => {
-            eprintln!(
-                "forge: no rig profile installed — the toolkit's rigs/{} could not be found \
-                 from this executable; set {} to the checkout or pass --rig-dir, then copy the \
-                 profile into {}",
+            // Exit non-zero: without the profile the project is half-made —
+            // the very next `forge verify` and `forge manifest` both exit 1
+            // on it — and an `init` that said ok anyway buried the one
+            // message that names the fix.
+            return Err(Failure::refused(format!(
+                "no rig profile installed — the toolkit's rigs/{} could not be found from \
+                 this executable. Set {} to the asset-forge checkout (or pass --rig-dir), \
+                 then run `forge init` here again; forge.toml and the directories are \
+                 already in place",
                 project.rig_name,
                 forge_library::backends::TOOLKIT_ENV,
-                project.rig_dir().display()
-            );
+            )));
         }
     }
     println!(

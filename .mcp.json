@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "forge": {
-      "command": "./target/debug/forge",
-      "args": ["mcp"],
+      "command": "sh",
+      "args": [
+        "-c",
+        "[ -x ./target/debug/forge ] || { echo 'forge MCP: no build yet — target/debug/forge is missing. Run `just install` (or any just recipe, or cargo build -p forge) from the repo root, then reconnect.' >&2; exit 1; }; exec ./target/debug/forge mcp"
+      ],
       "env": {}
     }
   }

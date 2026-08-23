@@ -17,15 +17,19 @@ if str(PYTHON_DIR) not in sys.path:
 REPO = PYTHON_DIR.parent
 
 
-def pytest_configure(config):
-    config.addinivalue_line("markers", "gpu: needs a CUDA device and an installed backend")
-    config.addinivalue_line("markers", "blender: needs a Blender binary")
-
-
 @pytest.fixture
 def repo_root() -> Path:
     """The toolkit checkout."""
     return REPO
+
+
+@pytest.fixture(autouse=True)
+def _forget_project():
+    """records.set_project is process-global; a test that sets it must not leak into the next."""
+    yield
+    from forge_gen import records
+
+    records.set_project(None)
 
 
 #: A backend.toml that parses, with one model per store and one notice.

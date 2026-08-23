@@ -108,6 +108,29 @@ fn write_sine_wav(path: &Path, seconds: f32) {
     std::fs::write(path, bytes).expect("write wav");
 }
 
+/// A WAV of pure digital silence, for the defect gate.
+fn write_silent_wav(path: &Path, seconds: f32) {
+    let sample_rate: u32 = 22_050;
+    let frames = (seconds * sample_rate as f32).round() as u32;
+    let data_bytes = frames * 2;
+    let mut bytes = Vec::with_capacity(44 + data_bytes as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_bytes.to_le_bytes());
+    bytes.resize(bytes.len() + data_bytes as usize, 0);
+    std::fs::write(path, bytes).expect("write wav");
+}
+
 /// The fixture mannequin for the project's profile, as a file to promote.
 fn mannequin(project: &Project, dir: &Path) -> PathBuf {
     let profile = project.profile().expect("profile");
@@ -618,6 +641,7 @@ fn audio_request(kind: Kind, name: &str, file: &Path, overwrite: bool) -> Promot
         note: None,
         created_by: Actor::Human,
         overwrite,
+        allow_defective: false,
     }
 }
 
@@ -827,4 +851,109 @@ fn a_stale_manifest_fails_the_check_until_rewritten() {
     );
     manifest::write(&project).expect("rewrite");
     assert!(manifest::check(&project).ok());
+}
+
+#[test]
+fn a_defective_sound_is_refused_unless_allowed() {
+    let (dir, project) = temp_project();
+    let wav = dir.path().join("nothing.wav");
+    write_silent_wav(&wav, 0.5);
+
+    let error = promote_audio(&project, &audio_request(Kind::Sfx, "nothing", &wav, false))
+        .expect_err("a silent file must not ship");
+    let text = error.to_string();
+    assert!(text.contains("defective"), "{text}");
+    assert!(text.contains("silent"), "{text}");
+    assert!(text.contains("--allow-defective"), "{text}");
+    assert!(
+        !project.kind_dir(Kind::Sfx).join("nothing.wav").exists(),
+        "the refusal wrote nothing"
+    );
+
+    let mut allowed = audio_request(Kind::Sfx, "nothing", &wav, false);
+    allowed.allow_defective = true;
+    promote_audio(&project, &allowed).expect("--allow-defective ships it anyway");
+}
+
+#[test]
+fn a_promote_over_an_orphaned_sidecar_still_needs_overwrite() {
+    let (_dir, project) = temp_project();
+    let first = promote_clip(&project, &clip_request("orph", roll_recipe(), false)).expect("one");
+    assert!(first.record.note.is_none());
+
+    // The hand-deleted payload leaves the record orphaned; the record is the
+    // part nobody can re-derive, so the door still refuses without overwrite.
+    std::fs::remove_file(&first.asset).expect("rm the clip");
+    let error = promote_clip(&project, &clip_request("orph", roll_recipe(), false))
+        .expect_err("the orphan record blocks the door");
+    match &error {
+        LibraryError::WouldOverwrite { name, path } => {
+            assert_eq!(name, "orph");
+            assert!(
+                path.to_string_lossy().ends_with("orph.json"),
+                "the refusal names the orphan record: {}",
+                path.display()
+            );
+        }
+        other => panic!("expected WouldOverwrite, got {other}"),
+    }
+    // Saying overwrite is what makes replacing it deliberate.
+    promote_clip(&project, &clip_request("orph", roll_recipe(), true)).expect("overwrite");
+}
+
+#[test]
+fn an_orphaned_audio_sidecar_blocks_the_audio_door_too() {
+    let (dir, project) = temp_project();
+    let wav = dir.path().join("tone.wav");
+    write_sine_wav(&wav, 0.25);
+    let first =
+        promote_audio(&project, &audio_request(Kind::Sfx, "tone", &wav, false)).expect("one");
+    std::fs::remove_file(&first.asset).expect("rm the sound");
+    let error = promote_audio(&project, &audio_request(Kind::Sfx, "tone", &wav, false))
+        .expect_err("the orphan record blocks the door");
+    assert!(
+        matches!(&error, LibraryError::WouldOverwrite { path, .. }
+            if path.to_string_lossy().ends_with("tone.json")),
+        "{error}"
+    );
+    promote_audio(&project, &audio_request(Kind::Sfx, "tone", &wav, true)).expect("overwrite");
+}
+
+#[test]
+fn two_concurrent_promotes_of_one_name_cannot_both_land() {
+    let (dir, project) = temp_project();
+    let wav = dir.path().join("thud.wav");
+    write_sine_wav(&wav, 0.25);
+
+    // Both doors race check-then-write; the project promote lock serializes
+    // them, so whichever runs second sees the shipped file and refuses.
+    let results: Vec<Result<_, _>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let project = &project;
+                let wav = &wav;
+                scope.spawn(move || {
+                    promote_audio(project, &audio_request(Kind::Sfx, "thud", wav, false))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("join"))
+            .collect()
+    });
+    let shipped = results.iter().filter(|r| r.is_ok()).count();
+    assert_eq!(shipped, 1, "exactly one of the two may land");
+    let refused = results
+        .iter()
+        .find_map(|r| r.as_ref().err())
+        .expect("one refusal");
+    assert!(
+        matches!(refused, LibraryError::WouldOverwrite { .. }),
+        "{refused}"
+    );
+    assert!(
+        !project.out.join(".promote.lock").exists(),
+        "the lock is released"
+    );
 }

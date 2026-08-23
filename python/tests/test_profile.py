@@ -63,6 +63,33 @@ def test_default_dir_and_env_override(monkeypatch, repo_root, tmp_path):
         profile.load_profile()
 
 
+def test_default_dir_honours_the_project_named_by_forge_toml(monkeypatch, repo_root, tmp_path):
+    """`python3 python/forge_gen` run bare must read the PROJECT's profile, not the toolkit's."""
+    from forge_gen import records
+
+    monkeypatch.delenv("FORGE_RIG_PROFILE", raising=False)
+    project = tmp_path / "game"
+    (project / "assets-src" / "rigs" / "humanoid").mkdir(parents=True)
+    (project / "forge.toml").write_text('[project]\nname = "game"\nrig = "humanoid"\n\n[paths]\nrigs = "assets-src/rigs"\n')
+    # Via --project (records.set_project is what cli.main calls).
+    records.set_project(project)
+    try:
+        assert profile.default_dir() == (project / "assets-src" / "rigs" / "humanoid").resolve()
+    finally:
+        records.set_project(None)
+    # Via the working directory, from anywhere inside the project.
+    monkeypatch.chdir(project / "assets-src")
+    assert profile.default_dir() == (project / "assets-src" / "rigs" / "humanoid").resolve()
+    # A project naming a profile it does not have still gets the project
+    # path — load_profile then fails loudly instead of the toolkit's copy
+    # passing the wrong gates.
+    (project / "forge.toml").write_text('[project]\nrig = "other"\n\n[paths]\nrigs = "assets-src/rigs"\n')
+    assert profile.default_dir() == (project / "assets-src" / "rigs" / "other").resolve()
+    # $FORGE_RIG_PROFILE still wins over everything.
+    monkeypatch.setenv("FORGE_RIG_PROFILE", str(repo_root / "rigs" / "humanoid"))
+    assert profile.default_dir() == repo_root / "rigs" / "humanoid"
+
+
 def test_disagreements_are_refused(repo_root, tmp_path):
     copy = tmp_path / "humanoid"
     shutil.copytree(repo_root / "rigs" / "humanoid", copy)

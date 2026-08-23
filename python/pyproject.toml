@@ -28,7 +28,3 @@ include = ["forge_gen*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "gpu: needs a CUDA device and an installed backend (skipped in CI)",
-    "blender: needs a Blender binary (skipped in CI)",
-]

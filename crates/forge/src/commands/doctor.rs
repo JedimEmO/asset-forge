@@ -349,7 +349,9 @@ fn host_lines(report: &Value, lines: &mut Vec<String>) {
             blender
                 .get("version")
                 .and_then(Value::as_str)
-                .unwrap_or("?"),
+                // `missing`, the word the backend rows use for the same
+                // fact — one status vocabulary per table.
+                .unwrap_or(if ok { "?" } else { "missing" }),
             blender.get("bin").and_then(Value::as_str).unwrap_or(""),
             if ok {
                 "ok"

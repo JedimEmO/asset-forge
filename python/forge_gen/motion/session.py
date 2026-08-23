@@ -235,7 +235,10 @@ def backend_block(model_name: str) -> dict:
 #: Every knob a take record states, in the order the contract lists them;
 #: ``records.write`` sorts the keys anyway. ``cfg`` is the text-CFG weight
 #: (the Rust reader projects ``params.cfg`` into ``ArdyParams::cfg``), and
-#: ``repo`` the upstream URL (``ArdyParams::repo``).
+#: ``repo`` the upstream URL (``ArdyParams::repo``). ``batch_size`` and
+#: ``grid`` (prompts/seeds/cfg/durations/samples counts) are the two knobs
+#: that decide which cells share a forward pass — without them, sample 3 of
+#: a batch of 8 cannot be re-derived from its own record.
 PARAM_KEYS = (
     "model",
     "model_repo",
@@ -253,6 +256,8 @@ PARAM_KEYS = (
     "keys_file",
     "keys_sha256",
     "preset",
+    "batch_size",
+    "grid",
 )
 
 

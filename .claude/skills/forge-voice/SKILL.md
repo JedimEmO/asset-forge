@@ -138,7 +138,10 @@ generator block. The log lines, the plot and the refusals are in
   voice moved on is a warning naming the line; whose voice is gone, a
   failure.
 - `just catalog --kind voice` — the line with `recorded` provenance.
-- `just audio-list`, `just manifest-check`, then `just ci`.
+- `just audio-list`, `just manifest-check`, `just verify`. Those are the
+  project's gates; `just ci` is the toolkit's own gate, run from the
+  checkout — its dev recipes always act on the checkout, never on your
+  project.
 
 ## Seen → consequence → fix
 

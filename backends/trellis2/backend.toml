@@ -25,15 +25,24 @@ cwd = "checkout"
 resident = false
 
 [env]
-# A ~/.local that has seen years of experiments carries .pth startup hooks
-# for any same-versioned interpreter; the launcher sets this everywhere, and
-# the file says it too so a hand-run of the inner module gets it.
-PYTHONNOUSERSITE = "1"
 # opencv refuses EXR unless asked; the pipeline's texture path reads some.
 OPENCV_IO_ENABLE_OPENEXR = "1"
 # The cascade allocates and frees in waves; expandable segments keep a
 # 1024^3 run from fragmenting its way to an OOM on 24 GB.
 PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+# Where the inner module finds the trellis2 package: the pinned checkout.
+# The name is the one the previous toolkit's generate_mesh.py honoured.
+TRELLIS2_DIR = "${CHECKOUT}"
+
+# [env.force] is set unconditionally on every run — plain [env] entries are
+# defaults the shell may override, and these five are load-bearing: an
+# anaconda-base CC/CXX exported by a login shell silently fed nvdiffrast's
+# runtime JIT a mixed CUDA host toolchain.
+[env.force]
+# A ~/.local that has seen years of experiments carries .pth startup hooks
+# for any same-versioned interpreter; the launcher sets this everywhere, and
+# forcing it here means even an exported PYTHONNOUSERSITE=0 cannot let them in.
+PYTHONNOUSERSITE = "1"
 # No system CUDA root: the toolkit lives in the env. nvdiffrast JIT-compiles
 # its kernels on first use, so this is a runtime setting, not a build one.
 CUDA_HOME = "${PREFIX}"
@@ -42,9 +51,6 @@ CUDA_HOME = "${PREFIX}"
 CC = "${PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
 CXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
 CUDAHOSTCXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
-# Where the inner module finds the trellis2 package: the pinned checkout.
-# The name is the one the previous toolkit's generate_mesh.py honoured.
-TRELLIS2_DIR = "${CHECKOUT}"
 
 [[models]]
 id = "microsoft/TRELLIS.2-4B"

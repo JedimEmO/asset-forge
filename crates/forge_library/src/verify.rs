@@ -570,6 +570,64 @@ fn event_findings(report: &mut Report, subject: &str, sidecar: &Sidecar, audio: 
     }
 }
 
+/// Every sidecar under `assets/` has its asset beside it.
+///
+/// A hand-deleted `.glb` or `.wav` leaves its record orphaned; the catalog
+/// scans assets and loads the record *beside* each one, so an orphan is
+/// invisible to every other check — and `just manifest` then carries the
+/// residue forever. The record is the one part of an asset nobody can
+/// re-derive, so a record describing bytes that are not there is a FAIL
+/// naming the file: delete it if the removal was meant, or put the asset
+/// back.
+#[must_use]
+pub fn orphans(project: &Project) -> Report {
+    let mut report = Report::default();
+    for kind in Kind::ALL {
+        let directory = project.kind_dir(kind);
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut records: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        records.sort();
+        for record in records {
+            report.checked += 1;
+            let Some(stem) = record.file_stem().map(std::ffi::OsStr::to_owned) else {
+                continue;
+            };
+            let has_asset = std::fs::read_dir(&directory)
+                .ok()
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path())
+                .any(|path| {
+                    path.is_file()
+                        && path.file_stem().is_some_and(|s| s == stem)
+                        && path.extension().is_none_or(|ext| ext != "json")
+                });
+            if !has_asset {
+                let rel = project
+                    .rel_to_assets(&record)
+                    .unwrap_or_else(|| record.display().to_string());
+                report.fail(
+                    stem.to_string_lossy(),
+                    format!(
+                        "{rel} is an orphan record — the asset beside it is gone. The \
+                         record is the part nobody can re-derive: put the asset back, or \
+                         delete the record and run `forge manifest` if the removal was \
+                         meant"
+                    ),
+                );
+            }
+        }
+    }
+    report
+}
+
 /// Every reference PNG under `<sources>/refs` has a row in `SOURCES.md`.
 ///
 /// A reference image claims integrity and a ledger row, never regeneration:
@@ -608,12 +666,20 @@ pub fn refs(project: &Project) -> Report {
             );
             continue;
         }
-        if !rows.iter().any(|cell| cell.contains(&file_name)) {
+        // The row's File cell is the path under refs/, exactly — matching on
+        // the bare file name let a copy under another refs/ subdirectory
+        // ride an existing row, and a substring match accounted for files a
+        // row never named.
+        let under_refs = png.strip_prefix(&refs_dir).map_or_else(
+            |_| file_name.clone(),
+            |p| p.to_string_lossy().replace('\\', "/"),
+        );
+        if !rows.iter().any(|cell| cell.trim_matches('`') == under_refs) {
             report.fail(
                 &file_name,
                 format!(
-                    "{rel} has no row in {} — a reference image claims a ledger row, or it \
-                     cannot be accounted for",
+                    "{rel} has no row in {} — a reference image claims a ledger row (its \
+                     File cell is `{under_refs}`), or it cannot be accounted for",
                     crate::project::SOURCES_LEDGER
                 ),
             );
@@ -849,6 +915,7 @@ pub fn profile(project: &Project) -> Report {
 #[must_use]
 pub fn all(project: &Project) -> Report {
     let mut report = library(project);
+    report.absorb(orphans(project));
     report.absorb(refs(project));
     report.absorb(voices(project));
     report.absorb(profile(project));
@@ -1199,5 +1266,63 @@ mod tests {
         let report = all(&project);
         assert!(report.ok(), "{report}");
         assert_eq!(report.checked, 1, "only the profile");
+    }
+
+    #[test]
+    fn a_sidecar_whose_asset_is_gone_is_an_orphan_and_fails() {
+        let (_dir, project) = library_with(&clip_with_events(Vec::new()));
+        assert!(orphans(&project).ok(), "nothing is orphaned yet");
+
+        // The hand-deleted asset: the record stays behind, and the catalog
+        // (which scans assets, not records) can no longer see it.
+        std::fs::remove_file(project.kind_dir(Kind::Clip).join("test.glb")).expect("rm");
+        let report = orphans(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(report.render().contains("orphan record"), "{report}");
+        assert!(report.render().contains("test.json"), "{report}");
+        assert!(!all(&project).ok(), "verify as a whole fails on the orphan");
+
+        // A stray record that never had an asset beside it fails the same way.
+        std::fs::write(project.kind_dir(Kind::Clip).join("test.glb"), b"glb").expect("restore");
+        std::fs::copy(
+            project.kind_dir(Kind::Clip).join("test.json"),
+            project.kind_dir(Kind::Clip).join("ghost.json"),
+        )
+        .expect("stray record");
+        let report = orphans(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(report.render().contains("ghost.json"), "{report}");
+    }
+
+    #[test]
+    fn a_ledger_row_accounts_for_exactly_one_path_under_refs() {
+        let (_dir, project) = temp_project();
+        let props = project.refs_dir().join("props");
+        let characters = project.refs_dir().join("characters");
+        std::fs::create_dir_all(&props).expect("mkdir");
+        std::fs::create_dir_all(&characters).expect("mkdir");
+        std::fs::write(props.join("barrel.png"), b"\x89PNG").expect("png");
+        std::fs::write(
+            project.sources_ledger(),
+            "# Sources\n\n| file | origin | licence |\n|---|---|---|\n\
+             | `props/barrel.png` | drawn | CC0 |\n",
+        )
+        .expect("ledger");
+        assert!(
+            refs(&project).ok(),
+            "a backticked path-qualified row counts"
+        );
+
+        // A copy under another refs/ subdirectory is NOT covered by the
+        // props/ row: the cell is matched as the whole path under refs/,
+        // not as a file-name substring.
+        std::fs::copy(props.join("barrel.png"), characters.join("barrel.png")).expect("copy");
+        let report = refs(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(
+            report.render().contains("characters/barrel.png"),
+            "{report}"
+        );
+        assert_eq!(report.failures(), 1, "{report}");
     }
 }

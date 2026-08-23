@@ -86,6 +86,27 @@ def test_absent_dir_and_absent_backend(tmp_path, monkeypatch):
         backends.load_backend("trellis2")
 
 
+def test_env_force_is_parsed_apart_and_overlap_is_refused(backends_tree):
+    ardy = backends_tree / "ardy"
+    ardy_toml = (ardy / "backend.toml").read_text()
+    (ardy / "backend.toml").write_text(ardy_toml + '\n[env.force]\nCC = "${PREFIX}/bin/gcc"\n')
+    backend = backends.load_backend("ardy")
+    assert backend.env_force == {"CC": "${PREFIX}/bin/gcc"}
+    assert "CC" not in backend.env and "force" not in backend.env
+    # The same key in both tables is a contradiction, said by name.
+    (ardy / "backend.toml").write_text(ardy_toml + '\n[env.force]\nHF_HUB_OFFLINE = "1"\n')
+    with pytest.raises(backends.BackendConfigError, match="HF_HUB_OFFLINE"):
+        backends.load_backend("ardy")
+    (ardy / "backend.toml").write_text(ardy_toml.replace('[env]\n', '[env]\nforce = "not-a-table"\n'))
+    with pytest.raises(backends.BackendConfigError, match=r"\[env.force\] must be a table"):
+        backends.load_backend("ardy")
+
+
+def test_install_hint_is_absolute(backends_tree):
+    backend = backends.load_backend("ardy")
+    assert str(backends_tree / "ardy" / "install.sh") in backend.install_hint(), "the hint must work from any cwd"
+
+
 def test_notices_may_be_plain_strings_and_env_numbers_become_text(backends_tree):
     text = GOOD_TOML.replace('[[notices]]\ntitle = "Llama 3"\ntext = "Built with Meta Llama 3"', "")
     text = text.replace('name = "ardy"', 'name = "ardy"\nnotices = ["one", "two"]', 1)

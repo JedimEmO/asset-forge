@@ -62,10 +62,15 @@ fail here — it fails in the consumer, with a message that names nothing.
 
 ## Verification without a display
 
-- `just ci` is the gate: fmt, clippy, tests, headless smoke, audit,
-  check-bodies, manifest-check, verify. It excludes eye-renders (not
-  byte-stable across GPUs), every generator, every Blender step and anything
-  that rewrites `assets/`.
+- `just ci` is the gate: fmt, clippy + rustdoc (warnings as errors), Rust
+  tests, pytest, headless smoke, audit, check-bodies, manifest-check,
+  verify, mcp-check, ci-fake — the same list GitHub Actions runs. It
+  excludes eye-renders (not byte-stable across GPUs), every real generator,
+  every Blender step and anything that rewrites `assets/`; ci-fake runs the
+  five generate pipelines on placeholders in a throwaway project.
+- No GPU, or the card is busy? `FORGE_FAKE=1` makes every `forge gen`
+  write branded placeholders through the same doors and validators (a fake
+  refuses to overwrite a real file); `just ci-fake` is that, end to end.
 - Headless sheets and views need a wgpu adapter — llvmpipe is enough — and
   no window. `env -u DISPLAY -u WAYLAND_DISPLAY` is how CI runs them.
 - To drive the studio window for real: Xvfb plus python-xlib XTest. Call
@@ -87,14 +92,20 @@ fail here — it fails in the consumer, with a message that names nothing.
   A new lesson goes to `designs/decisions.md` with the date it was learned.
   Neither goes only in a commit message.
 
-## Multi-agent work
+## Working from another project
 
-- Phases are workflows with disjoint file ownership. An agent owns the paths
-  its prompt lists and nothing else.
-- Never `SendMessage` a workflow-internal agent by id. It is not addressable
-  from the parent; the fallback resumes it from its transcript and forks a
-  duplicate that edits the same files as the real one.
-- An agent's question is answered by folding the answer into the next
-  phase's prompts, or by the parent making the edit itself.
-- Every prompt gives its agents a stated default for every decision they
-  might otherwise ask about. An agent that has to ask has a prompt bug.
+- From a project made by `forge init`, the recipes run as
+  `just --justfile <toolkit>/justfile --working-directory . <recipe>` with
+  `FORGE_HOME=<toolkit>` exported; `forge` walks up from the working
+  directory to the project's `forge.toml`. The dev recipes (`fmt`, `check`,
+  `test`, `pytest`, `ci`, …) are the exception the other way: they always
+  act on the toolkit checkout — `just ci` is the toolkit's own gate, and a
+  project verifies its library with `just verify`, `just audit`,
+  `just manifest-check`.
+- Every recipe builds and runs `./target/debug/forge` itself, and
+  `.mcp.json` launches that same binary — on a fresh clone run any recipe
+  once (`just doctor`) before the MCP server can start; `just install`
+  puts a global `forge` on PATH for shells outside the checkout.
+- A shipped record or sidecar is never edited by hand — not to fix a typo,
+  not to make a gate pass. The door is `forge promote <kind> … --overwrite`
+  with the corrected flags, then `just manifest`.

@@ -61,7 +61,7 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Rig(RigCommand),
     /// Run a generator through the Python layer: mesh, prop, rig, export,
-    /// rig-build, motion sweep|keys|review, sfx, music, speech, doctor
+    /// rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor
     Gen(GenArgs),
     /// What this machine can do: project, profile drift, library counts, host
     /// tools, every backend probed in its own environment
@@ -142,7 +142,7 @@ pub(crate) struct SheetArgs {
     /// Add a band of head close-ups under the view bands.
     #[arg(long)]
     pub(crate) head_row: bool,
-    /// Where to write the PNG. Default: out/sheets/<clip>.png.
+    /// Where to write the PNG. Default: `out/sheets/<clip>.png`.
     #[arg(long, value_name = "PNG")]
     pub(crate) out: Option<PathBuf>,
 }
@@ -164,7 +164,7 @@ pub(crate) struct ViewsArgs {
     /// Comma-separated views, or `all`. Default: front, back, left, right.
     #[arg(long, value_name = "LIST")]
     pub(crate) views: Option<String>,
-    /// Where to write the PNG. Default: out/views/<stem>.png.
+    /// Where to write the PNG. Default: `out/views/<stem>.png`.
     #[arg(long, value_name = "PNG")]
     pub(crate) out: Option<PathBuf>,
 }
@@ -174,7 +174,7 @@ pub(crate) struct ViewsArgs {
 pub(crate) struct TurntableArgs {
     /// The body, by library name.
     pub(crate) body: String,
-    /// Where to write the PNG. Default: out/views/<body>.png.
+    /// Where to write the PNG. Default: `out/views/<body>.png`.
     #[arg(long, value_name = "PNG")]
     pub(crate) out: Option<PathBuf>,
 }
@@ -266,7 +266,7 @@ pub(crate) struct InitArgs {
     #[arg(long)]
     pub(crate) name: Option<String>,
     /// A rig profile directory to install instead of the toolkit's own
-    /// rigs/<rig>.
+    /// `rigs/<rig>`.
     #[arg(long, value_name = "DIR")]
     pub(crate) rig_dir: Option<PathBuf>,
 }
@@ -328,7 +328,7 @@ pub(crate) struct Curation {
     /// Anything the next reader should know.
     #[arg(long)]
     pub(crate) note: Option<String>,
-    /// Who is promoting: human, agent:<name>, unknown.
+    /// Who is promoting: human, `agent:<name>`, unknown.
     #[arg(long, default_value = "human", value_name = "WHO")]
     pub(crate) created_by: String,
     /// Replace an existing asset of this name. Refused otherwise.
@@ -413,7 +413,7 @@ pub(crate) struct PromoteBodyArgs {
     /// The committed .blend it was exported from, under the project.
     #[arg(long, value_name = "BLEND")]
     pub(crate) blend: Option<PathBuf>,
-    /// The TRELLIS.2 lift record (<name>.lift.json).
+    /// The TRELLIS.2 lift record (`<name>.lift.json`).
     #[arg(long, value_name = "JSON")]
     pub(crate) lift_record: Option<PathBuf>,
     /// The auto-rig's record.
@@ -437,7 +437,7 @@ pub(crate) struct PromoteModelArgs {
     /// A committed .blend, when the prop has one.
     #[arg(long, value_name = "BLEND")]
     pub(crate) blend: Option<PathBuf>,
-    /// The TRELLIS.2 lift record (<name>.lift.json).
+    /// The TRELLIS.2 lift record (`<name>.lift.json`).
     #[arg(long, value_name = "JSON")]
     pub(crate) lift_record: Option<PathBuf>,
     /// The prop normalizer's record.
@@ -460,6 +460,11 @@ pub(crate) struct PromoteAudioArgs {
     /// The generator run's record. Without it the provenance is unknown.
     #[arg(long, value_name = "JSON")]
     pub(crate) record: Option<PathBuf>,
+    /// Ship a sound the measurements call defective (silent, or clipped
+    /// hard enough to distort). Refused otherwise: `forge audio inspect`
+    /// names the defect, and the fix is upstream of the promote.
+    #[arg(long)]
+    pub(crate) allow_defective: bool,
 
     #[command(flatten)]
     pub(crate) curation: Curation,

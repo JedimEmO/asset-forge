@@ -117,7 +117,6 @@
   "events": [],
   "content_hash": "sha256:bf240a9a72a8c09af486113d8dc6eaee51d33e2e265da7edbcd7c80fb4ff0fb3",
   "review": {
-    "submission": "20260802-gen_jump-9f5d",
     "approved_by": "agent:claude",
     "date": "2026-08-02"
   },

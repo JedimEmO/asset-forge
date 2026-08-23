@@ -296,14 +296,18 @@ def run(args) -> dict:
 
 
 def run_fake(args) -> dict:
-    """Silence where the audition would be, and a record that says so.
+    """A placeholder tone where the audition would be, and a record that says so.
 
     The placeholder is as long as a reference should be — the cloner refuses
     a clip under 3 s, and a fake voice has to pass the same gate the real one
     passes so ``speech --fake --voice <name>`` runs through it.
     """
     spec = plan(args)
-    placeholders.silence_wav(spec["out"], seconds=float(sum(REFERENCE_GOOD_S) / 2))
+    # plan() already refuses an existing ref.wav without --overwrite; this
+    # refuses harder: even with --overwrite, a fake never replaces a real
+    # designed voice — every line of the character is cloned from it.
+    placeholders.refuse_real(spec["out"], spec["record"])
+    placeholders.placeholder_wav(spec["out"], seconds=float(sum(REFERENCE_GOOD_S) / 2))
     rec = build_record(
         name=spec["name"],
         instruction=spec["instruction"],

@@ -2,6 +2,35 @@
 
 use bevy::prelude::*;
 
+/// Which way the subject faces, which decides where FRONT is.
+///
+/// Two facings exist because the pipeline has two conventions and both are
+/// deliberate. A mesh at rest — a shipped body, a raw lift, a prop — faces
+/// the contract's `front`, **+Z** (`rigs/humanoid/contract.json`). A subject
+/// posed by a baked clip faces **−Z**: the bake turns every take 180° about
+/// Y so clips play along the engine's forward. A camera rig that assumed
+/// one convention labelled the other's face BACK, so the caller states
+/// which subject it has and the labels stay true for both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Facing {
+    /// The rest pose: the contract's front, +Z.
+    #[default]
+    PlusZ,
+    /// Posed by a baked clip, which plays facing −Z.
+    MinusZ,
+}
+
+impl Facing {
+    /// The sign the horizontal camera direction is multiplied by: framing a
+    /// −Z-facing subject is framing a +Z-facing one from 180° around.
+    fn sign(self) -> f32 {
+        match self {
+            Self::PlusZ => 1.0,
+            Self::MinusZ => -1.0,
+        }
+    }
+}
+
 /// Where the camera sits relative to the subject.
 ///
 /// Angles are chosen to match the stick-figure contact sheets animation review
@@ -9,7 +38,7 @@ use bevy::prelude::*;
 /// compared without re-orienting your mental model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
-    /// Three-quarter front-left. The default: reads depth and silhouette at once.
+    /// Three-quarter front. The default: reads depth and silhouette at once.
     ThreeQuarter,
     /// Straight on, from the direction the subject faces.
     Front,
@@ -80,14 +109,15 @@ impl View {
         }
     }
 
-    /// Unit vector from the subject's centre toward the camera.
+    /// Unit vector from the subject's centre toward the camera, for a
+    /// subject with this `facing`.
     ///
-    /// Subjects face **-Z**, so yaw 0 puts the camera on the -Z side looking
-    /// back at the face.
+    /// Yaw 0 puts the camera on the side the subject faces, looking at the
+    /// face: +Z for a rest pose, −Z for a clip-posed subject.
     #[must_use]
-    pub fn direction(self) -> Vec3 {
+    pub fn direction(self, facing: Facing) -> Vec3 {
         let (yaw, pitch) = self.yaw_pitch_deg();
-        direction_from(yaw, pitch)
+        direction_from(yaw, pitch, facing)
     }
 
     /// Camera transform framing a sphere of `radius` about `centre`.
@@ -98,12 +128,19 @@ impl View {
     #[must_use]
     pub fn camera_transform(
         self,
+        facing: Facing,
         centre: Vec3,
         radius: f32,
         vertical_fov_deg: f32,
         padding: f32,
     ) -> Transform {
-        frame_sphere(self.direction(), centre, radius, vertical_fov_deg, padding)
+        frame_sphere(
+            self.direction(facing),
+            centre,
+            radius,
+            vertical_fov_deg,
+            padding,
+        )
     }
 }
 
@@ -166,34 +203,48 @@ impl HeadView {
         }
     }
 
-    /// Unit vector from the head's centre toward the camera.
+    /// Unit vector from the head's centre toward the camera, for a subject
+    /// with this `facing`.
     #[must_use]
-    pub fn direction(self) -> Vec3 {
+    pub fn direction(self, facing: Facing) -> Vec3 {
         let (yaw, pitch) = self.yaw_pitch_deg();
-        direction_from(yaw, pitch)
+        direction_from(yaw, pitch, facing)
     }
 
     /// Camera transform framing a sphere of `radius` about `centre`.
     #[must_use]
     pub fn camera_transform(
         self,
+        facing: Facing,
         centre: Vec3,
         radius: f32,
         vertical_fov_deg: f32,
         padding: f32,
     ) -> Transform {
-        frame_sphere(self.direction(), centre, radius, vertical_fov_deg, padding)
+        frame_sphere(
+            self.direction(facing),
+            centre,
+            radius,
+            vertical_fov_deg,
+            padding,
+        )
     }
 }
 
 /// Unit vector toward a camera at `yaw` degrees about Y and `pitch` degrees
-/// above the horizon, with yaw 0 on the -Z side.
-fn direction_from(yaw_deg: f32, pitch_deg: f32) -> Vec3 {
+/// above the horizon, with yaw 0 on the side the subject faces.
+///
+/// For a rest-pose subject (facing the contract's +Z) yaw 0 is the +Z side
+/// and yaw −90 is the subject's left, +X. A clip-posed subject faces −Z, so
+/// the whole rig walks 180° around — a horizontal sign flip — and every
+/// label keeps meaning what it says.
+fn direction_from(yaw_deg: f32, pitch_deg: f32, facing: Facing) -> Vec3 {
     let (yaw, pitch) = (yaw_deg.to_radians(), pitch_deg.to_radians());
+    let sign = facing.sign();
     Vec3::new(
-        yaw.sin() * pitch.cos(),
+        sign * -yaw.sin() * pitch.cos(),
         pitch.sin(),
-        -yaw.cos() * pitch.cos(),
+        sign * yaw.cos() * pitch.cos(),
     )
     .normalize()
 }
@@ -228,18 +279,32 @@ mod tests {
     }
 
     #[test]
-    fn front_sits_on_minus_z_and_back_on_plus_z() {
-        assert!(View::Front.direction().z < -0.9);
-        assert!(View::Back.direction().z > 0.9);
-        assert!(HeadView::Front.direction().z < -0.9);
-        assert!(HeadView::BackTop.direction().y > 0.6);
-        assert!(HeadView::BackTop.direction().z > 0.6);
+    fn front_faces_the_face_for_both_facings() {
+        // A rest pose faces the contract's +Z, so FRONT's camera sits on +Z.
+        assert!(View::Front.direction(Facing::PlusZ).z > 0.9);
+        assert!(View::Back.direction(Facing::PlusZ).z < -0.9);
+        assert!(HeadView::Front.direction(Facing::PlusZ).z > 0.9);
+        assert!(HeadView::BackTop.direction(Facing::PlusZ).y > 0.6);
+        assert!(HeadView::BackTop.direction(Facing::PlusZ).z < -0.6);
+        // A clip-posed subject faces −Z, so FRONT's camera sits on −Z.
+        assert!(View::Front.direction(Facing::MinusZ).z < -0.9);
+        assert!(View::Back.direction(Facing::MinusZ).z > 0.9);
+    }
+
+    #[test]
+    fn left_shows_the_subjects_left_side() {
+        // Facing +Z with +Y up, the subject's left hand points along +X.
+        assert!(View::Left.direction(Facing::PlusZ).x > 0.9);
+        assert!(View::Right.direction(Facing::PlusZ).x < -0.9);
+        // Turned 180° by the bake, the subject's left points along −X.
+        assert!(View::Left.direction(Facing::MinusZ).x < -0.9);
+        assert!(View::Right.direction(Facing::MinusZ).x > 0.9);
     }
 
     #[test]
     fn a_bigger_sphere_pushes_the_camera_back() {
-        let near = View::Front.camera_transform(Vec3::ZERO, 0.5, 30.0, 1.12);
-        let far = View::Front.camera_transform(Vec3::ZERO, 1.0, 30.0, 1.12);
+        let near = View::Front.camera_transform(Facing::PlusZ, Vec3::ZERO, 0.5, 30.0, 1.12);
+        let far = View::Front.camera_transform(Facing::PlusZ, Vec3::ZERO, 1.0, 30.0, 1.12);
         assert!(far.translation.length() > near.translation.length() * 1.9);
     }
 }

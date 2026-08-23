@@ -592,11 +592,12 @@ def download(url: str, file_url: str, dest: Path) -> Path:
     return dest
 
 
-def transcode_ogg(ffmpeg: Path, wav: Path, out: Path) -> Path:
-    """WAV → Ogg Vorbis through the ffmpeg CLI (``-q:a 6``)."""
+def transcode_ogg(ffmpeg: Path, wav: Path, out: Path, *, comment: str | None = None) -> Path:
+    """WAV → Ogg Vorbis through the ffmpeg CLI (``-q:a 6``); ``comment`` lands as a vorbis tag."""
     out.parent.mkdir(parents=True, exist_ok=True)
+    metadata = ["-metadata", f"comment={comment}"] if comment else []
     done = subprocess.run(
-        [str(ffmpeg), "-y", "-loglevel", "error", "-i", str(wav), "-c:a", "libvorbis", "-q:a", VORBIS_QUALITY, str(out)],
+        [str(ffmpeg), "-y", "-loglevel", "error", "-i", str(wav), "-c:a", "libvorbis", "-q:a", VORBIS_QUALITY, *metadata, str(out)],
         capture_output=True,
         text=True,
         check=False,
@@ -715,7 +716,7 @@ def run(args) -> dict:
 
 
 def run_fake(args) -> dict:
-    """Half a second of silence and a record that says ``fake``; no server, no env.
+    """A short placeholder tone and a record that says ``fake``; no server, no env.
 
     The ogg case still needs ffmpeg: Symphonia on the Rust side decodes
     what it is given, and a WAV wearing an ``.ogg`` name would fail there
@@ -726,17 +727,20 @@ def run_fake(args) -> dict:
         return {"ok": True, "server": {"pid": None, "stopped": False, "note": "fake: no server to stop"}, "outputs": [], "record": None}
     request = check_inputs(args)
     out = request["out"]
+    placeholders.refuse_real(out, request["record"])
     if request["format"] == "ogg":
         ffmpeg = ffmpeg_bin()
         wav = out.with_name(out.name + ".tmp.wav")
-        placeholders.silence_wav(wav)
+        placeholders.placeholder_wav(wav, seconds=min(request["duration_s"], 2.0))
         measured = measure_wav(wav)
         try:
-            transcode_ogg(ffmpeg, wav, out)
+            # The vorbis comment is the placeholder mark: the WAV's RIFF
+            # chunk does not survive a transcode.
+            transcode_ogg(ffmpeg, wav, out, comment=placeholders.FAKE_MARK.decode("ascii"))
         finally:
             wav.unlink(missing_ok=True)
     else:
-        placeholders.silence_wav(out)
+        placeholders.placeholder_wav(out, seconds=min(request["duration_s"], 2.0))
         measured = measure_wav(out)
     # What a server would have said, minus the server: nothing is invented,
     # the seeds and checkpoints stay null.

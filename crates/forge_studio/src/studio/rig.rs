@@ -436,26 +436,63 @@ pub fn refresh_findings(world: &mut World, mut checked: Local<u32>) {
     *checked = generation;
 
     let model = world.resource::<ActiveModel>().path.clone();
-    let findings = match world.resource::<StageContract>().0.clone() {
-        Some(contract) => {
-            let reference = reference_clip(world.resource::<ClipLibrary>(), &contract);
-            let clips = world.resource::<Assets<AnimationClip>>();
-            let findings = rig_findings::diagnose(
-                world,
-                anim_root,
-                &contract,
-                reference.as_ref().and_then(|handle| clips.get(handle)),
-            );
-            rig_findings::log_failures(&model, &contract, &findings);
-            findings
+    let has_mesh = world.resource::<Rig>().has_visible_mesh();
+    let findings = if is_static_model(world, &model, has_mesh) {
+        // A prop has no rig by construction, so 50-odd "contract bone
+        // missing" lines would be the definition of a model recited as
+        // failures — the way `check-bodies` says "no bodies … and that
+        // passes", this says the one true thing and stops.
+        vec![Finding::note(STATIC_MODEL_FINDING)]
+    } else {
+        match world.resource::<StageContract>().0.clone() {
+            Some(contract) => {
+                let reference = reference_clip(world.resource::<ClipLibrary>(), &contract);
+                let clips = world.resource::<Assets<AnimationClip>>();
+                let findings = rig_findings::diagnose(
+                    world,
+                    anim_root,
+                    &contract,
+                    reference.as_ref().and_then(|handle| clips.get(handle)),
+                );
+                rig_findings::log_failures(&model, &contract, &findings);
+                findings
+            }
+            None => vec![Finding::warn(
+                "no rig profile loaded - the contract checks did not run",
+            )],
         }
-        None => vec![Finding::warn(
-            "no rig profile loaded - the contract checks did not run",
-        )],
     };
     world
         .resource_mut::<RigFindings>()
         .record(findings, u64::from(generation));
+}
+
+/// The one line the stage says about a static model instead of rig findings.
+pub const STATIC_MODEL_FINDING: &str = "static model: no rig, nothing to hold to the contract";
+
+/// Whether the subject standing on the stage is a static model.
+///
+/// The sidecar's word first: a library entry of kind `model` declared itself
+/// unrigged, and holding it to the rig contract would flood the panel with
+/// findings that are its definition, not its defects. A path outside the
+/// library (a raw lift under out/, a foreign glb) has no sidecar to ask, so
+/// the file answers: a mesh with no skin is decor a contract cannot bind.
+/// `has_mesh` keeps the two things a missing skin can mean apart — a bare
+/// skeleton (no mesh at all) is still a rig and clips still play on it — and
+/// a library *body* with no skin stays a body: that flood is a real defect.
+fn is_static_model(world: &mut World, model: &str, has_mesh: bool) -> bool {
+    match world
+        .resource::<ModelLibrary>()
+        .get(model)
+        .map(|entry| entry.kind)
+    {
+        Some(Kind::Model) => true,
+        Some(_) => false,
+        None => {
+            let mut skins = world.query::<&bevy::mesh::skinning::SkinnedMesh>();
+            has_mesh && skins.iter(world).next().is_none()
+        }
+    }
 }
 
 /// The clip to diff the skeleton against: the contract's reference clip if
@@ -610,7 +647,12 @@ pub fn finish_loading(
 
         let paths = SkeletonPaths::from_world(world, anim_root);
         let mesh = has_mesh(world, entity);
-        let note = describe(&path, &rest_frames, mesh);
+        // A static model is not "missing rig joints" — it never claimed any.
+        let note = if is_static_model(world, &path, mesh) {
+            format!("{path} on stage — {STATIC_MODEL_FINDING}")
+        } else {
+            describe(&path, &rest_frames, mesh)
+        };
         // After the despawn above, so the model that just left does not drag
         // the framing halfway towards where it stood. A meshless rig has no
         // AABBs to frame on, so the camera frames the bones themselves —

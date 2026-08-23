@@ -2,7 +2,7 @@
   "schema": 1,
   "kind": "model",
   "name": "sword",
-  "prompt": "Keep the exact painted art style, palette treatment and lighting of this image. Show only a one-handed sword lying diagonally across the frame: a straight broad steel blade with a painted bright edge, a short crossguard, a leather-wrapped grip and a heavy pommel, Cyberpunk space-station set dressing: dark gunmetal alloy plating with rivets, hazard-orange and cyan accents, grime in the seams. — a cyan energy line etched down the fuller. The thing is alone, centered, seen from a three-quarter view slightly from above. Isolated single subject, plain flat light-grey background, no ground shadow, no other objects, no text. Hand-painted Warcraft 3 style low-poly game art, flat matte painted texture with lighting painted in, posterized color steps with hard edges, bold saturated palette, no photorealism, no gloss.",
+  "prompt": "A one-handed straight sword: broad steel blade with a bright painted edge and a cyan energy line down the fuller, short crossguard, leather-wrapped grip, heavy pommel.",
   "tags": [
     "sample",
     "grip"

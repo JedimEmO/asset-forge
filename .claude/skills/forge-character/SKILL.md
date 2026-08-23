@@ -124,21 +124,23 @@ The sheet: header `<NAME>.GLB  7 VIEWS  CULL OFF  W X H X D M`; top row
 `FRONT` `BACK` `LEFT` `RIGHT`; bottom row `HEAD FRONT` `HEAD BACK`
 `HEAD BACK TOP` (the last cell is empty).
 
-**Orientation, as this build renders it.** The `FRONT` camera sits on the
-−Z side. The profile's rest pose faces **+Z** (toes at z = +0.16), and a
-lift of a front-view reference comes out facing +Z — so a correctly facing
-lift shows its **back in `FRONT`** and its **face in `BACK` and `HEAD
-BACK`**; `HEAD FRONT` is the rear of the skull, `HEAD BACK TOP` the face
-and crown from above. The shipped sample `vex_runner` renders exactly this
-way. If the face is in `FRONT`, the lift faces the wrong way: rig it with
-`--yaw-deg 180`.
+**Orientation, as this build renders it.** `FRONT` is the file's +Z side
+— the contract's front. The profile's rest pose faces **+Z** (toes at
+z = +0.16), and a lift of a front-view reference comes out facing +Z — so
+a correctly facing lift shows its **face in `FRONT` and `HEAD FRONT`**
+and its back in `BACK`; `HEAD BACK` is the rear of the skull, `HEAD BACK
+TOP` the rear of the skull and the crown from above; `LEFT`/`RIGHT` are
+the subject's own left (+X) and right (−X). The shipped sample
+`vex_runner` renders exactly this way. If the face is in `BACK`, the lift
+faces the wrong way: rig it with `--yaw-deg 180`.
 
 Judge, in this order:
 
-- **Rear skull closed?** In `HEAD FRONT` you must see scalp, hair or a helmet
-  — not the inside of the face. With culling off a missing rear surface
-  shows as the face's inside: dark, the features inverted like a mask seen
-  from behind, the skull's outline reading as a rim rather than a dome.
+- **Rear skull closed?** In `HEAD BACK` and `HEAD BACK TOP` you must see
+  scalp, hair or a helmet — not the inside of the face. With culling off a
+  missing rear surface shows as the face's inside: dark, the features
+  inverted like a mask seen from behind, the skull's outline reading as a
+  rim rather than a dome.
   `LEFT`/`RIGHT` confirm the head has depth. Hollow → step 1 with another
   seed, look again. The fix is never a patch in Blender.
 - **T-pose intact after the lift** — arms straight, nothing fused to the
@@ -176,10 +178,11 @@ as an input.
   back heavier; never raise it by reflex.
 
 The whole step is seconds (`elapsed  3.2 s` on a 23k-tri body), not
-minutes. The first line is Blender's `Read blend: "…/rigs/humanoid/rig.blend"`
-— **the toolkit's** profile directory, not the project's
-`assets-src/rigs/humanoid` (see known limits); then glTF's `INFO: glTF
-import finished`, then the `rig:` lines. Captured on `torv_warden`; the
+minutes. The first line is Blender's `Read blend: "…"` naming the
+**project's** profile directory, `assets-src/rigs/humanoid/rig.blend` —
+at the toolkit root the project's profile *is* `rigs/humanoid`, so the
+two paths are the same directory there (see known limits); then glTF's
+`INFO: glTF import finished`, then the `rig:` lines. Captured on `torv_warden`; the
 dust, decimate and bone-heat lines did not fire on that body and are
 quoted from `python/forge_gen/blender/rig.py`, the refusals likewise:
 
@@ -308,7 +311,9 @@ and refreshes `assets/library.json`.
   `1 body(ies) conform to the rig profile`), `just manifest-check`
   (`1 checked, ok` / `assets/library.json matches a rebuild of the
   library`), `just verify` (`N checked, ok`: the ledger row, hashes,
-  drift), then `just ci`.
+  drift), `just audit`. Those are the project's gates; `just ci` is the
+  toolkit's own gate, run from the checkout — its dev recipes always act
+  on the checkout, never on your project.
 
 ## Step 6 — commit set (only when the user asks)
 
@@ -330,8 +335,11 @@ derived and gitignored), never the PNG without its row.
   change is a new reference and a new lift. Equipment (a sword, a pistol)
   is a prop on a socket (`forge-prop`) and needs nothing from the body.
 - Finger bones carry ~no weight on a mitt mesh — per contract.
-- `forge views` labels `FRONT` from −Z while the profile's front is +Z:
-  read the tiles as described in step 2 rather than by their names.
+- `forge views` labels `FRONT` as the file's +Z side — the profile's
+  front, so on a promoted body `FRONT` is the face and `LEFT`/`RIGHT` are
+  the subject's own. A raw lift is not yet normalized: its labels name
+  the file's axes, so read those tiles as described in step 2 and turn a
+  wrong-facing lift with `--yaw-deg 180` at step 3.
 - The texture bake is nvdiffrast, non-commercial, named in every lift
   record; a replacement baker is a follow-up, not a flag.
 - Bodies claim integrity, not reproduction: Blender's glTF export is not

@@ -1,10 +1,9 @@
 //! Finding animation clips on disk, and the typed record beside each one.
 //!
-//! The parsing used to live here: twelve lines that split each sidecar line on
-//! the first colon. It could not see inside a nested object, it produced keys
-//! like `"metas"` with an empty value, and it would have read the next schema
-//! as gibberish rather than as an error. [`forge_library`] owns that job now,
-//! so what is left here is the *walk* — which files exist, and what Bevy's
+//! No parsing happens here, on purpose: [`forge_library`] is the one reader
+//! of the sidecar format, so a schema it does not know is an error there
+//! rather than gibberish here, and a nested object is its business. What
+//! this module owns is the *walk* — which files exist, and what Bevy's
 //! asset server should be asked to load — plus the handful of derived numbers
 //! a browser row shows.
 

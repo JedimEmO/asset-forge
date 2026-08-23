@@ -4,8 +4,8 @@
 ``forge gen <cmd>`` is exactly this with ``--json``. With ``--json`` the
 last stdout line is one JSON object (progress lines before it, diagnostics
 on stderr); without it a human-readable summary. Exit codes are
-``exit_codes.py``'s table, and every refusal a command raises is printed as
-that object on the way out.
+``exit_codes.py``'s table, and every refusal — a command's, or argparse's
+own exit 2 — is printed as that object on the way out.
 
 Each command lives in its own module with ``add_parser(subparsers)``,
 ``run(args) -> dict`` and ``run_fake(args) -> dict``; this file only
@@ -53,6 +53,28 @@ MOTION_COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("keys", "forge_gen.motion.keys", "Keyframe-constrained generation (ARDY; --preset recoil)"),
     ("review", "forge_gen.motion.review", "Metrics table and contact sheet for a sweep"),
 )
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse whose refusals keep the ``--json`` contract.
+
+    argparse exits 2 through ``error()`` before the run ever starts, which
+    used to be the one refusal with no JSON last line. ``json_mode`` is set
+    from the raw argv (the parse that would read ``--json`` properly is the
+    one that is failing), and subparsers inherit the class through
+    ``add_subparsers``'s default ``parser_class=type(self)``.
+    """
+
+    #: Whether ``--json`` was on the raw command line; set by :func:`main`.
+    json_mode = False
+
+    def error(self, message: str):
+        self.print_usage(sys.stderr)
+        sys.stderr.write(f"{self.prog}: error: {message}\n")
+        if _Parser.json_mode:
+            sys.stdout.write(json.dumps({"ok": False, "error": "usage", "message": message}, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+        raise SystemExit(exit_codes.USAGE)
 
 
 class _Absent:
@@ -162,7 +184,7 @@ def _register(subparsers, entries, common: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     """The whole tree."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="forge-gen",
         description=(
             "asset-forge's generator launcher: every command resolves its backend before any GPU work, "
@@ -226,6 +248,18 @@ def emit(payload: dict, *, as_json: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Parse, dispatch, print, and turn every refusal into its exit code."""
+    # Before anything else, in syntax every old python parses: the rest of
+    # this layer needs tomllib (3.11+), and without the guard a 3.10 host
+    # gets twelve import-noise lines and an exit 2 that names nothing.
+    if sys.version_info < (3, 11):
+        sys.stderr.write(
+            "forge-gen needs python3 >= 3.11; this is %s at %s -- "
+            "put a newer python3 first on PATH (tomllib arrived in 3.11)\n"
+            % (".".join(str(v) for v in sys.version_info[:3]), sys.executable)
+        )
+        return exit_codes.MISSING_TOOL
+    raw = list(sys.argv[1:] if argv is None else argv)
+    _Parser.json_mode = "--json" in raw
     parser = build_parser()
     args, extras = parser.parse_known_args(argv)
     if extras and not isinstance(getattr(args, "_module", None), _Absent):

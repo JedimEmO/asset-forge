@@ -6,8 +6,9 @@ NVIDIA Source Code License (1-Way Commercial) — *non-commercial use only*.
 Nothing in the lift works without it. `backends/trellis2/install.sh` prints
 the licence and refuses to fetch it without `--yes` or an interactive "y";
 `forge doctor` warns for as long as it is installed; every lift record
-carries `texture_baker: "nvdiffrast (non-commercial)"` so the fact travels
-with the asset. If your project is commercial, a lifted mesh's texture came
+carries `texture_baker: "nvdiffrast (NVIDIA Source Code License,
+non-commercial)"` — quoted here exactly as `mesh.py` writes it — so the
+fact travels with the asset. If your project is commercial, a lifted mesh's texture came
 through software you are not licensed to use for it. A replacement baker is
 a follow-up; until then, decide before you lift.
 
@@ -69,7 +70,15 @@ checkout's `python/` on `PYTHONPATH`, from the upstream checkout when
 (`${PREFIX}`, `${CHECKOUT}`, `${TEXT_ENCODERS}`, `${CHECKPOINTS}` expanded)
 — as defaults, so a value you exported yourself wins — and
 `PYTHONNOUSERSITE=1` everywhere, because a `~/.local` that has seen years of
-experiments carries `.pth` hooks. The backends directory itself is
+experiments carries `.pth` hooks.
+
+The exception is an `[env.force]` table: those entries are exported
+**unconditionally**, shell or no shell. They are for values the backend
+does not work without — trellis2 forces `CC`/`CXX`/`CUDAHOSTCXX`/
+`CUDA_HOME`/`PYTHONNOUSERSITE` because nvdiffrast JIT-compiles at run time
+and an anaconda-base `CC` left in a login shell once fed it a mixed CUDA
+host toolchain. When the shell *does* shadow a plain `[env]` value,
+`forge doctor` prints a warn row naming both values. The backends directory itself is
 `$FORGE_BACKENDS` or `<checkout>/backends`; a project's `forge.toml` may
 name another in `[backends] dir`.
 
@@ -87,7 +96,7 @@ installers.
 | `microsoft/TRELLIS.2-4B` weights | MIT | |
 | `facebook/dinov3-vitl16-pretrain-lvd1689m` | DINOv3 License (Meta) — **gated** | Accept on the model page, then `hf auth login --token <tok>`. Doctor prints both. |
 | `briaai/RMBG-2.0` | commercially restrictive | **Never downloaded.** Stubbed at runtime: references are flat-background by contract, and the launcher keys alpha itself. |
-| CuMesh, FlexGEMM, utils3d | MIT | |
+| CuMesh, FlexGEMM, utils3d | MIT | CuMesh `12289e10`, FlexGEMM `6dd94a85`, utils3d `9a4eb15e` — pinned in `trellis2/install.sh` to what the verified env runs. |
 | flash-attn | BSD-3 | Optional; `ATTN_BACKEND=sdpa` fallback when absent. |
 | ARDY code | Apache-2.0 | |
 | `nvidia/ARDY-Core-RP-20FPS-Horizon40` weights | NVIDIA Open Model License | |

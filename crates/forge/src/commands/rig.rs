@@ -83,8 +83,27 @@ fn humanoid_defaults(dir: &Path) -> export::Options {
 fn export_contract(args: &ExportContractArgs) -> Outcome {
     let dir = &args.dir;
     if !dir.is_dir() {
+        // The natural mistake is passing the rig.glb the contract is derived
+        // from; the argument is the profile *directory* holding it. Say what
+        // would have worked.
+        let hint = if dir.extension().is_some_and(|ext| ext == "glb") {
+            dir.parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map_or_else(String::new, |parent| {
+                    format!(
+                        " — the argument is the profile directory holding rig.glb and \
+                         {MOTION_SKELETON_FILE}; try {}",
+                        parent.display()
+                    )
+                })
+        } else {
+            format!(
+                " — the argument is a profile directory holding rig.glb and \
+                 {MOTION_SKELETON_FILE}, like rigs/humanoid"
+            )
+        };
         return Err(Failure::refused(format!(
-            "{} is not a directory",
+            "{} is not a directory{hint}",
             dir.display()
         )));
     }

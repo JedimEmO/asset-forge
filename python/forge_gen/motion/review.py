@@ -585,7 +585,15 @@ def contact_sheet(motions: list[dict], out_png: str, tables: Tables, n_frames: i
             axes[r][0].text(-0.06, 1.09, '"' + mo["text"][:150] + '"',
                             transform=axes[r][0].transAxes, fontsize=7.5,
                             va="bottom", ha="left", color="#555599", style="italic")
-    fig.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.02, wspace=0.02, hspace=0.55)
+    # The first row's header block sits ~0.58 axes-heights above its axes
+    # (three text lines at y = 1.09/1.26/1.44 in axes coords). A fixed
+    # top=0.90 clipped it off the PNG for small n — the very row an agent
+    # names when it picks a take — so reserve exactly that much: with
+    # hspace rows between the others get their headroom for free, only the
+    # top row needs the figure margin.
+    rows = n + 0.55 * (n - 1)
+    top = (1 + 0.01 / rows) / (1 + 0.62 / rows)
+    fig.subplots_adjust(left=0.01, right=0.99, top=top, bottom=0.02, wspace=0.02, hspace=0.55)
     fig.savefig(out_png, dpi=110, facecolor="white")
     plt.close(fig)
 

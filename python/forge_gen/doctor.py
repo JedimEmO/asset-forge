@@ -225,6 +225,24 @@ def check_python(backend: Backend, out: dict) -> Path | None:
     return interpreter
 
 
+def check_env_shadowing(backend: Backend, interpreter: Path, out: dict) -> None:
+    """A warn row per ambient variable that shadows a plain ``[env]`` value.
+
+    The launcher's setdefault lets the shell win over ``backend.toml`` on
+    purpose — but silently, and a shadowed ``CC`` once fed nvdiffrast's JIT
+    a mixed CUDA host toolchain. ``[env.force]`` entries cannot be shadowed
+    and never appear here.
+    """
+    try:
+        shadowed = launcher.env_shadowing(backend, interpreter)
+    except MissingBackend:
+        return
+    for key, ambient, configured in shadowed:
+        out["checks"].append(
+            _check(f"env:{key}", True, f"warn: the shell's {key}={ambient} shadows backend.toml's {configured}")
+        )
+
+
 def run_probe(backend: Backend, interpreter: Path, *, timeout: float) -> tuple[dict | None, str]:
     """Run ``probe.py`` under the env; ``(parsed last JSON line, detail)``."""
     probe = backend.probe
@@ -261,7 +279,7 @@ def check_probe(backend: Backend, interpreter: Path, out: dict, *, timeout: floa
     if probe is None:
         out["checks"].append(_check("probe", False, detail))
         if detail == "no probe":
-            out["hints"].append(f"backends/{backend.name}/probe.py is missing — this checkout is incomplete")
+            out["hints"].append(f"{backend.probe} is missing — this checkout is incomplete")
         return False
     out["probe"] = probe
     torch = probe.get("torch")
@@ -307,7 +325,7 @@ def check_models(backend: Backend, out: dict) -> None:
             out["hints"].append(f"hf auth login --token <tok>   ({token}; never the interactive login — no TTY under an agent)")
         else:
             out["checks"].append(_check(label, False, f"absent: {detail}"))
-            out["hints"].append(f"the first run downloads {model.id}; or: bash backends/{backend.name}/install.sh")
+            out["hints"].append(f"the first run downloads {model.id}; or: bash {backend.install_script}")
 
 
 def _status(out: dict, *, env_missing: bool, broken: bool) -> str:
@@ -330,7 +348,7 @@ def diagnose_tool(backend: Backend, out: dict, *, timeout: float) -> str:
     probe = backend.probe
     if not probe.is_file():
         out["checks"].append(_check("probe", False, "no probe"))
-        out["hints"].append(f"backends/{backend.name}/probe.py is missing — this checkout is incomplete")
+        out["hints"].append(f"{probe} is missing — this checkout is incomplete")
         return "broken"
     done = _run([sys.executable, str(probe)], timeout=timeout, cwd=backend.dir)
     if done is None:
@@ -405,12 +423,16 @@ def diagnose_backend(name: str, *, root: str | os.PathLike | None = None, probe_
     env_missing = interpreter is None
     broken = False
     if interpreter is not None:
+        check_env_shadowing(backend, interpreter, out)
         if backend.cwd == "checkout" and not backend.checkout.exists():
             broken = True
         if not check_probe(backend, interpreter, out, timeout=probe_timeout):
             broken = True
     check_models(backend, out)
     out["status"] = _status(out, env_missing=env_missing, broken=broken)
+    # One hint each: a backend with two FAILs used to print the same
+    # install line twice (ardy, with its model trio, up to six times).
+    out["hints"] = list(dict.fromkeys(out["hints"]))
     return out
 
 
@@ -543,7 +565,12 @@ def render(report: dict) -> str:
             lines.append(f"gpu       {gpu.get('error')}")
     blender = report.get("blender") or {}
     if blender:
-        lines.append(f"blender   {blender.get('version', '?')} {blender.get('bin', '')}  {'ok' if blender.get('ok') else blender.get('error')}")
+        if blender.get("version"):
+            lines.append(f"blender   {blender['version']} {blender.get('bin', '')}  {'ok' if blender.get('ok') else blender.get('error')}")
+        else:
+            lines.append(f"blender   missing  {blender.get('error')}")
+        if not blender.get("ok") and blender.get("hint"):
+            lines.append(f"          hint: {blender['hint']}")
     ffmpeg = report.get("ffmpeg") or {}
     if ffmpeg:
         lines.append(f"ffmpeg    {ffmpeg.get('version', ffmpeg.get('error', '?'))}")

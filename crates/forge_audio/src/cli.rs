@@ -19,11 +19,6 @@ use crate::decode::{DecodeError, decode};
 use crate::metrics::{Metrics, measure};
 use crate::plot::{self, PlotLayout};
 
-/// Consecutive full-scale samples before a file is defective rather than
-/// merely normalised. Mirrors the threshold the warning uses: a run of three
-/// is flat-topping, one or two is what peak normalisation looks like.
-const DEFECT_CLIP_RUN: usize = 3;
-
 /// Why an inspection could not be completed.
 #[derive(Debug)]
 pub enum AudioError {
@@ -132,9 +127,7 @@ impl Report {
     #[must_use]
     pub fn is_defective(&self) -> bool {
         match &self.outcome {
-            Outcome::Measured { metrics, .. } => {
-                metrics.silent || metrics.longest_clip_run >= DEFECT_CLIP_RUN
-            }
+            Outcome::Measured { metrics, .. } => metrics.is_defective(),
             Outcome::Undecodable(_) => true,
         }
     }

@@ -337,6 +337,10 @@ def params_for(args, *, keys_path: Path, duration_s: float, history_frames, diff
         "keys_file": keys_path.name,
         "keys_sha256": records.sha256_file(keys_path),
         "preset": args.preset,
+        # All samples of a keyed run share one forward pass (the batch IS
+        # --samples), and the grid is one cell wide everywhere else.
+        "batch_size": args.samples,
+        "grid": {"prompts": 1, "seeds": 1, "cfg": 1, "durations": 1, "samples": args.samples},
     }
 
 
@@ -390,6 +394,12 @@ def run_fake(args) -> dict:
 
     base, out_dir, keys, name = _validate(args)
     keys_out = out_dir / f"{name}.keys.json"
+    targets = [out_dir / f"{name}_s{args.seed}_{k}.npz" for k in range(args.samples)]
+    placeholders.refuse_real(*targets, *(session.record_path_for(t) for t in targets))
+    if keys is None:
+        # The synthesized spec is guarded too; a copy of the caller's own
+        # --keys file is not — its content is exactly what they named.
+        placeholders.refuse_real(keys_out)
     if keys is not None:
         if keys != keys_out:
             shutil.copyfile(keys, keys_out)
@@ -403,6 +413,7 @@ def run_fake(args) -> dict:
         # not known without one, so the fake spec keys the lift alone about
         # the origin. It is a placeholder like the takes beside it.
         spec = {
+            "fake": True,  # the mark refuse_real recognises; nothing reads a fake spec
             "joints": list(RECOIL_JOINTS),
             "keys": [
                 {"frame": start + i, "pose_frame": int(args.base_frame or 0), "pos": {h: [0.0, round(lift, 6), 0.0] for h in RECOIL_HANDS}}

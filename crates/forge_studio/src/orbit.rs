@@ -40,7 +40,10 @@ impl OrbitCamera {
     /// Camera transform for the current orbit state.
     #[must_use]
     pub fn transform(&self) -> Transform {
-        // Yaw 0 places the camera on -Z, matching View::Front: subjects face -Z.
+        // Yaw 0 places the camera on -Z: the face of a clip-posed subject
+        // (baked clips play facing -Z), the back of one at rest (+Z). The
+        // studio's usual stage is a body with a clip bound, so the default
+        // yaw opens on a three-quarter front of what plays.
         let dir = Vec3::new(
             self.yaw.sin() * self.pitch.cos(),
             self.pitch.sin(),

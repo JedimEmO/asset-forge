@@ -56,10 +56,13 @@ NVDIFFRAST_URL="https://github.com/NVlabs/nvdiffrast.git"
 NVDIFFRAST_TAG="v0.4.0"
 CUMESH_URL="https://github.com/JeffreyXiang/CuMesh.git"
 FLEXGEMM_URL="https://github.com/JeffreyXiang/FlexGEMM.git"
-# CuMesh and FlexGEMM were built from their default branches on 2026-08-18
-# and the commits were not recorded; set these to pin a rebuild.
-CUMESH_COMMIT="${CUMESH_COMMIT:-}"
-FLEXGEMM_COMMIT="${FLEXGEMM_COMMIT:-}"
+# Pinned 2026-08-23 to what the adopted trellis2 env actually runs: the
+# 2026-08-18 build cloned both at unpinned HEAD, and these are the upstream
+# heads of that day — verified by matching every tracked .py in the env's
+# installed cumesh/flex_gemm packages byte-for-byte against these commits.
+# Override with CUMESH_COMMIT=/FLEXGEMM_COMMIT= env vars to move a rebuild.
+CUMESH_COMMIT="${CUMESH_COMMIT:-12289e1062f0603f2f0d0771b02e1395d247f26f}"
+FLEXGEMM_COMMIT="${FLEXGEMM_COMMIT:-6dd94a859c26ee8246888502eada3dd8ad85532e}"
 MODEL_MAIN="microsoft/TRELLIS.2-4B"
 MODEL_GATED="facebook/dinov3-vitl16-pretrain-lvd1689m"
 
@@ -201,8 +204,15 @@ else
         log "pip: $TRANSFORMERS_SPEC and the basics"
         # psutil and ninja are here because flash-attn's build needs them
         # present before it starts; wheel/setuptools for FlexGEMM's bdist_wheel.
-        pipi -q "$TRANSFORMERS_SPEC" imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh pillow \
-            kornia timm zstandard psutil wheel setuptools huggingface_hub "$UTILS3D_SPEC"
+        # Pinned 2026-08-23 to the versions the adopted env runs (its
+        # `pip list`): the line used to float on every fresh install while
+        # backends/README.md claimed licences "verified from the files on
+        # disk" — a claim about a moving target.
+        pipi -q "$TRANSFORMERS_SPEC" \
+            imageio==2.37.4 imageio-ffmpeg==0.6.0 tqdm==4.70.0 easydict==1.13 \
+            opencv-python-headless==5.0.0.93 ninja==1.13.0 trimesh==5.0.0 pillow==12.3.0 \
+            kornia==0.8.3 timm==1.0.28 zstandard==0.25.0 psutil==7.2.2 \
+            wheel==0.47.0 setuptools==83.0.0 huggingface_hub==0.36.2 "$UTILS3D_SPEC"
     fi
 
     # flash-attn: --no-build-isolation (its metadata imports torch). Absent,

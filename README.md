@@ -29,11 +29,38 @@ ACE-Step, MOSS → audio              waveform, spectrogram, loudness     promot
 
 ## Quickstart
 
+Before the first `just`, the build prerequisites:
+
+- **Rust, via [rustup](https://rustup.rs)** — `rust-toolchain.toml` pins
+  1.96.1 and rustup fetches it on the first build. That first build links
+  Bevy and takes minutes; after that, seconds.
+- **`just`** — `cargo install just`, or the distro package.
+- **Bevy's system headers** (Debian/Ubuntu):
+  `sudo apt install libasound2-dev libudev-dev pkg-config`.
+- **python3 ≥ 3.11** on PATH, for the generator launcher (stdlib only).
+- **Disk for the backends**: ~80 GB for all five (trellis2 ~20 GB, ardy
+  ~35 GB, acestep ~10 GB, moss_sfx ~12 GB, moss_tts ~13 GB), under
+  `~/.cache/asset-forge/` and the Hugging Face cache. `just setup` prints
+  that bill and refuses to fetch it without `--yes`; `--no-models` defers
+  each backend's weights to its first generate.
+- **A GPU only for generating** — 24 GB for the 1024³ lifts, 16 GB for
+  clips and audio. Without one you can still run everything below except
+  the generators: `just ci-fake` (the five generate pipelines end to end
+  on placeholders — no GPU, no backend, no Blender), the viewer, the
+  sheets and the shipped sample library all run on CPU (llvmpipe).
+
+Every recipe builds and runs `./target/debug/forge` itself; `just install`
+puts a release `forge` on PATH (`~/.cargo/bin`) for shells outside the
+checkout.
+
 ```sh
 git clone https://github.com/JedimEmO/asset-forge && cd asset-forge
-just setup trellis2 --yes     # one backend; `just setup` alone runs all five. --yes accepts
-                              # nvdiffrast's non-commercial licence (it is printed either way)
-just doctor                   # every backend, Blender, ffmpeg, the GPU, the rig profile: all `ok`
+just ci-fake                  # before installing anything: the whole pipeline on placeholders
+just setup trellis2 --yes     # one backend; `just setup` alone runs all five (~80 GB — it prints
+                              # the bill and wants --yes). --yes also accepts nvdiffrast's
+                              # non-commercial licence (it is printed either way)
+just doctor                   # trellis2 `ok`; the four backends you have not installed say
+                              # `missing`, and doctor exits 1 until every one of them is in
 ```
 
 Already have TRELLIS.2, ARDY, ACE-Step or MOSS installed? Adopt them instead
@@ -65,6 +92,9 @@ just voice warden "Deep, slow, weathered male voice, grave and calm"   # then: j
 
 `.claude/skills/forge-character`, `forge-clip`, `forge-audio` and
 `forge-voice` are the full paths; `just` on its own lists every recipe.
+No GPU yet? `FORGE_FAKE=1` makes every `forge gen` write branded
+placeholders through the same doors and validators — `just ci-fake` is
+exactly that, end to end in a throwaway project.
 
 ## What is in the box
 
@@ -91,6 +121,8 @@ game reads.
 | Blender | ≥ 4.2, headless, only for the rig, export and prop-normalize steps |
 | Judging and the viewer | CPU is enough: headless sheets and views need a wgpu adapter and llvmpipe qualifies; no display server |
 | Python | 3.11+ system interpreter for the launcher (stdlib only); each backend brings its own env |
+| Rust and `just` | rustup (the repo pins 1.96.1), `just`, and Bevy's headers — the prerequisites block above the Quickstart |
+| Disk | ~80 GB for all five backends' envs and weights (the per-backend split is in the Quickstart and `.claude/skills/forge-setup`); `just setup` prints the bill before fetching |
 
 The generators do not share the card: TRELLIS.2 at 1024³ takes ~22 GB alone,
 ARDY ~16 GB, MOSS 6–12 GB, and the ACE-Step server stays resident at ~8–10 GB
@@ -231,7 +263,10 @@ forge init | catalog | manifest [--check] | verify | audit [--fit] | rebake | mi
 ```
 
 `forge mcp` serves eleven tools over stdio, registered in
-[`.mcp.json`](.mcp.json). Images come back inline under the size vision
+[`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
+a fresh clone does not have — run any `just` recipe once (`just doctor` is
+the usual first) to build it before the MCP server can start. Images come
+back inline under the size vision
 models downscale past; a refusal is a **successful frame** naming what does
 exist, so a wrong name costs one turn, not a guess.
 
@@ -307,11 +342,16 @@ flags, the VRAM matrix and the launcher rules;
 | [`forge_mcp`](crates/forge_mcp) | the MCP tools as a library, served by `forge mcp` — `publish = false` |
 | [`forge`](crates/forge) | the binary — `publish = false` |
 
-The seven library crates are meant for crates.io and `just publish-check`
-packages each in isolation. None of them links Bevy; `cargo test -p
-forge_library` never pays for it. Bevy is pinned to `=0.19.0`: its
-`AnimationTargetId` hashing changed in 0.19 and nothing here persists those
-ids.
+None of the crates is published to crates.io, and none will be — the
+names collide with existing registry crates, and a toolkit that ships a
+binary, a Python layer and a rig profile together is honestly depended on
+as one thing: use a git or path dependency into the checkout
+(`designs/decisions.md` has the entry). `just publish-check` stays as the
+packaging-hygiene gate: each of the seven library crates packages and
+builds in isolation. Six of those seven link no engine at all — only
+`forge_capture` pulls in Bevy — so `cargo test -p forge_library` never
+pays for it. Bevy is pinned to `=0.19.0`: its `AnimationTargetId` hashing
+changed in 0.19 and nothing here persists those ids.
 
 ## Layout
 
@@ -331,21 +371,32 @@ out/           gitignored: lifts/ props/ export/ sweeps/ sheets/ views/ audio/
 ## Using it from your game
 
 ```sh
+just install                            # or: cargo install --path crates/forge --locked
+export FORGE_TOOLKIT=~/src/asset-forge  # where the clone lives; forge init copies the rig profile from it
 cd ~/my-game && forge init --name my-game
 ```
 
-writes `forge.toml`, the `assets/` and `assets-src/` directories, the
-reference ledger's header, an empty manifest, and a copy of the rig profile
-under `assets-src/rigs/`. Every `forge` verb walks up from the working
-directory to the nearest `forge.toml`, so the `just` recipes run from your
-project against its library:
+`just install` puts a release `forge` on PATH (`~/.cargo/bin`). Outside
+the toolkit checkout, `forge init` needs `FORGE_TOOLKIT` (or `FORGE_HOME`)
+pointing at the clone so it can install the rig profile — it exits 2 and
+says so when it cannot. `forge init` writes `forge.toml`, the `assets/`
+and `assets-src/` directories, the reference ledger's header, an empty
+manifest, and a copy of the rig profile under `assets-src/rigs/`. Every
+`forge` verb walks up from the working directory to the nearest
+`forge.toml`, so the `just` recipes run from your project against its
+library:
 
 ```sh
 just --justfile ~/src/asset-forge/justfile --working-directory . sheet walk
 ```
 
+(The dev recipes — `fmt`, `check`, `test`, `pytest`, `ci`, … — are the
+exception: run that way they still act on the toolkit checkout, never on
+your game.)
+
 Your game reads one file, `assets/library.json`, through
-[`forge_manifest`](crates/forge_manifest) (serde only, no engine): the rig
+[`forge_manifest`](crates/forge_manifest) (serde only, no engine; a git or
+path dependency — the crates are not on crates.io): the rig
 (profile, bone table, sockets, the `.glb` hash), bodies, models with their
 bounds in metres, clips with duration, loop flag, root-motion mode and
 events, and audio — every entry with its `sha256`. A newer manifest than the
@@ -369,7 +420,13 @@ manifest has everything they need.
 
 ## Licence
 
-MIT OR Apache-2.0, at your option.
+MIT OR Apache-2.0, at your option — **for the code**. The sample assets
+under `assets/` and `assets-src/` are not covered by the code licence:
+they are governed by [`assets-src/SOURCES.md`](assets-src/SOURCES.md),
+summarised per kind in [`assets/LICENSE.md`](assets/LICENSE.md). In
+particular, the three lifted sample meshes' textures passed through
+nvdiffrast (non-commercial — see above) and are **not for commercial
+use**.
 
 The sample library under `assets/` and `assets-src/` is shipped so the tools
 have something to show on a fresh clone. Its meshes were lifted with

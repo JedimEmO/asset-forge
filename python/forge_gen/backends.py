@@ -103,6 +103,10 @@ class Backend:
     cwd: str
     resident: bool
     env: dict[str, str] = field(default_factory=dict)
+    #: ``[env.force]``: entries the launcher sets unconditionally — the
+    #: ambient shell must not be able to shadow them (setdefault covers the
+    #: rest of ``[env]``).
+    env_force: dict[str, str] = field(default_factory=dict)
     models: list[Model] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
     server: dict | None = None
@@ -156,10 +160,10 @@ class Backend:
             return None
 
     def install_hint(self) -> str:
-        """The command that installs it."""
+        """The command that installs it — the script's resolved path, so the line works from any cwd."""
         if self.is_tool:
             return f"install {self.name} and put it on PATH, or set {self.extra.get('bin_env', self.name.upper() + '_BIN')}"
-        return f"bash backends/{self.name}/install.sh  (or --adopt-env <prefix> --adopt-checkout <clone>)"
+        return f"bash {self.install_script}  (or --adopt-env <prefix> --adopt-checkout <clone>)"
 
 
 def backends_dir() -> Path:
@@ -211,15 +215,32 @@ def parse_backend(data: dict, name: str, directory: Path) -> Backend:
     env_table = data.get("env", {})
     if not isinstance(env_table, dict):
         raise BackendConfigError(f"{name}/{BACKEND_FILE}: [env] must be a table", backend=name)
-    env: dict[str, str] = {}
-    for key, value in env_table.items():
-        if isinstance(value, bool):
-            value = "1" if value else "0"
-        elif isinstance(value, (int, float)):
-            value = str(value)
-        if not isinstance(value, str):
-            raise BackendConfigError(f"{name}/{BACKEND_FILE}: [env] {key} must be text", backend=name)
-        env[str(key)] = value
+
+    def _env_entries(table: dict, section: str) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for key, value in table.items():
+            if isinstance(value, bool):
+                value = "1" if value else "0"
+            elif isinstance(value, (int, float)):
+                value = str(value)
+            if not isinstance(value, str):
+                raise BackendConfigError(f"{name}/{BACKEND_FILE}: [{section}] {key} must be text", backend=name)
+            out[str(key)] = value
+        return out
+
+    # [env.force]: values the launcher exports unconditionally; the rest of
+    # [env] is setdefault, so the shell may override it (and doctor warns).
+    force_table = env_table.pop("force", {})
+    if not isinstance(force_table, dict):
+        raise BackendConfigError(f"{name}/{BACKEND_FILE}: [env.force] must be a table", backend=name)
+    env = _env_entries(env_table, "env")
+    env_force = _env_entries(force_table, "env.force")
+    overlap = sorted(set(env) & set(env_force))
+    if overlap:
+        raise BackendConfigError(
+            f"{name}/{BACKEND_FILE}: {', '.join(overlap)} in both [env] and [env.force] — say once whether the shell may override it",
+            backend=name,
+        )
 
     models: list[Model] = []
     for index, item in enumerate(data.get("models", []) or []):
@@ -273,6 +294,7 @@ def parse_backend(data: dict, name: str, directory: Path) -> Backend:
         cwd=cwd,
         resident=bool(data.get("resident", False)),
         env=env,
+        env_force=env_force,
         models=models,
         notices=notices,
         server=dict(server) if server else None,

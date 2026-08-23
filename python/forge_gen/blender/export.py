@@ -168,6 +168,7 @@ def run_fake(args) -> dict:
     blend = _common.existing_file(args.blend, what=".blend")
     out = Path(args.out).expanduser().resolve()
     record_path = Path(args.record).expanduser().resolve()
+    placeholders.refuse_real(out, record_path)
     fake_body_glb(out, spec["profile"])
     info = glb_mod.verify_glb(out)
     rec = placeholders.fake_record("export", _common.TOOL, backend=_common.BACKEND_NAME, created_by=getattr(args, "created_by", None))

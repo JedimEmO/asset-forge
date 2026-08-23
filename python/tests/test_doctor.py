@@ -85,6 +85,32 @@ def test_checkout_at_another_commit_warns_and_dirty_is_noted(installed_tree, tmp
     assert any("git -C" in hint and "checkout 693f74d" in hint for hint in report["backends"]["ardy"]["hints"])
 
 
+def test_ambient_shadow_is_a_warn_row_and_hints_are_deduplicated(installed_tree, tmp_path, monkeypatch):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    report = doctor.diagnose(only="ardy", host=False)
+    ardy = report["backends"]["ardy"]
+    names = {check["name"]: check for check in ardy["checks"]}
+    row = names["env:HF_HUB_OFFLINE"]
+    assert row["ok"], "a shadow warns; it does not fail the backend"
+    assert row["detail"].startswith("warn:") and "HF_HUB_OFFLINE=0" in row["detail"] and "shadows" in row["detail"]
+    assert len(ardy["hints"]) == len(set(ardy["hints"])), "one hint each, not once per FAIL"
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    report = doctor.diagnose(only="ardy", host=False)
+    checks = report["backends"]["ardy"]["checks"]
+    assert not any(c["name"] == "env:HF_HUB_OFFLINE" for c in checks), "an equal ambient value is not a shadow"
+
+
+def test_missing_backend_hint_is_an_absolute_path(backends_tree):
+    report = doctor.diagnose(only="ardy", host=False)
+    entry = report["backends"]["ardy"]
+    assert entry["status"] == "missing"
+    install_line = str(backends_tree / "ardy" / "install.sh")
+    assert any(install_line in hint for hint in entry["hints"]), (
+        "the hint must name the resolved script — `bash backends/ardy/install.sh` does not exist from a user project"
+    )
+
+
 def test_no_probe_is_broken(installed_tree):
     os.remove(installed_tree / "ardy" / "probe.py")
     report = doctor.diagnose(only="ardy", host=False)

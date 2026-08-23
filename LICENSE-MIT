@@ -1,3 +1,8 @@
+Scope: MIT OR Apache-2.0 covers the code in this repository. The sample
+assets under assets/ and assets-src/ are not covered by this licence; they
+are governed by assets-src/SOURCES.md and assets/LICENSE.md (the sample
+meshes' textures were baked through nvdiffrast and are non-commercial).
+
 MIT License
 
 Copyright (c) 2026 Mathias Myrland

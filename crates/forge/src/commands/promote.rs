@@ -297,7 +297,11 @@ fn audio(project: &Project, args: &PromoteAudioArgs) -> Outcome {
     let expected = match kind {
         Kind::Sfx => RecordKind::Sfx,
         Kind::Music => RecordKind::Music,
-        _ => RecordKind::Speech,
+        Kind::Voice => RecordKind::Speech,
+        // Unreachable: is_audio() was just checked, and the non-audio kinds
+        // returned above. Spelled out so a fourth audio kind fails to
+        // compile here instead of shipping as somebody else's record kind.
+        Kind::Clip | Kind::Body | Kind::Model => unreachable!("guarded by is_audio above"),
     };
     let request = PromoteAudio {
         kind,
@@ -309,6 +313,7 @@ fn audio(project: &Project, args: &PromoteAudioArgs) -> Outcome {
         note: stated(args.curation.note.as_deref()),
         created_by: Actor::parse(&args.curation.created_by),
         overwrite: args.curation.overwrite,
+        allow_defective: args.allow_defective,
     };
     let promoted = promote_audio(project, &request)?;
     report(&promoted);

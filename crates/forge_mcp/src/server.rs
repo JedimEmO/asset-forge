@@ -98,7 +98,7 @@ impl ForgeServer {
              full into the library; promote_audio copies the sound you auditioned. Both REFUSE \
              a name that is already taken unless you pass overwrite, and then echo the record \
              they replaced. There is no promote for a body or a model: those go through the \
-             genart skills with a human looking at every step.\n\
+             forge-character and forge-prop skills with a human looking at every step.\n\
              \n\
              When unsure what this machine can run, call doctor first. Refusals come back as \
              error results that name what would have worked; read them and correct the call \

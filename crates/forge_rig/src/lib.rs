@@ -216,16 +216,11 @@ impl Contract {
     /// The bytes do not parse, declare another schema, or describe a table
     /// that is not a tree with one root: see [`Contract::validate`].
     pub fn from_json(bytes: &[u8], path: &Path) -> Result<Self> {
+        check_schema(bytes, path)?;
         let contract: Self = serde_json::from_slice(bytes).map_err(|source| RigError::Json {
             path: path.to_path_buf(),
             source,
         })?;
-        if contract.schema != SCHEMA {
-            return Err(RigError::Schema {
-                path: path.to_path_buf(),
-                found: contract.schema,
-            });
-        }
         contract.validate()?;
         Ok(contract)
     }
@@ -672,17 +667,12 @@ impl Sockets {
     ///
     /// The file is unreadable, does not parse, or declares another schema.
     pub fn load(path: &Path) -> Result<Self> {
-        let sockets: Self =
-            serde_json::from_slice(&read(path)?).map_err(|source| RigError::Json {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        if sockets.schema != SCHEMA {
-            return Err(RigError::Schema {
-                path: path.to_path_buf(),
-                found: sockets.schema,
-            });
-        }
+        let bytes = read(path)?;
+        check_schema(&bytes, path)?;
+        let sockets: Self = serde_json::from_slice(&bytes).map_err(|source| RigError::Json {
+            path: path.to_path_buf(),
+            source,
+        })?;
         Ok(sockets)
     }
 
@@ -809,17 +799,12 @@ impl MotionSkeleton {
     /// The file is unreadable, does not parse, declares another schema, or
     /// fails [`MotionSkeleton::validate`].
     pub fn load(path: &Path) -> Result<Self> {
-        let skeleton: Self =
-            serde_json::from_slice(&read(path)?).map_err(|source| RigError::Json {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        if skeleton.schema != SCHEMA {
-            return Err(RigError::Schema {
-                path: path.to_path_buf(),
-                found: skeleton.schema,
-            });
-        }
+        let bytes = read(path)?;
+        check_schema(&bytes, path)?;
+        let skeleton: Self = serde_json::from_slice(&bytes).map_err(|source| RigError::Json {
+            path: path.to_path_buf(),
+            source,
+        })?;
         skeleton.validate()?;
         Ok(skeleton)
     }
@@ -1088,9 +1073,74 @@ fn read(path: &Path) -> Result<Vec<u8>> {
     })
 }
 
+/// Refuse any schema but [`SCHEMA`], read out of the raw JSON *before* the
+/// typed parse.
+///
+/// On purpose, and shared by all three profile loaders: a newer file may
+/// well not match this build's types, and the error the caller shows must
+/// say "you are behind", not "missing field". A document with no `schema`
+/// at all is refused as schema 0 — there is no legacy shape this crate
+/// reads. The same rule, for the same reason, as `forge_library`'s
+/// `Sidecar::from_value` and `forge_manifest`'s refuse-newer.
+fn check_schema(bytes: &[u8], path: &Path) -> Result<()> {
+    #[derive(Deserialize)]
+    struct Probe {
+        #[serde(default)]
+        schema: u32,
+    }
+    let probe: Probe = serde_json::from_slice(bytes).map_err(|source| RigError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if probe.schema != SCHEMA {
+        return Err(RigError::Schema {
+            path: path.to_path_buf(),
+            found: probe.schema,
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// All three loaders must say "you are behind" for a newer file, never
+    /// "missing field": the schema is read before the typed parse. A file
+    /// with no schema at all is refused as schema 0.
+    #[test]
+    fn a_newer_schema_is_refused_before_the_typed_parse() {
+        let newer = br#"{"schema": 99}"#;
+        let error = Contract::from_json(newer, Path::new("contract.json")).expect_err("refuse");
+        assert!(
+            matches!(error, RigError::Schema { found: 99, .. }),
+            "{error}"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sockets = dir.path().join("sockets.json");
+        fs::write(&sockets, newer).expect("write");
+        let error = Sockets::load(&sockets).expect_err("refuse");
+        assert!(
+            matches!(error, RigError::Schema { found: 99, .. }),
+            "{error}"
+        );
+
+        let skeleton = dir.path().join("motion_skeleton.json");
+        fs::write(&skeleton, newer).expect("write");
+        let error = MotionSkeleton::load(&skeleton).expect_err("refuse");
+        assert!(
+            matches!(error, RigError::Schema { found: 99, .. }),
+            "{error}"
+        );
+
+        let error = Contract::from_json(br#"{"name": "x"}"#, Path::new("contract.json"))
+            .expect_err("no schema is refused, not guessed");
+        assert!(
+            matches!(error, RigError::Schema { found: 0, .. }),
+            "{error}"
+        );
+    }
 
     fn two_bones() -> Contract {
         Contract {

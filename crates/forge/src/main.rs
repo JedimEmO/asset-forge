@@ -86,7 +86,13 @@ fn run(cli: &Cli) -> Outcome {
         Command::Promote(door) => commands::promote::run(&project(cli)?, door),
         Command::Audio(args) => commands::audio::run(cli, args),
         Command::Rig(args) => commands::rig::run(cli, args),
-        Command::Gen(args) => commands::generate::run(&project(cli)?, args),
+        Command::Gen(args) => match project(cli) {
+            Ok(project) => commands::generate::run(&project, args),
+            // `--help` needs no library: print the Python layer's help from
+            // anywhere rather than refusing over a missing forge.toml.
+            Err(_) if commands::generate::wants_help(args) => commands::generate::help(args),
+            Err(refusal) => Err(refusal),
+        },
         Command::Doctor(args) => commands::doctor::run(&project(cli)?, args),
         Command::Gpu(args) => commands::gpu::run(&project(cli)?, args),
         Command::Sheet(args) => commands::look::sheet(&project(cli)?, args),

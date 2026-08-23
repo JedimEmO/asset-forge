@@ -1,0 +1,246 @@
+"""Every command module's run_fake, end to end: outputs validate, records parse, guards hold.
+
+Ten generator commands had zero tests; this file gives each one the cheap
+half — the ``--fake`` path needs no backend, no GPU and no Blender, yet it
+exercises argument settling, output writing and the record schema. Each
+smoke test asserts the record round-trips through ``records.load`` +
+``records.normalize`` (the byte contract with the Rust reader) and that the
+artefacts pass the validator their real counterparts must. The guard tests
+pin the other new behaviour: ``--fake`` refuses to overwrite anything a
+``--fake`` run did not write.
+"""
+
+from __future__ import annotations
+
+import wave
+
+import pytest
+
+from forge_gen import cli, glb, npz, placeholders, records
+from forge_gen.exit_codes import UsageError
+from tests.conftest import REPO
+
+
+def parse(argv: list[str]):
+    """The production parser, so args carry exactly what a real invocation gets."""
+    args = cli.build_parser().parse_args(argv)
+    return args._module, args
+
+
+def run_fake(*argv: str) -> dict:
+    module, args = parse([*argv, "--fake"])
+    return module.run_fake(args)
+
+
+def load_and_normalize(record_path) -> dict:
+    """The record parses, declares itself fake, and re-normalises to the same content."""
+    rec = records.load(record_path)
+    assert rec["fake"] is True
+    assert rec["backend"]["commit"] == placeholders.FAKE_COMMIT
+    again = records.normalize(rec)
+    assert records.dumps(again) == records.dumps(rec), "normalize must be idempotent on what write wrote"
+    return rec
+
+
+@pytest.fixture(autouse=True)
+def humanoid(monkeypatch):
+    monkeypatch.setenv("FORGE_RIG_PROFILE", str(REPO / "rigs" / "humanoid"))
+    monkeypatch.delenv("FORGE_FAKE", raising=False)
+
+
+@pytest.fixture
+def ref_png(tmp_path):
+    return placeholders.tile_png(tmp_path / "ref.png")
+
+
+@pytest.fixture
+def lift_glb(tmp_path):
+    return placeholders.placeholder_glb(tmp_path / "lift.glb", name="lift")
+
+
+# ------------------------------------------------------------------ meshes --
+
+
+def test_mesh_fake_writes_a_glb_and_a_null_knob_record(ref_png, tmp_path):
+    out, rec_path = tmp_path / "out.glb", tmp_path / "out.lift.json"
+    result = run_fake("mesh", str(ref_png), "--out", str(out), "--record", str(rec_path))
+    assert glb.verify_glb(out)["meshes"] == 1
+    rec = load_and_normalize(rec_path)
+    assert rec["kind"] == "lift"
+    # Nothing ran: every knob the caller did not state is null — no seed 42,
+    # no resolution 1024, and above all no texture baker that never loaded.
+    assert all(value is None for value in rec["params"].values()), rec["params"]
+    assert result["outputs"] == [str(out)]
+
+
+def test_mesh_fake_keeps_only_the_stated_knobs(ref_png, tmp_path):
+    rec_path = tmp_path / "s.lift.json"
+    run_fake("mesh", str(ref_png), "--out", str(tmp_path / "s.glb"), "--record", str(rec_path), "--seed", "7", "--preset", "character")
+    params = records.load(rec_path)["params"]
+    assert params["seed"] == 7 and params["preset"] == "character", "a stated knob is a fact about the request"
+    assert params["texture_baker"] is None and params["resolution"] is None
+
+
+def test_prop_fake(lift_glb, tmp_path):
+    out, rec_path = tmp_path / "prop.glb", tmp_path / "prop.json"
+    run_fake("prop", str(lift_glb), "--out", str(out), "--record", str(rec_path), "--height", "0.9")
+    assert glb.verify_glb(out)["meshes"] == 1
+    rec = load_and_normalize(rec_path)
+    assert rec["kind"] == "prop" and rec["inputs"][0]["role"] == "mesh"
+
+
+def test_rig_fake(lift_glb, tmp_path):
+    out, rec_path = tmp_path / "hero.blend", tmp_path / "hero.rig.json"
+    run_fake("rig", str(lift_glb), "--out", str(out), "--record", str(rec_path), "--name", "hero")
+    assert placeholders.is_placeholder(out)
+    rec = load_and_normalize(rec_path)
+    assert rec["kind"] == "rig"
+    assert all(value is None for value in rec["measured"].values()), "nothing was measured"
+
+
+def test_export_fake(tmp_path):
+    blend = placeholders.placeholder_blend(tmp_path / "hero.blend")
+    out, rec_path = tmp_path / "hero.glb", tmp_path / "hero.export.json"
+    run_fake("export", str(blend), "--out", str(out), "--record", str(rec_path))
+    info = glb.verify_glb(out)
+    assert info["skins"] == 1, "a body placeholder that binds nothing would not exercise the promote gate"
+    rec = load_and_normalize(rec_path)
+    assert rec["kind"] == "export"
+
+
+def test_rig_build_fake_writes_a_record_at_last(tmp_path):
+    result = run_fake("rig-build", "--out-dir", str(tmp_path))
+    assert result["record"] is not None, "rig-build was the one generator command with no record"
+    rec = load_and_normalize(result["record"])
+    assert rec["kind"] == "rig" and rec["params"]["mode"] == "build"
+    assert rec["inputs"][0]["role"] == "clip" and rec["inputs"][0]["sha256"], "the fixture clip is hashed as the input"
+    assert {entry["path"] for entry in rec["outputs"]} == {str(tmp_path / "rig.blend"), str(tmp_path / "rig.glb")}
+    assert placeholders.is_placeholder(tmp_path / "rig.blend")
+    assert glb.verify_glb(tmp_path / "rig.glb")
+
+
+# ------------------------------------------------------------------- audio --
+
+
+def assert_audible_placeholder(path):
+    assert placeholders.is_placeholder(path)
+    with wave.open(str(path)) as handle:
+        frames = handle.readframes(handle.getnframes())
+    assert max(abs(int.from_bytes(frames[i : i + 2], "little", signed=True)) for i in range(0, len(frames), 2)) > 1000, (
+        "the placeholder must not be silence: `forge audio inspect` calls a silent file defective"
+    )
+
+
+def test_sfx_fake(tmp_path):
+    out = tmp_path / "door.wav"
+    result = run_fake("sfx", "--prompt", "a heavy door slams", "--out", str(out))
+    assert_audible_placeholder(out)
+    rec = load_and_normalize(result["record"])
+    assert rec["kind"] == "sfx" and rec["params"]["seed"] is not None
+
+
+def test_music_fake(tmp_path):
+    out, rec_path = tmp_path / "theme.wav", tmp_path / "theme.music.json"
+    run_fake("music", "--prompt", "calm exploration", "--duration", "30", "--out", str(out), "--record", str(rec_path))
+    assert_audible_placeholder(out)
+    rec = load_and_normalize(rec_path)
+    assert rec["kind"] == "music"
+
+
+def test_speech_fake(tmp_path):
+    out = tmp_path / "line.wav"
+    result = run_fake("speech", "--text", "Stand down.", "--out", str(out))
+    assert_audible_placeholder(out)
+    rec = load_and_normalize(result["record"])
+    assert rec["kind"] == "speech"
+
+
+def test_voice_fake(tmp_path):
+    result = run_fake("voice", "warden", "--describe", "deep, slow, grave", "--seed", "1", "--out-dir", str(tmp_path))
+    out = tmp_path / "warden" / "ref.wav"
+    assert_audible_placeholder(out)
+    with wave.open(str(out)) as handle:
+        seconds = handle.getnframes() / handle.getframerate()
+    assert 5.0 <= seconds <= 15.0, "the fake reference must pass the cloner's duration band"
+    rec = load_and_normalize(result["record"])
+    assert rec["kind"] == "voice"
+
+
+# ------------------------------------------------------------------ motion --
+
+
+def test_sweep_fake_states_batch_and_grid(tmp_path):
+    result = run_fake(
+        "motion", "sweep", "--out-dir", str(tmp_path), "--prompt", "a person walks forward",
+        "--duration", "2", "--samples", "2", "--seeds", "0", "1",
+    )
+    takes = result["takes"]
+    assert len(takes) == 4
+    for take in takes:
+        assert placeholders.is_placeholder(take["path"])
+        rec = load_and_normalize(take["record"])
+        assert rec["kind"] == "take"
+        params = rec["params"]
+        assert params["batch_size"] == 8, "the argparse default, stated — sample k of a batch depends on it"
+        assert params["grid"] == {"prompts": 1, "seeds": 2, "cfg": 1, "durations": 1, "samples": 2}
+    assert placeholders.is_placeholder(tmp_path / "sweep.json")
+
+
+def test_keys_fake_states_batch_and_grid(tmp_path):
+    base = npz.write_take(tmp_path / "base.npz", frames=20, fps=20, prompt="idle")
+    result = run_fake(
+        "motion", "keys", "--base", str(base), "--prompt", "rifle recoil", "--preset", "recoil",
+        "--out-dir", str(tmp_path), "--samples", "2", "--seed", "3",
+    )
+    takes = result["takes"]
+    assert len(takes) == 2
+    for take in takes:
+        rec = load_and_normalize(take["record"])
+        params = rec["params"]
+        assert params["batch_size"] == 2, "keys draws every sample in one forward pass"
+        assert params["grid"] == {"prompts": 1, "seeds": 1, "cfg": 1, "durations": 1, "samples": 2}
+        assert params["keys_sha256"], "the synthesized spec is hashed like an authored one"
+
+
+# ------------------------------------------------------------------ guards --
+
+
+def test_fake_refuses_to_overwrite_a_real_blend(lift_glb, tmp_path):
+    """The finding's exact shape: FORGE_FAKE=1 replaced a committed 3 MB .blend with 69 bytes."""
+    out = tmp_path / "hero.blend"
+    out.write_bytes(b"BLENDER-v405RENDH" + b"\x00" * 4096)
+    with pytest.raises(UsageError, match="hero.blend"):
+        run_fake("rig", str(lift_glb), "--out", str(out), "--record", str(tmp_path / "hero.rig.json"), "--name", "hero")
+    assert out.stat().st_size > 4096 - 1, "the real file is untouched"
+
+
+def test_fake_refuses_a_real_wav_glb_take_and_record(ref_png, tmp_path):
+    real_wav = tmp_path / "door.wav"
+    with wave.open(str(real_wav), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(8000)
+        handle.writeframes(b"\x00\x01" * 800)
+    with pytest.raises(UsageError, match="door.wav"):
+        run_fake("sfx", "--prompt", "a door", "--out", str(real_wav))
+
+    real_glb = tmp_path / "barrel.glb"
+    glb.placeholder_glb(real_glb, generator="TRELLIS.2")  # a real generator string: not a placeholder
+    with pytest.raises(UsageError, match="barrel.glb"):
+        run_fake("mesh", str(ref_png), "--out", str(real_glb), "--record", str(tmp_path / "barrel.lift.json"))
+
+    real_record = tmp_path / "sound.json"
+    rec = placeholders.fake_record("sfx", "moss_sound_effect", backend="moss_sfx")
+    rec["fake"] = False  # a real record beside a real render
+    records.write(rec, real_record)
+    with pytest.raises(UsageError, match="sound.json"):
+        run_fake("sfx", "--prompt", "a door", "--out", str(tmp_path / "sound.wav"), "--record", str(real_record))
+
+
+def test_fake_reruns_over_its_own_placeholders_are_fine(tmp_path):
+    argv = ("motion", "sweep", "--out-dir", str(tmp_path), "--prompt", "walk", "--duration", "2", "--samples", "1")
+    run_fake(*argv)
+    run_fake(*argv)  # ci-fake reruns must stay green
+    out = tmp_path / "door.wav"
+    run_fake("sfx", "--prompt", "a door", "--out", str(out))
+    run_fake("sfx", "--prompt", "a door", "--out", str(out))

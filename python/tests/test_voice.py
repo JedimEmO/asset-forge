@@ -43,7 +43,7 @@ def project(tmp_path, monkeypatch):
 
 def test_build_record_is_a_voice_record_with_every_knob_and_no_inputs(project):
     ref = project / "assets-src" / "voices" / "crypt_warden" / "ref.wav"
-    placeholders.silence_wav(ref, seconds=8.0, rate=24000)
+    placeholders.placeholder_wav(ref, seconds=8.0, rate=24000)
     rec = voice.build_record(
         name="crypt_warden",
         instruction="deep and slow",
@@ -102,7 +102,7 @@ def test_plan_seeds_every_run_validates_the_name_and_refuses_an_existing_voice(p
         voice.plan(_args(top_p=1.5))
 
     ref = project / "assets-src" / "voices" / "crypt_warden" / "ref.wav"
-    placeholders.silence_wav(ref, seconds=8.0)
+    placeholders.placeholder_wav(ref, seconds=8.0)
     with pytest.raises(InputRejected, match="changes every line cloned from it") as caught:
         voice.plan(_args())
     assert caught.value.fields["voice"] == "crypt_warden"
@@ -133,7 +133,7 @@ def test_a_bare_voice_name_resolves_to_the_designed_voice_and_its_record(project
     assert caught.value.fields["voice"] == "crypt_warden"
 
     ref = project / "assets-src" / "voices" / "crypt_warden" / "ref.wav"
-    placeholders.silence_wav(ref, seconds=8.0)
+    placeholders.placeholder_wav(ref, seconds=8.0)
     assert speech.resolve_voice("crypt_warden") == ref
     assert speech.resolve_voice(" crypt_warden ") == ref
     assert speech.voice_record_beside(ref) is None, "a brought clip has no record"
@@ -184,7 +184,7 @@ def test_a_line_cloned_from_a_designed_voice_records_the_voice_record(project):
 
     # A brought clip: the record names no voice record.
     brought = project / "calm.wav"
-    placeholders.silence_wav(brought, seconds=6.0)
+    placeholders.placeholder_wav(brought, seconds=6.0)
     args.voice = str(brought)
     assert speech.plan(args)["voice_record"] is None
 

@@ -89,6 +89,12 @@ def resolve_interpreter(backend: Backend) -> Path:
             hint=f"unset it, or point it at the env: {backend.install_hint()}",
         )
     link = backend.env_link
+    if link.is_symlink() and not link.exists():
+        raise MissingBackend(
+            f"{link} points at {os.readlink(link)}, which is not there — the environment moved or was deleted",
+            backend=backend.name,
+            hint=backend.install_hint(),
+        )
     if link.exists():
         found = _python_under(link)
         if found is not None:
@@ -114,22 +120,8 @@ def prefix_of(backend: Backend, interpreter: Path | None = None) -> Path:
     return resolved.parent
 
 
-def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, str]:
-    """The environment the inner process runs with.
-
-    ``os.environ`` with this package prepended to ``PYTHONPATH``, then every
-    ``[env]`` entry of ``backend.toml`` with ``${PREFIX}``, ``${CHECKOUT}``,
-    ``${BACKEND_DIR}``, ``${TEXT_ENCODERS}`` and ``${CHECKPOINTS}`` expanded
-    (plus anything already in the environment), applied with *setdefault*
-    semantics so a value the user exported wins over the file's.
-    ``PYTHONNOUSERSITE=1`` is set the same way for every backend: a
-    ``~/.local`` that has seen years of experiments carries ``.pth`` hooks.
-    """
-    env = dict(os.environ)
-    python_path = str(python_dir())
-    existing = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = python_path if not existing else os.pathsep.join([python_path, existing])
-    interpreter = interpreter or resolve_interpreter(backend)
+def _expansion_mapping(backend: Backend, interpreter: Path) -> dict[str, str]:
+    """What ``${...}`` in an ``[env]`` value may name: the placeholders, plus the ambient environment."""
     mapping = dict(os.environ)
     mapping.update(
         {
@@ -140,11 +132,57 @@ def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, st
             "CHECKPOINTS": str(backend.checkpoints.resolve() if backend.checkpoints.exists() else backend.checkpoints),
         }
     )
+    return mapping
+
+
+def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, str]:
+    """The environment the inner process runs with.
+
+    ``os.environ`` with this package prepended to ``PYTHONPATH``, then every
+    ``[env]`` entry of ``backend.toml`` with ``${PREFIX}``, ``${CHECKOUT}``,
+    ``${BACKEND_DIR}``, ``${TEXT_ENCODERS}`` and ``${CHECKPOINTS}`` expanded
+    (plus anything already in the environment), applied with *setdefault*
+    semantics so a value the user exported wins over the file's — except
+    ``[env.force]`` entries, which are set unconditionally: those are the
+    values the backend does not work without (trellis2's CUDA host
+    toolchain, where an anaconda-base ``CC`` in the shell fed the JIT a
+    mixed toolchain). ``PYTHONNOUSERSITE=1`` is set the same way for every
+    backend: a ``~/.local`` that has seen years of experiments carries
+    ``.pth`` hooks.
+    """
+    env = dict(os.environ)
+    python_path = str(python_dir())
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = python_path if not existing else os.pathsep.join([python_path, existing])
+    interpreter = interpreter or resolve_interpreter(backend)
+    mapping = _expansion_mapping(backend, interpreter)
     env.setdefault("PYTHONNOUSERSITE", "1")
     env.setdefault("FORGE_BACKEND", backend.name)
     for key, value in backend.env.items():
         env.setdefault(key, string.Template(value).safe_substitute(mapping))
+    for key, value in backend.env_force.items():
+        env[key] = string.Template(value).safe_substitute(mapping)
     return env
+
+
+def env_shadowing(backend: Backend, interpreter: Path | None = None) -> list[tuple[str, str, str]]:
+    """``(key, ambient, configured)`` for every plain ``[env]`` entry the shell overrides.
+
+    Exactly the cases where :func:`inner_env`'s setdefault lets the ambient
+    value win over ``backend.toml``'s. Doctor turns each into a warn row;
+    ``[env.force]`` entries cannot be shadowed and are not listed.
+    """
+    interpreter = interpreter or resolve_interpreter(backend)
+    mapping = _expansion_mapping(backend, interpreter)
+    out: list[tuple[str, str, str]] = []
+    for key, value in backend.env.items():
+        ambient = os.environ.get(key)
+        if ambient is None:
+            continue
+        configured = string.Template(value).safe_substitute(mapping)
+        if ambient != configured:
+            out.append((key, ambient, configured))
+    return out
 
 
 def inner_cwd(backend: Backend) -> Path | None:

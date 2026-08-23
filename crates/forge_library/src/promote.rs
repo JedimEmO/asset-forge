@@ -132,6 +132,7 @@ pub(crate) fn promote_clip_carrying(
     request: &PromoteClip,
     carry: Option<&Sidecar>,
 ) -> Result<Promoted> {
+    let _lock = PromoteLock::acquire(project)?;
     let name = validate_name(&request.name)?;
     if !request.take_path.is_file() {
         return Err(LibraryError::rejected(format!(
@@ -565,6 +566,7 @@ pub struct PromoteBody {
 /// stature band, a named `.blend` that does not exist or lies outside the
 /// project, or a failed write.
 pub fn promote_body(project: &Project, request: &PromoteBody) -> Result<Promoted> {
+    let _lock = PromoteLock::acquire(project)?;
     let name = validate_name(&request.name)?;
     let target = project.kind_dir(Kind::Body).join(format!("{name}.glb"));
     guard_collision(&name, &target, request.overwrite)?;
@@ -814,6 +816,7 @@ pub struct PromoteModel {
 /// [`measure_glb_geometry`] refuses, a named `.blend` that does not exist or
 /// lies outside the project, or a failed write.
 pub fn promote_model(project: &Project, request: &PromoteModel) -> Result<Promoted> {
+    let _lock = PromoteLock::acquire(project)?;
     let name = validate_name(&request.name)?;
     let target = project.kind_dir(Kind::Model).join(format!("{name}.glb"));
     guard_collision(&name, &target, request.overwrite)?;
@@ -893,6 +896,11 @@ pub struct PromoteAudio {
     /// intended. A stem already taken by another audio kind is refused
     /// regardless: a game's audio map is by stem.
     pub overwrite: bool,
+    /// Ship the sound even when the measurements call it defective (silent,
+    /// or clipped hard enough to distort). Off, the door refuses with the
+    /// defect named: the toolkit already measures every sound, and a gate
+    /// that files what `forge audio list` will fail CI on is not a gate.
+    pub allow_defective: bool,
 }
 
 /// Copy an audio file into the library and write its sidecar.
@@ -911,6 +919,7 @@ pub struct PromoteAudio {
 /// wrong kind, a stem another audio kind already uses, an unintended
 /// collision, or a failed copy.
 pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promoted> {
+    let _lock = PromoteLock::acquire(project)?;
     let name = validate_name(&request.name)?;
     if !request.kind.is_audio() {
         return Err(LibraryError::rejected(format!(
@@ -955,11 +964,28 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
             path: existing.clone(),
         });
     }
+    // A hand-deleted sound leaves its record orphaned, and the record is the
+    // one part of an asset nobody can re-derive — replacing it silently is
+    // what overwrite exists to make deliberate. Naming the .json says why a
+    // missing audio file still blocked the door.
+    let orphan_record = directory.join(format!("{name}.json"));
+    if shipped.is_none() && !request.overwrite && orphan_record.exists() {
+        return Err(LibraryError::WouldOverwrite {
+            name: name.clone(),
+            path: orphan_record,
+        });
+    }
     if let Some(record) = &request.record {
         let expected = match request.kind {
             Kind::Sfx => RecordKind::Sfx,
             Kind::Music => RecordKind::Music,
-            _ => RecordKind::Speech,
+            Kind::Voice => RecordKind::Speech,
+            // Unreachable: is_audio() was checked at the door. Spelled out
+            // so a fourth audio kind fails to compile here rather than
+            // shipping under somebody else's record kind.
+            Kind::Clip | Kind::Body | Kind::Model => {
+                unreachable!("guarded by is_audio above")
+            }
         };
         if record.kind == RecordKind::Voice {
             return Err(LibraryError::rejected(format!(
@@ -984,6 +1010,19 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
         ))
     })?;
     let duration = audio.duration();
+
+    // The same rule `forge audio inspect` exits 1 on. A silent or clipped
+    // file in the library fails every later `forge audio list`, so the door
+    // refuses now, while the fix is still one regenerate away.
+    let metrics = forge_audio::measure(&audio);
+    if metrics.is_defective() && !request.allow_defective {
+        return Err(LibraryError::rejected(format!(
+            "{} is defective: {} — fix the sound and promote again, or pass \
+             --allow-defective to ship it anyway",
+            request.file.display(),
+            metrics.warnings().join("; ")
+        )));
+    }
 
     let bytes = read_bytes(&request.file)?;
     write_atomic(&target, &bytes)?;
@@ -1024,7 +1063,10 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
         record.generator = Some(match request.kind {
             Kind::Sfx => Generator::MossSoundEffect(run.sound_effect_params()),
             Kind::Music => Generator::AceStep(run.ace_step_params()),
-            _ => Generator::MossTts(run.speech_params()),
+            Kind::Voice => Generator::MossTts(run.speech_params()),
+            Kind::Clip | Kind::Body | Kind::Model => {
+                unreachable!("guarded by is_audio above")
+            }
         });
         record.provenance = Provenance::Recorded;
         // A line's durable input is the voice it was cloned from: the
@@ -1104,6 +1146,73 @@ fn same_stem(directory: &Path, name: &str) -> Option<PathBuf> {
 
 // ----------------------------------------------------------------- shared ---
 
+/// How long a second promote waits for the lock before giving up.
+///
+/// Long enough to outlast any single bake or decode issued alongside it (a
+/// native clip bake is seconds; a music track decodes in a few), short
+/// enough that a lock left behind by a killed process is a worded error
+/// rather than a hang.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How often the wait re-tries the lock.
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// One promote at a time per project: a lock file under `out/`.
+///
+/// Every door is check-then-write — "is the name taken" runs before the
+/// payload lands — and two concurrent promotes of the same name could both
+/// pass the check and both report success, one of them silently overwriting
+/// the other. That happened through the MCP server, whose tools run
+/// concurrently on a runtime; the lock lives here in the library so the
+/// CLI, the MCP doors and rebake are all covered by the same file.
+///
+/// `std::fs::File::options().create_new()` is the whole mechanism: atomic on
+/// every filesystem that matters, no daemon, and a crash leaves a file whose
+/// removal the error message names.
+struct PromoteLock {
+    path: PathBuf,
+}
+
+impl PromoteLock {
+    /// Take the project's promote lock, waiting briefly for a concurrent
+    /// promote to finish.
+    fn acquire(project: &Project) -> Result<Self> {
+        std::fs::create_dir_all(&project.out).map_err(|e| LibraryError::io(&project.out, e))?;
+        let path = project.out.join(".promote.lock");
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            match std::fs::File::options()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    // Best-effort breadcrumb for whoever finds a stale lock.
+                    use std::io::Write as _;
+                    let _ = write!(file, "{}", std::process::id());
+                    return Ok(Self { path });
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(LibraryError::rejected(format!(
+                            "another promote holds {} — wait for it, or delete the file if no \
+                             promote is actually running (a killed one leaves it behind)",
+                            path.display()
+                        )));
+                    }
+                    std::thread::sleep(LOCK_POLL);
+                }
+                Err(err) => return Err(LibraryError::io(&path, err)),
+            }
+        }
+    }
+}
+
+impl Drop for PromoteLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// Write the record and hand back what was written.
 ///
 /// Read back rather than returned as built: the writer rounds every event
@@ -1144,10 +1253,25 @@ fn refresh_manifest(project: &Project, report: &mut String) {
 /// else's asset — which, unlike a rejected call, is not recoverable from the
 /// conversation.
 fn guard_collision(name: &str, target: &Path, overwrite: bool) -> Result<()> {
-    if target.exists() && !overwrite {
+    if overwrite {
+        return Ok(());
+    }
+    if target.exists() {
         return Err(LibraryError::WouldOverwrite {
             name: name.to_owned(),
             path: target.to_path_buf(),
+        });
+    }
+    // The asset may be gone while its record still sits beside where it was
+    // — a hand-deleted .glb leaves an orphan sidecar, and the record is the
+    // one part of an asset nobody can re-derive. Refused by the same rule,
+    // naming the .json so the caller knows why a missing asset still
+    // blocked the door.
+    let record = sidecar::path_for(target);
+    if record.exists() {
+        return Err(LibraryError::WouldOverwrite {
+            name: name.to_owned(),
+            path: record,
         });
     }
     Ok(())

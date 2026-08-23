@@ -436,11 +436,12 @@ def run(args) -> dict:
 
 
 def run_fake(args) -> dict:
-    """Silence where the line would be, and a record that says so — the reference still hashed."""
+    """A placeholder tone where the line would be, and a record that says so — the reference still hashed."""
     spec = plan(args)
+    placeholders.refuse_real(*(path for job in spec["jobs"] for path in (job["out"], job["record"])))
     rendered = []
     for job in spec["jobs"]:
-        placeholders.silence_wav(job["out"])
+        placeholders.placeholder_wav(job["out"])
         rec = build_record(
             text=job["text"],
             out_path=job["out"],

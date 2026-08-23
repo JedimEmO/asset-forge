@@ -250,7 +250,10 @@ go back to the sweep, not to the knobs.
   conform to the contract`). A clip that does not reproduce is a record
   that lies; `just audit --fit` names the recipe that would, and the fix
   is a re-promote with that recipe, never a hand edit of either file.
-- `just manifest-check`, `just verify`, then `just ci`.
+- `just manifest-check`, `just verify`. With the audit above, those are
+  the project's gates; `just ci` is the toolkit's own gate, run from the
+  checkout — its dev recipes always act on the checkout, never on your
+  project.
 
 ## Seen → consequence → fix
 

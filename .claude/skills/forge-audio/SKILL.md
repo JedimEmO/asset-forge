@@ -166,8 +166,11 @@ with the pauses the punctuation asked for.
 stem + `.json`, which is where step 1 put it; `--record <json>` names
 another; no record at all files the sound with `unknown` provenance and
 says so on stderr (`no record at … — the sound will say unknown
-provenance`). Other flags: `--prompt`, `--tag` (repeatable), `--note`,
-`--created-by`, `--overwrite`.
+provenance`). The door runs the same measurements as step 2 and refuses a
+defective file (silent, or clipped hard enough to distort) with exit 2,
+naming the defect and `--allow-defective`; that flag ships it anyway, and
+the fix is upstream of the promote, not the flag. Other flags: `--prompt`,
+`--tag` (repeatable), `--note`, `--created-by`, `--overwrite`.
 
 The same door by hand, which is also what a `--note` or `--prompt` with
 spaces needs — a recipe's `*flags` re-splits them:
@@ -188,6 +191,7 @@ forge promote audio sfx out/audio/sfx/<name>.wav <name> \
 | `forge: <name> already exists as …/assets/audio/sfx/<name>.wav; pass overwrite to replace it` (exit 2) | refused; `--overwrite` replaces the file, the sidecar and — across containers — removes the old file so one stem never has two |
 | `<name> is already a <kind>: audio/<kind>/<name>.<ext> — a game's audio map is by stem, so pick another name` | refused, and `--overwrite` does not help: pick another name |
 | `forge: out/audio/sfx/<name>.json describes a sfx run, not music — it is not the sound's record` (exit 2) | the `--record` is for another kind of file; checked before the stem |
+| a refusal naming `file is silent` or `clipped: …` and `--allow-defective` (exit 2) | the door measured the file and it is defective; re-render (another seed, lower `--cfg`) rather than shipping it — `--allow-defective` is for the rare sound that is meant to be that way |
 
 ### 4. Verify
 
@@ -196,7 +200,10 @@ forge promote audio sfx out/audio/sfx/<name>.wav <name> \
   then `1 file(s)   ! = defect, ? = worth a look`; exits 1 on any `!`. An
   empty library says `no audio under …/assets/audio — nothing to measure`
   and passes.
-- `just manifest-check`, `just verify`, then `just ci`.
+- `just manifest-check`, `just verify`, `just audit`. Those are the
+  project's gates; `just ci` is the toolkit's own gate, run from the
+  checkout — its dev recipes always act on the checkout, never on your
+  project.
 
 ## Seen → consequence → fix
 

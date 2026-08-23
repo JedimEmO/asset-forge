@@ -2,9 +2,10 @@
 # main and every pull request.
 #
 # Five jobs, one question each, so a failure names itself: formatting,
-# clippy with warnings as errors, the test suite (Rust, then the Python
-# layer, then the MCP handshake and the fake pipelines), the headless gate,
-# and publish-check. The toolchain comes from rust-toolchain.toml — the pin
+# clippy and the rustdoc build with warnings as errors, the test suite
+# (Rust, then the Python layer, then the MCP handshake and the fake
+# pipelines), the headless gate, and publish-check. The toolchain comes
+# from rust-toolchain.toml — the pin
 # lives in one place, and each job reads it from the file rather than
 # repeating it here. Every job that compiles shares one rust-cache key: the
 # workspace is the same in all of them, and a warm cache is the difference
@@ -19,9 +20,12 @@
 # held against every shipped body), audit (by bytes and by pose, on the
 # fixture mannequin), manifest --check, verify. The test job runs
 # `just mcp-check` (the server handshakes over stdio and lists its tools)
-# and `just ci-fake`: the four generate pipelines on FORGE_FAKE=1
-# placeholders in a throwaway project — python3 is on the runner, no backend
-# is installed, no Blender, no GPU. The publish-check job is `cargo package`
+# and `just ci-fake`: the five generate pipelines on FORGE_FAKE=1
+# placeholders in a throwaway `forge init` project, every step driven as
+# `just --justfile <toolkit> --working-directory <project> <recipe>` — the
+# integration form the README documents is the one this job exercises —
+# with python3 on the runner, no backend installed, no Blender, no GPU.
+# The publish-check job is `cargo package`
 # over the seven registry crates, each verified against the .crate files of
 # its siblings. Nothing here needs a secret, and no model is fetched.
 
@@ -74,6 +78,13 @@ jobs:
         with:
           shared-key: workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The rustdoc build, warnings as errors: nothing else builds the docs,
+      # and an unbracketed <placeholder> in a doc comment is invisible until
+      # rustdoc reads it as HTML. Same job as clippy — it reuses the same
+      # dependency build instead of paying for it a sixth time.
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   test:
     name: test
@@ -101,9 +112,12 @@ jobs:
       # `forge mcp` handshakes over stdio and lists exactly the tools the
       # skills are written against. No GPU: the list is the test.
       - run: just mcp-check
-      # The fake pipelines end to end: mesh→prop→model, mesh→rig→export→body,
-      # sweep→review→clip, sfx→audio, then audit, manifest --check, verify
-      # in the throwaway project.
+      # The five fake pipelines end to end: mesh→prop→model,
+      # mesh→rig→export→body, sweep→review→clip, sfx→audio and
+      # voice→speech→audio, then catalog, audit, check-bodies,
+      # manifest --check and verify in the throwaway project — every step
+      # through `just --justfile <toolkit> --working-directory <project>`,
+      # the cross-project form the README documents.
       - run: just ci-fake
 
   headless:

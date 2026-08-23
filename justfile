@@ -7,12 +7,20 @@
 # From another project — one made by `forge init` — the same recipes run as
 # `just --justfile <this file> --working-directory . sheet walk`: the binary
 # is found beside this file, the library is the one under the working
-# directory, because `forge` walks up from there to its forge.toml.
+# directory, because `forge` walks up from there to its forge.toml. The dev
+# recipes under "verify" (fmt, check, test, pytest, smoke, ci, …) are the
+# exception the other way: they always act on this checkout, never on the
+# working directory, so `… --working-directory <your-game> ci` gates the
+# toolkit and does not lint, test or rewrite your game.
+#
+# .mcp.json launches ./target/debug/forge, which a fresh clone does not
+# have: any recipe that touches the binary builds it first (`just doctor`
+# is the usual first one), and `just install` puts a global `forge` on PATH.
 
 forge := justfile_directory() / "target/debug/forge"
 
 default:
-    @just --list
+    @just --justfile {{justfile()}} --list
 
 # The binary is wiring and printing; every recipe below that starts with
 # {{forge}} builds it first. It links Bevy through forge_studio — minutes
@@ -27,14 +35,44 @@ _build:
 
 # `--adopt-env DIR --adopt-checkout DIR` onboard an install that already
 # exists; `--no-models` leaves the weights to the first run; `--yes` accepts
-# nvdiffrast's non-commercial licence without a prompt (it is printed either
-# way). `all` runs every backends/*/install.sh in turn with the same flags.
+# every licence prompt without a TTY (nvdiffrast's non-commercial one is
+# printed either way). `all` — the default — runs every backends/*/install.sh
+# in turn with the same flags; that is roughly 80 GB of disk, so it prints
+# the bill first and refuses to start without `--yes`.
 #
 # Install one backend under backends/<name>/: `just setup trellis2 --yes`
 setup backend="all" *flags:
     #!/usr/bin/env bash
     set -euo pipefail
+    cd "{{justfile_directory()}}"
     if [ "{{backend}}" = all ]; then
+        # The bill, before anything is fetched. Weight sizes are the measured
+        # ones from backends/README.md and the backend.toml notes; the env and
+        # clone trees on top are estimates. Everything heavy goes under
+        # ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends} and the HF cache.
+        cat <<'BILL'
+    `just setup` installs all five backends. Disk, before you start:
+
+      trellis2   conda env (CUDA 12.4, torch cu124) + TRELLIS.2-4B + DINOv3      ~20 GB
+      ardy       venv + clone + text encoder (~16 GB downloaded, ~31 GB written) ~35 GB
+      acestep    venv + patched clone + the minimal model set (~7.3 GB)          ~10 GB
+      moss_sfx   venv + MOSS-SoundEffect-v2.0 (~11 GB)                           ~12 GB
+      moss_tts   venv + MOSS-TTS 4B (~8 GB) + the voice designer (~4 GB)         ~13 GB
+
+      total      ~80 GB and change, under ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends}
+                 and the Hugging Face cache. `--no-models` defers each backend's
+                 weights to its first generate.
+
+    BILL
+        case " {{flags}} " in
+            *" --yes "*|*" -y "*) ;;
+            *)
+                echo "setup all fetches the ~80 GB above and accepts licence prompts along the way." >&2
+                echo "Re-run as \`just setup all --yes\` after reading the bill (add --no-models to" >&2
+                echo "make the envs now and download weights on first use), or take one backend at" >&2
+                echo "a time: \`just setup trellis2 --yes\`." >&2
+                exit 2 ;;
+        esac
         for script in backends/*/install.sh; do
             echo "== $(basename "$(dirname "$script")")"
             bash "$script" {{flags}}
@@ -43,6 +81,15 @@ setup backend="all" *flags:
         [ -f backends/{{backend}}/install.sh ] || { echo "no backends/{{backend}}/install.sh — known: $(ls backends/*/install.sh | xargs -n1 dirname | xargs -n1 basename | tr '\n' ' ')" >&2; exit 2; }
         bash backends/{{backend}}/install.sh {{flags}}
     fi
+
+# A release build of the CLI onto PATH (~/.cargo/bin), for shells that are
+# not sitting in this checkout — `forge init` in your game is the usual
+# reason. The recipes themselves never need it: they build and run
+# ./target/debug/forge, which is also the binary .mcp.json launches.
+#
+# Put a global `forge` on PATH: `just install`
+install:
+    cargo install --path {{justfile_directory()}}/crates/forge --locked
 
 # ok | partial | missing | broken per backend; exits 1 if any is not ok —
 # partial means the env runs but a weight is not cached, and the first
@@ -69,11 +116,13 @@ gpu *flags: _build
 # half: the contract re-derived from the committed rig.glb — a diff here
 # means the rig changed — and the fixture mannequin every test stands on,
 # at out/fixture/mannequin.glb, where `sheet` and `studio` also reach for
-# it when the library has no body.
+# it when the library has no body. The contract half always acts on this
+# checkout's rigs/humanoid/; the mannequin lands under the working
+# directory's out/, which is where the recipes that need it look.
 #
 # Re-export the profile's contract and write its mannequin (rigs/humanoid/).
 rig: _build
-    cargo run -q -p forge_rig --example export_contract -- rigs/humanoid
+    cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_rig --example export_contract -- {{justfile_directory()}}/rigs/humanoid
     {{forge}} rig fixture out/fixture/mannequin.glb
 
 # --------------------------------------------------------------- generate --
@@ -400,22 +449,42 @@ migrate *flags: _build
 
 # ----------------------------------------------------------------- verify --
 
+# Every dev recipe here is pinned to this checkout the way `_build` is
+# (`--manifest-path`, or a `cd` into {{justfile_directory()}}): run as
+# `just --justfile <toolkit>/justfile --working-directory <your-game> ci`
+# they gate the toolkit and never format, lint, test or rewrite your game.
+# The library-facing gates (audit, check-bodies, manifest-check, verify)
+# stay on the working directory on purpose — they judge *your* library.
+
 fmt:
-    cargo fmt --all
+    cargo fmt --all --manifest-path {{justfile_directory()}}/Cargo.toml
 
 fmt-check:
-    cargo fmt --all -- --check
+    cargo fmt --all --manifest-path {{justfile_directory()}}/Cargo.toml -- --check
 
-# From P1 a second line builds the engine-free crates with
-# `--no-default-features`: a feature nothing builds is a feature that stops
-# compiling in a week.
+# Two lines: clippy over the workspace, then the rustdoc build, both with
+# warnings as errors — nothing else builds the docs, and an unbracketed
+# `<placeholder>` in a doc comment is invisible until rustdoc reads it as
+# HTML. (No crate in this workspace declares a cargo feature, so there is
+# no feature matrix to hold green; the day one grows a feature, its build
+# line goes here.)
 #
-# Clippy over the workspace, warnings as errors.
+# Clippy and rustdoc over the workspace, warnings as errors.
 check:
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --manifest-path {{justfile_directory()}}/Cargo.toml -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --manifest-path {{justfile_directory()}}/Cargo.toml
 
 test:
-    cargo test --workspace
+    cargo test --workspace --manifest-path {{justfile_directory()}}/Cargo.toml
+
+# The launcher's own suite — stdlib + pytest, no backend, no GPU, seconds.
+# The Rust side's `python_records` test re-runs the record capture, but
+# only this runs test_cli, test_launcher, test_backends, test_doctor,
+# test_glb and test_npz.
+#
+# The Python layer's tests: pytest over python/tests.
+pytest:
+    cd {{justfile_directory()}}/python && python3 -m pytest -q
 
 # Everything else rests on this, so it gets its own recipe. The display is
 # removed from the environment on purpose: if this passes, nothing in the
@@ -423,7 +492,7 @@ test:
 #
 # Prove offscreen rendering works with no display server at all.
 smoke:
-    env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q -p forge_capture --example smoke
+    env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_capture --example smoke
 
 # Rebuild every shipped clip from its own record and compare against the glb
 # — by bytes, then by pose on the fixture mannequin to under a millimetre —
@@ -482,6 +551,7 @@ manifest-check: _build
 mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
+    cd "{{justfile_directory()}}"
     expected="doctor generate_audio generate_clips inspect_audio list_audio list_clips list_models promote_audio promote_clip render_clip_strip render_model"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
@@ -514,15 +584,19 @@ mcp-check: _build
 verify *flags: _build
     {{forge}} verify {{flags}}
 
-# The gate to run before committing. Everything in it is a pass/fail
-# question with no judgement in it, and the whole recipe is minutes, not
-# tens of minutes.
+# The gate to run before committing — the one gate, the same set GitHub
+# Actions runs. Everything in it is a pass/fail question with no judgement
+# in it, and the whole recipe is minutes, not tens of minutes.
 #
-# What it covers: formatting, clippy over the workspace, the test suite,
+# What it covers: formatting, clippy and the rustdoc build over the
+# workspace, the Rust test suite, the Python launcher's pytest suite,
 # offscreen rendering with no display server, every clip rebuilding from
 # its own record by bytes and by pose, the rig profile held against every
-# shipped body, the committed manifest against a rebuild, and the
-# engine-free verify — sidecars, hashes, profile drift, the reference ledger.
+# shipped body, the committed manifest against a rebuild, the engine-free
+# verify — sidecars, hashes, profile drift, the reference ledger — the MCP
+# handshake and tool surface, and the five generate pipelines end to end
+# on FORGE_FAKE placeholders in a throwaway project, driven through the
+# documented `just --justfile … --working-directory …` form.
 #
 # What it deliberately leaves out, and why:
 #   publish-check   `cargo package` runs in isolation; only a release can
@@ -538,10 +612,10 @@ verify *flags: _build
 #   character, prop, sweep, review, sfx, music, speech, voice
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
-#                   `ci-fake` runs the same paths on placeholders instead.
+#                   `ci-fake` runs the same paths on placeholders.
 #   rig, rig-mesh, prop-import, promote-mesh
 #                   Blender.
-#   promote-*, manifest, rebake, migrate, setup
+#   promote-*, manifest, rebake, migrate, setup, install
 #                   they rewrite assets, sources or the machine.
 #   doctor, gpu     they describe this machine, and a runner is not it.
 #
@@ -550,22 +624,29 @@ verify *flags: _build
 # component assertion cannot. check-bodies and audit's posed half need no
 # adapter at all: a headless app with an animation player and no renderer.
 #
-# The pre-commit gate: fmt-check, clippy, tests, smoke, audit, check-bodies, manifest-check, verify.
-ci: fmt-check check test smoke audit check-bodies manifest-check verify
+# The pre-commit gate: fmt, clippy+doc, tests, pytest, smoke, audit, check-bodies, manifest-check, verify, mcp-check, ci-fake.
+ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify mcp-check ci-fake
 
 # The generate paths with no GPU, no backend and no Blender: FORGE_FAKE=1
 # makes every `forge gen` write placeholders that pass the same validators
 # the real outputs must — a glb that verify_glb accepts, an npz Take::read
 # accepts, a WAV, a PNG — and a real record saying `fake: true`. Run in a
 # throwaway project made by `forge init`, so nothing under assets/ here is
-# touched, and ending in that project's own audit, manifest-check and
-# verify. The reference PNG is written here too (a 4×4 flat grey), with its
-# ledger row, because a PNG without a row fails verify and should. The
-# voice path designs a placeholder voice, clones a line from it by name and
-# files the line, so verify's voice check runs on a record it has to read.
+# touched, and every step goes through the recipes above exactly the way a
+# game project drives them: `just --justfile <this file> --working-directory
+# <project> <recipe>` — so the documented integration form is what this
+# gate tests, and a recipe that quietly assumes the toolkit checkout fails
+# here first. (The ledger bans a *bare* recursive `just`, the kind that
+# hunts for a justfile in the project; these calls name their justfile,
+# because the recursion is the thing under test.) The reference PNGs are
+# written first (a 4×4 flat grey) with their ledger rows, because a PNG
+# without a row fails verify and should. The voice path designs a
+# placeholder voice, clones a line from it by name and files the line, so
+# verify's voice check runs on a record it has to read. It ends in the
+# throwaway project's own gates: catalog, audit, check-bodies,
+# manifest-check, verify.
 #
-# The five pipelines end to end on placeholders, then every gate — after
-# the MCP server has handshaken and listed its tools (mcp-check).
+# The five generate pipelines end to end on placeholders — no GPU, no backend, no Blender.
 ci-fake: _build mcp-check
     #!/usr/bin/env bash
     set -euo pipefail
@@ -573,9 +654,10 @@ ci-fake: _build mcp-check
     work=$(mktemp -d -t forge-fake.XXXXXX)
     trap 'rm -rf "$work"' EXIT
     export FORGE_FAKE=1 FORGE_HOME="{{justfile_directory()}}"
+    jf() { just --justfile "{{justfile()}}" --working-directory "$work" "$@"; }
     "$forge" init --project "$work" --name fake >/dev/null
     cd "$work"
-    mkdir -p assets-src/refs/props assets-src/refs/characters out/lifts out/props assets-src/blender out/export out/sweeps out/audio/sfx
+    mkdir -p assets-src/refs/props assets-src/refs/characters
     python3 - <<'PY'
     import struct, zlib
     def png(path, w, h, rgb):
@@ -586,33 +668,31 @@ ci-fake: _build mcp-check
     png("assets-src/refs/props/box.png", 4, 4, (200, 200, 200))
     png("assets-src/refs/characters/figure.png", 4, 4, (200, 200, 200))
     PY
-    printf '| refs/props/box.png | ci-fake placeholder | box | 2026-08-23 |\n| refs/characters/figure.png | ci-fake placeholder | figure | 2026-08-23 |\n' >> assets-src/SOURCES.md
+    printf '| `props/box.png` | ci-fake placeholder | box | 2026-08-23 |\n| `characters/figure.png` | ci-fake placeholder | figure | 2026-08-23 |\n' >> assets-src/SOURCES.md
     echo "== mesh -> prop -> promote model"
-    "$forge" gen mesh assets-src/refs/props/box.png --preset prop --out out/lifts/box.glb --record assets-src/refs/props/box.lift.json --seed 1 --verts 2000
-    "$forge" gen prop out/lifts/box.glb --out out/props/box.glb --record out/props/box.prop.json --height 1.0
-    "$forge" promote model out/props/box.glb box --lift-record assets-src/refs/props/box.lift.json --prop-record out/props/box.prop.json
-    echo "== mesh -> rig -> export -> promote body"
-    "$forge" gen mesh assets-src/refs/characters/figure.png --preset character --out out/lifts/figure.glb --record assets-src/refs/characters/figure.lift.json --seed 1 --verts 25000
-    "$forge" gen rig out/lifts/figure.glb --out assets-src/blender/figure.blend --record assets-src/blender/figure.rig.json --name figure
-    "$forge" gen export assets-src/blender/figure.blend --out out/export/figure.glb --record out/export/figure.export.json
-    "$forge" promote body out/export/figure.glb figure --blend assets-src/blender/figure.blend --lift-record assets-src/refs/characters/figure.lift.json --rig-record assets-src/blender/figure.rig.json --export-record out/export/figure.export.json
+    jf prop box --seed 1 --verts 2000
+    jf prop-import box --height 1.0
+    echo "== mesh -> rig -> export -> rig check -> promote body"
+    jf character figure --seed 1 --verts 25000
+    jf rig-mesh figure
+    jf promote-mesh figure
     echo "== motion sweep -> review -> promote clip"
-    "$forge" gen motion sweep --out-dir out/sweeps/walk --prompt "a person walks forward" --duration 2 --samples 1 --seeds 0
-    "$forge" gen motion review out/sweeps/walk/*.npz --sheet out/sweeps/walk/sheet.png --metrics out/sweeps/walk/metrics.json
-    take=$(ls out/sweeps/walk/*.npz | head -n1)
-    "$forge" promote clip "$take" walk_fake --record "${take%.npz}.take.json"
+    jf sweep "a person walks forward" --duration 2 --samples 1 --seeds 0
+    take=$(ls out/sweeps/0-*/*.npz | head -n1)
+    jf promote-clip walk_fake "$take" --record "${take%.npz}.take.json"
     echo "== sfx -> promote audio"
-    "$forge" gen sfx --prompt "a door" --seconds 1 --out out/audio/sfx/door.wav --record out/audio/sfx/door.json
-    "$forge" promote audio sfx out/audio/sfx/door.wav door --record out/audio/sfx/door.json
+    jf sfx door "a door" --seconds 1
+    jf promote-audio sfx door out/audio/sfx/door.wav
     echo "== voice -> speech --voice <name> -> promote audio voice"
-    "$forge" gen voice warden --describe "deep, slow, grave" --seed 1
-    "$forge" gen speech --text "Few come this deep." --voice warden --out out/audio/voice/warden_greeting.wav --record out/audio/voice/warden_greeting.json
-    "$forge" promote audio voice out/audio/voice/warden_greeting.wav warden_greeting --record out/audio/voice/warden_greeting.json
-    echo "== the gates"
-    "$forge" catalog
-    "$forge" audit
-    "$forge" manifest --check
-    "$forge" verify
+    jf voice warden "deep, slow, grave" --seed 1
+    jf speech warden_greeting "Few come this deep." --voice warden
+    jf promote-audio voice warden_greeting out/audio/voice/warden_greeting.wav
+    echo "== the gates, on the throwaway project"
+    jf catalog
+    jf audit
+    jf check-bodies
+    jf manifest-check
+    jf verify
 
 # forge_studio, forge_mcp and forge stay `publish = false`; the seven named
 # below are the registry surface. One `cargo package` call with every crate

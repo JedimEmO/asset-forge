@@ -176,6 +176,10 @@ pub(crate) struct PromoteAudioArgs {
     /// Allow replacing an existing sound of this name in this kind. Default
     /// false.
     pub(crate) overwrite: Option<bool>,
+    /// Ship the sound even when the measurements call it defective (silent,
+    /// or clipped hard enough to distort). Default false: the door refuses
+    /// with the defect named, and the fix is a regenerate, not a flag.
+    pub(crate) allow_defective: Option<bool>,
 }
 
 #[tool_router(router = promote_router, vis = "pub(crate)")]
@@ -363,9 +367,10 @@ impl ForgeServer {
                        inspect_audio the file first: you cannot hear it, but the plot shows \
                        clipping, dead air and truncation. A name already used by ANY audio kind \
                        is refused (a game's audio map is by stem); an existing sound of this \
-                       kind is refused unless overwrite:true. The record generate_audio wrote \
-                       beside the file is read automatically. Returns the sidecar path and the \
-                       catalog line."
+                       kind is refused unless overwrite:true; a silent or clipped file is \
+                       refused unless allow_defective:true — fix the sound instead. The record \
+                       generate_audio wrote beside the file is read automatically. Returns the \
+                       sidecar path and the catalog line."
     )]
     pub(crate) async fn promote_audio(
         &self,
@@ -426,7 +431,12 @@ impl ForgeServer {
         let expected = match kind {
             Kind::Sfx => RecordKind::Sfx,
             Kind::Music => RecordKind::Music,
-            _ => RecordKind::Speech,
+            Kind::Voice => RecordKind::Speech,
+            // Unreachable: parse_audio_kind only returns audio kinds.
+            // Spelled out so a fourth audio kind fails to compile here.
+            Kind::Clip | Kind::Body | Kind::Model => {
+                unreachable!("parse_audio_kind returns audio kinds only")
+            }
         };
         let (record, record_note) =
             match audio_record(&project, &file, args.record.as_deref(), expected) {
@@ -444,6 +454,7 @@ impl ForgeServer {
             note: stated(args.note.as_deref()),
             created_by: Actor::parse(ACTOR),
             overwrite,
+            allow_defective: args.allow_defective.unwrap_or(false),
         };
         // Decode-and-copy is blocking work; a long music track decodes for
         // a while.

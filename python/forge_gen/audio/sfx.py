@@ -309,11 +309,17 @@ def run(args) -> dict:
 
 
 def run_fake(args) -> dict:
-    """Silence where the sound would be, and a record that says so."""
+    """A placeholder tone where the sound would be, and a record that says so.
+
+    A tone and not silence, so the placeholder passes the same ``forge
+    audio inspect`` a real render must; and never over a file an earlier
+    ``--fake`` run did not write.
+    """
     spec = plan(args)
+    placeholders.refuse_real(*(path for job in spec["jobs"] for path in (job["out"], job["record"])))
     rendered = []
     for job in spec["jobs"]:
-        placeholders.silence_wav(job["out"])
+        placeholders.placeholder_wav(job["out"], seconds=job["seconds"])
         rec = build_record(
             prompt=job["prompt"],
             seconds=job["seconds"],

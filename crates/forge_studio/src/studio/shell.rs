@@ -7,11 +7,10 @@
 //! camera, and the whole point of the window is turning the subject around to
 //! look at it.
 //!
-//! The left column used to be tabbed — the review queue sat beside the
-//! library — and the tab bar went with the queue. What it left behind is the
-//! one property worth keeping: every panel is built once and only ever shown
-//! or hidden by flipping `Display`, never despawned, so a control comes back
-//! exactly as it was left.
+//! The left column is one untabbed list: bodies, models, clips and sounds
+//! are one browsable library, because the window has exactly one job. Every
+//! panel is built once and only ever shown or hidden by flipping `Display`,
+//! never despawned, so a control comes back exactly as it was left.
 
 use bevy::{ecs::hierarchy::ChildSpawnerCommands, prelude::*, ui::RelativeCursorPosition};
 

@@ -250,8 +250,16 @@ run_probe() {
     python3 "$repo/python/forge_gen" doctor --backend "$BACKEND_NAME" --no-host --json > "$BACKEND_DIR/.probe.out" 2>&1 || true
     local line
     line="$(grep -E '^\{' "$BACKEND_DIR/.probe.out" | tail -1)"
+    if [ -z "$line" ]; then
+        # The real error (a too-old python3, an import crash) is in the
+        # captured output; discarding it once told a user "no JSON line"
+        # at the end of a multi-GB install. Show the tail before dying.
+        warn "doctor printed no JSON line for $BACKEND_NAME; its last lines were:"
+        tail -n 15 "$BACKEND_DIR/.probe.out" >&2
+        rm -f "$BACKEND_DIR/.probe.out"
+        die "doctor printed no JSON line for $BACKEND_NAME (its output is above)"
+    fi
     rm -f "$BACKEND_DIR/.probe.out"
-    [ -n "$line" ] || die "doctor printed no JSON line for $BACKEND_NAME"
     local status
     status="$(printf '%s' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["backends"]["'"$BACKEND_NAME"'"]["status"])')"
     case "$status" in

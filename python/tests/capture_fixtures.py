@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from forge_gen import npz, records  # noqa: E402
+from forge_gen import mesh, npz, records  # noqa: E402
 
 #: The day every fixture claims.
 TODAY = "2026-08-23"
@@ -122,13 +122,29 @@ def build(project: Path) -> dict[str, dict]:
     rec["measured"] = {"duration_s": 7.9, "sample_rate": 24000, "channels": 1}
     out["voice"] = rec
 
-    fake = records.new_record("lift", "trellis2", created_by="unknown", created=TODAY)
-    fake["backend"] = records.backend_block("trellis2", "fake", None, None, None)
-    records.add_input(fake, "image", _file(project, "assets-src/refs/props/crate.png"))
-    fake["params"] = {"seed": None, "resolution": None, "texture_baker": None}
-    records.add_output(fake, _file(project, "out/lifts/crate.glb"))
-    fake["fake"] = True
-    fake["note"] = "placeholder output from a --fake run; nothing about it is a measurement"
+    # The fake lift goes through the same builder `mesh.run_fake` uses, so
+    # this fixture *is* the behaviour: a --fake record's params are null for
+    # every knob the caller did not state (nothing ran — a seed, a grid or a
+    # texture baker written here would be a default laundered into a
+    # measurement, and naming nvdiffrast in a run that never loaded it would
+    # launder a licence fact).
+    settled = mesh.Settled(
+        image=_file(project, "assets-src/refs/props/crate.png"),
+        out=_file(project, "out/lifts/crate.glb"),
+        record=project / "out/lifts/crate.lift.json",
+        preset=mesh.DEFAULT_PRESET,
+        resolution=1024,
+        verts=6000,
+        texture=1024,
+        seed=42,
+        source=None,
+        prompt=None,
+        prompt_from=None,
+        stated=frozenset(),
+    )
+    fake = mesh.build_record(settled, created_by=None, backend={}, measured={}, attn_backend=None, fake=True)
+    fake["created"] = TODAY
+    fake["measured"] = {}
     out["fake_lift"] = fake
     return out
 

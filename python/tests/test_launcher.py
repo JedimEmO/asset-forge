@@ -35,6 +35,13 @@ def test_env_link_resolves_and_a_dead_link_is_named(backends_tree, tmp_path):
     os.symlink(empty, backend.env_link)
     with pytest.raises(MissingBackend, match="no bin/python"):
         launcher.resolve_interpreter(backend)
+    # A link whose target is gone is not "not installed": the message names
+    # the dead link and where it points, because the user who moved their
+    # venv should not be told to reinstall multi-GB weights.
+    os.remove(backend.env_link)
+    os.symlink(tmp_path / "gone", backend.env_link)
+    with pytest.raises(MissingBackend, match="which is not there"):
+        launcher.resolve_interpreter(backend)
 
 
 def test_env_var_wins_over_the_link(backends_tree, tmp_path, monkeypatch):
@@ -64,6 +71,25 @@ def test_inner_env_expands_and_defers_to_the_user(installed_tree, monkeypatch):
     assert env["FORGE_BACKEND"] == "ardy"
     monkeypatch.setenv("PYTHONPATH", "/x")
     assert launcher.inner_env(backend)["PYTHONPATH"].split(os.pathsep) == [str(launcher.python_dir()), "/x"]
+
+
+def test_env_force_beats_the_shell_and_shadowing_is_reported(installed_tree, monkeypatch):
+    ardy = backends.backends_dir() / "ardy"
+    toml = (ardy / "backend.toml").read_text()
+    (ardy / "backend.toml").write_text(toml + '\n[env.force]\nCUDA_HOME = "${PREFIX}"\n')
+    backend = backends.load_backend("ardy")
+    prefix = str(launcher.prefix_of(backend))
+    monkeypatch.setenv("CUDA_HOME", "/usr/local/cuda")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    env = launcher.inner_env(backend)
+    assert env["CUDA_HOME"] == prefix, "[env.force] is set unconditionally"
+    assert env["HF_HUB_OFFLINE"] == "0", "plain [env] stays setdefault"
+    shadowed = launcher.env_shadowing(backend)
+    assert ("HF_HUB_OFFLINE", "0", "1") in shadowed
+    assert not any(key == "CUDA_HOME" for key, _, _ in shadowed), "a forced key cannot be shadowed"
+    # An ambient value equal to the file's is not a shadow.
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    assert not any(key == "HF_HUB_OFFLINE" for key, _, _ in launcher.env_shadowing(backend))
 
 
 def test_run_inner_streams_and_relays_the_code(installed_tree, monkeypatch, capfd):

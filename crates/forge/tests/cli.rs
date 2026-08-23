@@ -689,13 +689,72 @@ fn audio_inspects_lists_promotes_and_gates_on_defects() {
     );
     assert!(text.contains("is not a kind"), "{text}");
 
-    let out = ok(&root, &["audio", "list"]);
-    assert!(out.contains("sfx/tone.wav"), "{out}");
-    assert!(out.contains("1 file(s)"), "{out}");
+    // The door runs the same measurements `audio inspect` gates on: a
+    // defective sound is refused with the defect named, and shipping it
+    // anyway is a stated decision.
+    let text = exits(
+        &root,
+        &["promote", "audio", "sfx", "out/silent.wav", "quiet"],
+        2,
+    );
+    assert!(text.contains("defective"), "{text}");
+    assert!(text.contains("file is silent"), "{text}");
+    assert!(text.contains("--allow-defective"), "{text}");
+    let out = ok(
+        &root,
+        &[
+            "promote",
+            "audio",
+            "sfx",
+            "out/silent.wav",
+            "quiet",
+            "--allow-defective",
+        ],
+    );
+    assert!(out.contains("shipped quiet.wav"), "{out}");
+
+    let text = exits(&root, &["audio", "list"], 1);
+    assert!(text.contains("sfx/tone.wav"), "{text}");
+    assert!(text.contains("2 file(s)"), "{text}");
+    assert!(
+        text.contains("1 defective: sfx/quiet.wav"),
+        "the allowed defect still fails the audio gate, by design: {text}"
+    );
     let out = ok(&root, &["catalog", "--kind", "sfx"]);
     assert!(out.contains("a pluck"), "{out}");
     ok(&root, &["manifest", "--check"]);
     ok(&root, &["verify"]);
+}
+
+#[test]
+fn help_and_refusals_reach_outside_a_project() {
+    // `forge gen <cmd> --help` is argparse text, not a library operation:
+    // it answers from anywhere, without a forge.toml above the directory.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output = forge(dir.path(), &["gen", "sfx", "--help"]);
+    assert_eq!(
+        code(&output),
+        0,
+        "--- stdout\n{}\n--- stderr\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert!(stdout(&output).contains("usage:"), "{}", stdout(&output));
+    // A real call is still the ordinary refusal.
+    let text = exits(dir.path(), &["gen", "doctor"], 2);
+    assert!(text.contains("no forge.toml"), "{text}");
+}
+
+#[test]
+fn export_contract_refused_on_a_glb_names_the_profile_directory() {
+    let (_dir, root) = init_project();
+    std::fs::write(root.join("out/rig.glb"), b"glb").expect("write");
+    let text = exits(&root, &["rig", "export-contract", "out/rig.glb"], 2);
+    assert!(text.contains("is not a directory"), "{text}");
+    assert!(text.contains("profile directory"), "{text}");
+    assert!(text.contains("try out"), "the parent is suggested: {text}");
+    let text = exits(&root, &["rig", "export-contract", "nowhere"], 2);
+    assert!(text.contains("rigs/humanoid"), "{text}");
 }
 
 #[test]

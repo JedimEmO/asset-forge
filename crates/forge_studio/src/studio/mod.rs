@@ -5,8 +5,8 @@
 //! so a promote from the CLI or an export from Blender shows up in the column
 //! without a restart. What it does *not* do is make anything: generating,
 //! editing and shipping go through `forge` and the skills, and the window is
-//! where a person looks at the result. The forge panel and the review queue
-//! that once sat beside the library went with that decision.
+//! where a person looks at the result — one door per job, and this window is
+//! the looking door.
 //!
 //! # Layout
 //!

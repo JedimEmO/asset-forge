@@ -79,9 +79,6 @@ NAME_PATTERN = re.compile(r"^[a-z0-9_]+$")
 #: it is a property of the rescue, not of the contract.
 PROXY_VOXEL_M = 0.02
 
-#: Bytes a ``--fake`` .blend starts with: Blender's own magic, so a sniff
-#: says "a .blend" and the rest of the file says "not really".
-FAKE_BLEND_HEADER = b"BLENDER-v000RENDH"
 
 
 # --------------------------------------------------------------- arguments --
@@ -228,14 +225,17 @@ def run_fake(args) -> dict:
     There is no validator for a ``.blend`` outside Blender, so the placeholder
     is a file that begins with Blender's magic and says what it is; the
     record carries every knob as given and ``null`` for every measurement,
-    because nothing was measured.
+    because nothing was measured. ``--out`` defaults into the committed,
+    non-derivable ``assets-src/blender/`` tree, so a target that is not
+    itself a placeholder is refused — ``FORGE_FAKE=1`` in a shell once
+    replaced a real 3 MB rigged .blend with 69 bytes, silently.
     """
     spec = _spec(args)
     source = _common.existing_file(args.glb, what="lift")
     out = Path(args.out).expanduser().resolve()
     record_path = Path(args.record).expanduser().resolve()
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(FAKE_BLEND_HEADER + b"\n# forge-gen --fake placeholder; not a Blender file\n")
+    placeholders.refuse_real(out, record_path)
+    placeholders.placeholder_blend(out)
     rec = placeholders.fake_record("rig", _common.TOOL, backend=_common.BACKEND_NAME, created_by=getattr(args, "created_by", None))
     _add_inputs(rec, spec, source)
     rec["params"] = _params(spec, fit=None, dust=None, shells=None, slivers=None, proxy=None)

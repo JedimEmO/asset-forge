@@ -622,3 +622,116 @@ fn nothing_of_the_old_model_is_left_behind() {
         .expect("an orbit camera");
     assert!(focus.is_finite(), "the camera was framed on {focus:?}");
 }
+
+/// A static model on the stage gets one note, not a wall of contract FAILs.
+///
+/// A prop has no rig by construction, so "contract bone missing" fifty times
+/// over is the definition of a model recited as failures — in a fresh project
+/// whose only mesh is a prop, that wall of red was the entire metadata panel.
+/// The stage says the one true thing instead, and no clip is auto-selected
+/// for a subject that was never meant to move.
+#[test]
+fn a_static_model_is_not_held_to_the_rig_contract() {
+    use forge_library::promote::{PromoteModel, promote_model};
+    use forge_studio::studio::library::focus_first;
+    use forge_studio::studio::rig::STATIC_MODEL_FINDING;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = Project::init(dir.path(), "model_stage").expect("init");
+    project
+        .install_profile(&manifest_path("../../rigs/humanoid"))
+        .expect("install the profile");
+    promote_clip(
+        &project,
+        &PromoteClip {
+            name: CLIP.to_owned(),
+            take_path: manifest_path("../forge_motion/tests/fixtures/blender/gen_walk.npz"),
+            recipe: ClipRecipe::default(),
+            prompt: None,
+            tags: Vec::new(),
+            note: None,
+            events: Vec::new(),
+            created_by: Actor::Human,
+            take_record: None,
+            overwrite: false,
+        },
+    )
+    .expect("promote the clip");
+    promote_model(
+        &project,
+        &PromoteModel {
+            name: String::from("testbox"),
+            glb_path: manifest_path("tests/fixtures/testbox.glb"),
+            blend_path: None,
+            lift_record: None,
+            prop_record: None,
+            prompt: Some(String::from("an orange box")),
+            tags: Vec::new(),
+            note: None,
+            created_by: Actor::Human,
+            overwrite: false,
+        },
+    )
+    .expect("promote the model");
+
+    let mut app = headless_app(&project.assets);
+    app.insert_resource(StudioConfig {
+        project: project.clone(),
+        model: Some(String::from("testbox")),
+        audio: false,
+        take: None,
+        recipe: None,
+        screenshot: None,
+        selftest: false,
+    })
+    .init_resource::<Rig>()
+    .init_resource::<ActiveModel>()
+    .init_resource::<StageContract>()
+    .init_resource::<RigFindings>()
+    .init_resource::<ClipLibrary>()
+    .init_resource::<ModelLibrary>()
+    .init_resource::<forge_studio::studio::audio_view::AudioLibrary>()
+    .init_resource::<Selection>()
+    .init_resource::<Playback>()
+    .add_message::<SwapModel>()
+    .add_systems(
+        Startup,
+        (
+            spawn_stage,
+            camera,
+            load_contract,
+            discover,
+            open_model,
+            focus_first,
+        )
+            .chain(),
+    )
+    .add_systems(
+        Update,
+        (request_swap, finish_loading, refresh_findings).chain(),
+    );
+    run_until(&mut app, "the model standing up", |app| {
+        app.world().resource::<Rig>().is_ready()
+    });
+
+    let findings = app.world().resource::<RigFindings>();
+    assert_eq!(findings.generation, 1, "the findings follow the stage");
+    let lines: Vec<(forge_studio::rig_findings::Severity, String)> = findings
+        .lines()
+        .map(|(severity, text)| (severity, text.to_owned()))
+        .collect();
+    assert_eq!(lines.len(), 1, "one line, not a wall of FAILs: {lines:?}");
+    assert_eq!(lines[0].1, STATIC_MODEL_FINDING);
+    assert!(
+        findings.failures().next().is_none(),
+        "the note is not a failure"
+    );
+    assert!(
+        !findings.conforms(),
+        "a box does not get to claim the contract either"
+    );
+    assert!(
+        app.world().resource::<Selection>().key().is_none(),
+        "no clip is auto-selected for a static model"
+    );
+}

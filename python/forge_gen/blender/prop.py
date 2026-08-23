@@ -243,6 +243,7 @@ def run_fake(args) -> dict:
     source = _common.existing_file(args.glb, what="lift")
     out = Path(args.out).expanduser().resolve()
     record_path = Path(args.record).expanduser().resolve()
+    placeholders.refuse_real(out, record_path)
     placeholders.placeholder_glb(out, name=OBJECT_NAME)
     info = glb_mod.verify_glb(out)
     rec = placeholders.fake_record("prop", _common.TOOL, backend=_common.BACKEND_NAME, created_by=getattr(args, "created_by", None))

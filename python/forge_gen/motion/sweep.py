@@ -142,8 +142,8 @@ def group_cells(cells: list[dict]) -> dict[tuple, list[dict]]:
     return groups
 
 
-def params_for(cell: dict, args, *, history_frames: int | None, diffusion_steps: int | None) -> dict:
-    """The record's params for one cell: every knob stated."""
+def params_for(cell: dict, args, *, history_frames: int | None, diffusion_steps: int | None, prompts: int) -> dict:
+    """The record's params for one cell: every knob stated — the grid and batch size included."""
     return {
         "model": args.model,
         "model_repo": None,  # filled by the caller, who knows the resolved name
@@ -161,6 +161,14 @@ def params_for(cell: dict, args, *, history_frames: int | None, diffusion_steps:
         "keys_file": None,
         "keys_sha256": None,
         "preset": None,
+        "batch_size": args.batch_size,
+        "grid": {
+            "prompts": prompts,
+            "seeds": len(args.seeds),
+            "cfg": len(args.cfg),
+            "durations": len(args.duration),
+            "samples": args.samples,
+        },
     }
 
 
@@ -301,6 +309,8 @@ def run_fake(args) -> dict:
 
     out_dir, variants = _validate(args)
     cells = plan_cells(variants, args.seeds, args.cfg, args.duration, args.samples)
+    targets = [out_dir / f"{take_name(cell)}.npz" for cell in cells]
+    placeholders.refuse_real(*targets, *(session.record_path_for(t) for t in targets), out_dir / MANIFEST)
     folder = KNOWN_MODELS.get(args.model)
     model_repo = f"{session.HF_ORG}/{folder}" if folder else None
     backend = records.backend_block(name=session.BACKEND, commit=placeholders.FAKE_COMMIT, model=model_repo)
@@ -311,7 +321,7 @@ def run_fake(args) -> dict:
         path = out_dir / f"{name}.npz"
         frames = max(1, int(cell["duration"] * DEFAULT_FPS))
         npz.write_take(path, frames=frames, fps=DEFAULT_FPS, prompt=cell["prompt"])
-        params = params_for(cell, args, history_frames=args.history_frames, diffusion_steps=args.diffusion_steps)
+        params = params_for(cell, args, history_frames=args.history_frames, diffusion_steps=args.diffusion_steps, prompts=len(variants))
         params["model_repo"] = model_repo
         params["repo"] = upstream
         rec = session.take_record(
@@ -369,8 +379,10 @@ def main_inner(argv: list[str]) -> dict:
         num_frames = int(dur * fps)
         for i in range(0, len(group), args.batch_size):
             chunk = group[i : i + args.batch_size]
-            # One seed per forward pass: the grid is reproducible per
-            # (duration, cfg, seed, chunk), which is what the record states.
+            # One seed per forward pass, so a sample's bytes depend on which
+            # chunk it landed in. Reproducing one take therefore needs the
+            # whole grid and the batch size — which is why the record states
+            # both, not just the cell's own knobs.
             seed_everything(seed)
             texts = [c["prompt"] for c in chunk]
             lengths = torch.tensor([num_frames] * len(chunk), device=device)
@@ -399,7 +411,7 @@ def main_inner(argv: list[str]) -> dict:
                 path = out_dir / f"{name}.npz"
                 session.write_take(path, sample, fps=fps, prompt=cell["prompt"])
                 frames = session.take_frames(sample)
-                params = params_for(cell, args, history_frames=history_frames, diffusion_steps=diffusion_steps)
+                params = params_for(cell, args, history_frames=history_frames, diffusion_steps=diffusion_steps, prompts=len(variants))
                 params["model_repo"] = repo
                 params["repo"] = upstream
                 record = session.write_take_record(

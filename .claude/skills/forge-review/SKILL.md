@@ -53,18 +53,23 @@ Tiles: `FRONT` `BACK` `LEFT` `RIGHT`, then `HEAD FRONT` `HEAD BACK`
   with `lowest y` near `0`; a shipped floor prop has `lowest y 0.000`; a
   grip prop is negative by its grip height (`-0.160` on the sample sword).
   Wrong here is wrong everywhere.
-- **Orientation, as this build renders it.** The `FRONT` camera is on the
-  −Z side; the rig profile's rest pose faces **+Z**, and lifts of a pictured
-  side come out facing +Z. So a correctly facing body shows its back in
-  `FRONT` and its face in `BACK`/`HEAD BACK`; `HEAD FRONT` is the rear of
-  the skull; `HEAD BACK TOP` is the face and crown from above. A prop's
-  pictured side is the `BACK` tile and `FRONT` is the side TRELLIS
-  invented. The sample `vex_runner` renders this way. Read tiles by what
-  they show, not by their labels.
+- **Orientation, as this build renders it.** `FRONT` is the file's +Z
+  side — the contract's front — and `LEFT`/`RIGHT` are the subject's own
+  left (+X) and right (−X). The rig profile's rest pose faces **+Z**, so a
+  correctly facing body shows its face in `FRONT`/`HEAD FRONT` and its
+  back in `BACK`; `HEAD BACK` is the rear of the skull; `HEAD BACK TOP`
+  the rear of the skull and the crown from above. A prop's pictured side
+  lands in `FRONT` too, and `BACK` is the side TRELLIS invented. The
+  sample `vex_runner` renders this way. On clip-posed renders (`just
+  sheet`, turntables, `rig check --out`) `FRONT` is still the face: a
+  baked clip plays facing −Z and the cameras follow the subject. A raw
+  lift is the one case with no promise — it is not yet normalized, so its
+  labels name the file's axes: read those tiles by what they show, and
+  `--yaw-deg` at the rig or prop step is the knob that turns it.
 - **Culling off** (default under `out/`): a missing surface shows as the
   *inside* of the surface behind it — dark, the texture seen from behind,
   the outline reading as a rim rather than a dome. That is what a hollow
-  skull looks like in `HEAD FRONT`. Culling **on** hides it: the same hole
+  skull looks like in `HEAD BACK`. Culling **on** hides it: the same hole
   reads as a see-through gap, easy to miss at 384 px. Judge raw lifts with
   culling off; judge shipped files both ways.
 - **Picture**: the rear skull closed; T-pose intact, one hand per side;

@@ -27,11 +27,13 @@
 //!    nothing else it is *allowed* to differ in, so a generator mismatch is
 //!    reported as a warning here rather than a failure.
 //!
-//!    TODO(P3, `forge_studio::audit`): when the generator string differs,
-//!    bind both clips to the fixture mannequin and compare world-space bone
-//!    positions to within 1 mm — the pose compare the byte compare stands
-//!    in for. Until then a generator mismatch is a warning that names the
-//!    two strings.
+//!    The warning (rather than a failure) is deliberate, because the pose
+//!    half of the claim is settled elsewhere: `forge_studio::audit` binds
+//!    every shipped clip to the fixture mannequin and holds each contract
+//!    bone to within a millimetre in world space, and `forge audit` runs
+//!    both halves. A generator mismatch here therefore only names the two
+//!    strings; whether the bytes still *pose* the same is proven, not
+//!    assumed.
 //!
 //! **Bodies and models are skipped, loudly.** A lifted mesh claims integrity
 //! and provenance, never regeneration — there is no recipe to replay and
