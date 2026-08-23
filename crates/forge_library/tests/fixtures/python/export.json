@@ -1,0 +1,43 @@
+{
+  "forge_record": 1,
+  "kind": "export",
+  "tool": "blender",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "blender",
+    "commit": null,
+    "python": "3.13.2",
+    "torch": null,
+    "model": null,
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "blend",
+      "path": "assets-src/blender/vex_runner.blend",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "animations": false,
+    "materials": "EXPORT",
+    "max_influences": 4,
+    "y_up": true
+  },
+  "outputs": [
+    {
+      "path": "out/export/vex_runner.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "bones": 55,
+    "images": 1
+  },
+  "fake": false,
+  "note": null
+}

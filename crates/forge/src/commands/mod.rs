@@ -7,6 +7,8 @@ pub(crate) mod audio;
 pub(crate) mod catalog;
 pub(crate) mod checks;
 pub(crate) mod doctor;
+pub(crate) mod generate;
+pub(crate) mod gpu;
 pub(crate) mod init;
 pub(crate) mod manifest;
 pub(crate) mod promote;

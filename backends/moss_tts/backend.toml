@@ -1,0 +1,33 @@
+# MOSS-TTS: one spoken line from text, zero-shot voice cloning from a 5–15 s
+# reference clip. The checkpoint is the Local-Transformer 4B (MossTTSLocal,
+# 48 kHz stereo out); the model code arrives with the weights through
+# `trust_remote_code`, so the clone is here for its pins and its commit, not
+# for an import. Shares the clone with moss_sfx ($PREFIX/../moss-tts) and
+# keeps its own venv: torch 2.9.1 and transformers 5.0.0, against the
+# sound-effect model's 2.9.0 / 4.57.1.
+name = "moss_tts"
+role = "speech"
+upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
+commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
+license = "Apache-2.0"
+env_kind = "venv"
+python = "3.12"
+cuda = "12.8"
+# The 4B in bf16 with the audio tokenizer resident. Not resident after the call.
+vram_gb = 12
+entry = "audio.speech"
+cwd = "checkout"
+resident = false
+
+[env]
+PYTHONNOUSERSITE = "1"
+
+[[models]]
+id = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
+store = "hf"
+license = "Apache-2.0"
+note = "~8 GB; downloaded by install.sh, or by the first `forge gen speech`. MOSS_TTS_MODEL overrides the id."
+
+[[notices]]
+title = "VRAM"
+text = "the 8B Delay model (OpenMOSS-Team/MOSS-TTS-v1.5) OOMs on 24 GB with the audio tokenizer resident; Local-Transformer 4B fits and is what this backend runs"

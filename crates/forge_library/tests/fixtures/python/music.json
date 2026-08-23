@@ -1,0 +1,45 @@
+{
+  "forge_record": 1,
+  "kind": "music",
+  "tool": "ace_step",
+  "created": "2026-08-23",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": "acestep",
+    "commit": "82252c2418de6cb8b3ca99b05592aaf539cc7fb3",
+    "python": "3.12.7",
+    "torch": "2.10.0+cu128",
+    "model": "acestep-v15-turbo",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "prompt",
+      "path": null,
+      "sha256": null,
+      "source": null,
+      "prompt": "dark ambient boss theme, low strings, taiko"
+    }
+  ],
+  "params": {
+    "bpm": 96,
+    "dit_model": "acestep-v15-turbo",
+    "duration_s": 90.0,
+    "genres": "N/A",
+    "keyscale": "F minor",
+    "lm_model": "acestep-5Hz-lm-0.6B",
+    "lyrics": "[instrumental]",
+    "seed": "1,2",
+    "timesignature": "4"
+  },
+  "outputs": [
+    {
+      "path": "out/audio/boss_theme.wav",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {},
+  "fake": false,
+  "note": null
+}

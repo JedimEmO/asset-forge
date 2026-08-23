@@ -2738,6 +2738,7 @@ dependencies = [
  "forge_audio",
  "forge_library",
  "forge_rig",
+ "serde_json",
  "tempfile",
 ]
 

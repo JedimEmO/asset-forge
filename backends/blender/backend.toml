@@ -1,0 +1,30 @@
+# Blender is a host tool, not a generator: no environment is installed for
+# it, no weights are fetched, and nothing here is execed through an
+# interpreter of its own. The launcher finds it through $BLENDER_BIN or
+# `blender` on PATH and runs it `--background --factory-startup --python
+# <module> -- <argv>`; a missing binary is exit 6 (missing_tool), not 3.
+# This file exists so doctor lists it beside the generators with its
+# version floor and licence, and so the modules it serves are named in one
+# place.
+
+name = "blender"
+role = "tool"                              # a tool backend: env_kind "none", nothing to install here
+upstream = "https://www.blender.org"
+commit = "none"                            # a binary release, not a pinned checkout; probe.py reports the build hash
+license = "GPL-3.0-or-later (tool only; nothing it writes is derived from it)"
+env_kind = "none"                          # no .env link: the launcher resolves $BLENDER_BIN or PATH
+python = "3.13"                            # Blender's bundled interpreter (numpy allowed inside the blender modules)
+cuda = ""
+vram_gb = 0
+entry = "forge_gen.blender"                # the modules: prop, rig, export, rig_build — each is its own --python script
+cwd = "none"
+resident = false
+blender_min = "4.2"                        # the oldest Blender the scripts are written against; 5.2 is the reference
+bin_env = "BLENDER_BIN"                    # the environment variable naming the binary
+
+[env]
+PYTHONNOUSERSITE = "1"                     # Blender's python must not see ~/.local either
+
+[[notices]]
+title = "Blender"
+text = "GPL-licensed tool; the .blend and .glb files it writes are the project's own. glTF export is not byte-stable across Blender versions: bodies and models claim integrity (sha256), never regeneration."

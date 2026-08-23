@@ -1,0 +1,46 @@
+{
+  "forge_record": 1,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": "3.11.15",
+    "torch": "2.6.0+cu124",
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/barrel.png",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": "grok, edit-chained from the style board",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "decimation_target_vertices": 6000,
+    "pipeline_type": "1024_cascade",
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 42,
+    "texture_baker": "nvdiffrast (non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/lifts/barrel.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "triangles": 11804,
+    "vertices": 5902
+  },
+  "fake": false,
+  "note": null
+}

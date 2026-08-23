@@ -1,0 +1,35 @@
+# MOSS-SoundEffect v2: one sound effect from a prompt (a 1.3B DiT + DAC VAE +
+# Qwen3 prompter, packaged diffusers-style). Lives in a subdirectory of the
+# MOSS-TTS repository with its own pins — torch 2.9.0, transformers 4.57.1,
+# numpy 1.26 — which is why it is its own backend with its own venv and not a
+# second entry module of moss_tts. `install.sh` clones the repository once
+# ($PREFIX/../moss-tts, shared with moss_tts) and links .checkout at the
+# subdirectory; the inner module runs from there.
+name = "moss_sfx"
+role = "sfx"
+upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
+commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
+# The part of the clone this backend is; .checkout points here, not at the root.
+subdir = "moss_soundeffect_v2"
+license = "Apache-2.0"
+env_kind = "venv"
+python = "3.12"
+cuda = "12.8"
+# Estimate: ~6–8 GB at 30 s of latent, bf16. Not resident after the call.
+vram_gb = 8
+entry = "audio.sfx"
+cwd = "checkout"
+resident = false
+
+[env]
+PYTHONNOUSERSITE = "1"
+# The first call otherwise torch.compile()s the DiT for minutes and the
+# compiled kernel dies with the process; one-shot generation never pays that
+# back. A user who exports TORCHDYNAMO_DISABLE=0 wins (setdefault semantics).
+TORCHDYNAMO_DISABLE = "1"
+
+[[models]]
+id = "OpenMOSS-Team/MOSS-SoundEffect-v2.0"
+store = "hf"
+license = "Apache-2.0"
+note = "~11 GB on disk (5.3 GB DiT, 3.8 GB Qwen3 text encoder, 1.4 GB DAC VAE; measured 2026-08-23); downloaded by install.sh, or by the first `forge gen sfx` (~100 s)"

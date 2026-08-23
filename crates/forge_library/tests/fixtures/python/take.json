@@ -1,0 +1,42 @@
+{
+  "forge_record": 1,
+  "kind": "take",
+  "tool": "ardy",
+  "created": "2026-08-23",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": "ardy",
+    "commit": "693f74d13b3d04a0a22ce127ee79c929dd89756b",
+    "python": "3.12.7",
+    "torch": "2.13.0",
+    "model": "core",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "prompt",
+      "path": null,
+      "sha256": null,
+      "source": null,
+      "prompt": "a slow walk forward"
+    }
+  ],
+  "params": {
+    "cfg": 2.5,
+    "duration_s": 4.0,
+    "fps": 20,
+    "repo": "nv-tlabs/ardy",
+    "sample": 1,
+    "seed": 7
+  },
+  "outputs": [
+    {
+      "path": "out/sweeps/walk/walk__d4_c2_s7_1.npz",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {},
+  "fake": false,
+  "note": null
+}

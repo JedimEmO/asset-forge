@@ -1,0 +1,50 @@
+{
+  "forge_record": 1,
+  "kind": "rig",
+  "tool": "blender",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "blender",
+    "commit": null,
+    "python": "3.13.2",
+    "torch": null,
+    "model": null,
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "mesh",
+      "path": "out/lifts/vex_runner.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": null,
+      "prompt": null
+    },
+    {
+      "role": "blend",
+      "path": "rigs/humanoid/rig.blend",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": "the profile",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "profile": "humanoid",
+    "shell_fraction": 0.02,
+    "stature_m": 1.8,
+    "tri_budget": 60000
+  },
+  "outputs": [
+    {
+      "path": "assets-src/blender/vex_runner.blend",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "reach": 1.02,
+    "unweighted_fraction": 0.0
+  },
+  "fake": false,
+  "note": null
+}

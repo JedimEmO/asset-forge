@@ -1,0 +1,69 @@
+# TRELLIS.2 — one reference image in, one textured mesh out (`forge gen mesh`).
+#
+# The only backend that needs conda: its CUDA toolkit and gcc 13 come from
+# conda channels because this stack is five compiled extensions on torch
+# 2.6/cu124 and no system CUDA root can be assumed. Every trap below is
+# dated in designs/hosting.md under "TRELLIS.2"; install.sh encodes them.
+#
+# Licence: the code and the 4B weights are MIT. The texture bake is not —
+# o_voxel's to_glb rasterises through nvdiffrast 0.4.0, which is under the
+# NVIDIA Source Code License (1-Way Commercial): non-commercial use only.
+# install.sh prints the terms and needs consent; doctor warns while it is
+# installed; every lift record names it under `texture_baker`.
+
+name = "trellis2"
+role = "mesh"
+upstream = "https://github.com/microsoft/TRELLIS.2"
+commit = "75fbf0183001ed9876c8dbb35de6b68552ee08bd"
+license = "MIT (code+weights); texture bake via nvdiffrast: NVIDIA Source Code License, non-commercial"
+env_kind = "conda"
+python = "3.11"
+cuda = "12.4"
+vram_gb = 22
+entry = "mesh"
+cwd = "checkout"
+resident = false
+
+[env]
+# A ~/.local that has seen years of experiments carries .pth startup hooks
+# for any same-versioned interpreter; the launcher sets this everywhere, and
+# the file says it too so a hand-run of the inner module gets it.
+PYTHONNOUSERSITE = "1"
+# opencv refuses EXR unless asked; the pipeline's texture path reads some.
+OPENCV_IO_ENABLE_OPENEXR = "1"
+# The cascade allocates and frees in waves; expandable segments keep a
+# 1024^3 run from fragmenting its way to an OOM on 24 GB.
+PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+# No system CUDA root: the toolkit lives in the env. nvdiffrast JIT-compiles
+# its kernels on first use, so this is a runtime setting, not a build one.
+CUDA_HOME = "${PREFIX}"
+# CUDA 12.4's host_config.h refuses gcc > 13; the env carries gcc 13 and
+# the same trio is exported on every run, for the JIT above.
+CC = "${PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
+CXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
+CUDAHOSTCXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
+# Where the inner module finds the trellis2 package: the pinned checkout.
+# The name is the one the previous toolkit's generate_mesh.py honoured.
+TRELLIS2_DIR = "${CHECKOUT}"
+
+[[models]]
+id = "microsoft/TRELLIS.2-4B"
+store = "hf"
+license = "MIT"
+note = "the image-to-3D pipeline: sparse structure, shape and texture SLat samplers"
+
+[[models]]
+id = "facebook/dinov3-vitl16-pretrain-lvd1689m"
+store = "hf"
+license = "DINOv3 License (Meta)"
+gated = true
+accept_url = "https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m"
+note = "the image conditioner; accept on the model page, then `hf auth login --token <tok>` (never the interactive login)"
+
+[[notices]]
+title = "nvdiffrast is non-commercial"
+text = "the texture bake runs through nvdiffrast 0.4.0 (NVIDIA Source Code License, 1-Way Commercial): non-commercial use only. Every lift record carries texture_baker naming it; a commercial project cannot ship a lifted texture until a replacement baker exists."
+
+[[notices]]
+title = "briaai/RMBG-2.0 is never fetched"
+text = "upstream loads it to cut backgrounds; it is gated and commercially restrictive, and references are flat-background by contract. The inner module keys alpha itself and stubs the BiRefNet class before the pipeline is built."

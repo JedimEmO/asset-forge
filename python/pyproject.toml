@@ -1,0 +1,34 @@
+# The Python half of asset-forge: the generator launcher. Stdlib-only on
+# purpose — this package runs under the system python3 and execs each
+# backend's own interpreter, so a runtime dependency here would have to be
+# installed into the system python before a single backend could be probed.
+# Everything that needs torch, numpy or bpy lives behind the launcher and is
+# imported inside functions only.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asset-forge-gen"
+version = "0.1.0"
+description = "forge-gen: the generator launcher for asset-forge (TRELLIS.2, ARDY, ACE-Step, MOSS, Blender)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "numpy"]
+
+[project.scripts]
+forge-gen = "forge_gen.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["forge_gen*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: needs a CUDA device and an installed backend (skipped in CI)",
+    "blender: needs a Blender binary (skipped in CI)",
+]

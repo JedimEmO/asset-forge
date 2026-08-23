@@ -22,22 +22,44 @@ _build:
 
 # ------------------------------------------------------------------ setup --
 
-# `--adopt-env` / `--adopt-checkout` onboard an install that already exists.
-# nvdiffrast is non-commercial and asks before it is fetched.
+# `--adopt-env DIR --adopt-checkout DIR` onboard an install that already
+# exists; `--no-models` leaves the weights to the first run; `--yes` accepts
+# nvdiffrast's non-commercial licence without a prompt (it is printed either
+# way). `all` runs every backends/*/install.sh in turn with the same flags.
 #
-# Install one backend under backends/<name>/: `just setup trellis2`
-setup name *flags: (_later "P2" "backends/<name>/install.sh behind forge setup")
+# Install one backend under backends/<name>/: `just setup trellis2 --yes`
+setup backend="all" *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{backend}}" = all ]; then
+        for script in backends/*/install.sh; do
+            echo "== $(basename "$(dirname "$script")")"
+            bash "$script" {{flags}}
+        done
+    else
+        [ -f backends/{{backend}}/install.sh ] || { echo "no backends/{{backend}}/install.sh — known: $(ls backends/*/install.sh | xargs -n1 dirname | xargs -n1 basename | tr '\n' ' ')" >&2; exit 2; }
+        bash backends/{{backend}}/install.sh {{flags}}
+    fi
 
-# ok | partial | missing | broken per backend; exits non-zero if any is not ok.
+# ok | partial | missing | broken per backend; exits 1 if any is not ok —
+# partial means the env runs but a weight is not cached, and the first
+# generate through it would download for minutes. `--json` for a machine,
+# `--quick` to skip the in-env probes (seconds each).
 #
 # Every backend, Blender, ffmpeg, the GPU and the rig profile in one table.
-doctor *flags: (_later "P2" "forge doctor aggregating forge gen doctor --json")
+[no-exit-message]
+doctor *flags: _build
+    {{forge}} doctor {{flags}}
 
 # Look before you spend: the generators do not share 24 GB, and a second one
-# started blind ends in an OOM, not a queue.
+# started blind ends in an OOM, not a queue. Exits 1 when the largest backend
+# (TRELLIS.2 at 1024³, 22 GB) would not fit in what is free, naming who holds
+# the rest — `forge gen music --stop-server` is the usual answer.
 #
 # Who holds the GPU right now.
-gpu: (_later "P2" "forge gpu over nvidia-smi")
+[no-exit-message]
+gpu *flags: _build
+    {{forge}} gpu {{flags}}
 
 # Not an asset, a law — the one mesh-shaped thing in the library nobody lifts.
 # Until P2 brings `forge gen rig-build` (Blender) this is the data half: the
@@ -51,48 +73,113 @@ rig: _build
 
 # --------------------------------------------------------------- generate --
 
+# Every recipe here is `forge gen <cmd>`: the Python launcher resolves the
+# backend before any GPU work (a missing one exits 3 in ~100 ms), writes
+# where --out says plus a forge_record beside it, and never touches assets/.
+# `FORGE_FAKE=1` in front of any of them writes placeholders that pass the
+# same validators, with no backend and no Blender — what `ci-fake` runs.
+
 # The seed is a real knob: one front view underdetermines the back of a
 # shape, and a seed can leave the rear of a skull absent. Look with `views`
-# before rigging anything. `just character vex_runner --seed 7`
+# before rigging anything. The preset is the register — 1024³, 25 000
+# vertices, a 1024² texture, seed 42 — and `--seed N`, `--verts N`,
+# `--resolution 512`, `--texture 512` land on top of it. The lift record
+# lands beside the PNG as <name>.lift.json; `just character vex_runner --seed 7`.
 #
 # Reference PNG -> textured character mesh via TRELLIS.2, to out/lifts/.
-character name *flags: (_later "P2" "forge gen mesh on assets-src/refs/characters/<name>.png")
+character name *flags: _build
+    mkdir -p out/lifts
+    {{forge}} gen mesh assets-src/refs/characters/{{name}}.png --preset character \
+        --out out/lifts/{{name}}.glb --record assets-src/refs/characters/{{name}}.lift.json {{flags}}
 
+# The prop register: 1024³, 6 000 vertices, 1024² texture, seed 42; the same
+# flags land on top. `just prop barrel --seed 3 --resolution 512`
+#
 # Reference PNG -> textured prop mesh via TRELLIS.2, to out/lifts/: `just prop barrel`
-prop name *flags: (_later "P2" "forge gen mesh on assets-src/refs/props/<name>.png")
+prop name *flags: _build
+    mkdir -p out/lifts
+    {{forge}} gen mesh assets-src/refs/props/{{name}}.png --preset prop \
+        --out out/lifts/{{name}}.glb --record assets-src/refs/props/{{name}}.lift.json {{flags}}
 
 # Refuses a mesh that is not near the T-pose; the fix is always the reference
-# image, never the weights. Then `just promote-mesh <name>`.
+# image, never the weights. Writes assets-src/blender/<name>.blend and its
+# rig record beside it. Then `just promote-mesh <name>`.
 #
 # Lifted glb -> rigged .blend + rig record in headless Blender.
-rig-mesh name *flags: (_later "P2" "forge gen rig")
+rig-mesh name *flags: _build
+    mkdir -p assets-src/blender
+    {{forge}} gen rig out/lifts/{{name}}.glb --out assets-src/blender/{{name}}.blend \
+        --record assets-src/blender/{{name}}.rig.json --name {{name}} {{flags}}
 
-# Metres; floor, ceiling or grip at the origin; matte. Then `just promote-mesh`.
+# Metres; floor, ceiling or grip at the origin; matte — then straight into
+# the library as a model with both records. `--height`/`--length` is the one
+# flag it needs; `--hang`, `--held`, `--grip M` move the origin.
 #
-# Normalize a lifted glb into a prop, to out/props/: `just prop-import barrel --height 0.9`
-prop-import name *flags: (_later "P2" "forge gen prop")
+# Normalize a lifted glb into a prop and file it: `just prop-import barrel --height 0.9`
+prop-import name *flags: _build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p out/props
+    {{forge}} gen prop out/lifts/{{name}}.glb --out out/props/{{name}}.glb \
+        --record out/props/{{name}}.prop.json {{flags}}
+    lift=assets-src/refs/props/{{name}}.lift.json
+    if [ -f "$lift" ]; then
+        {{forge}} promote model out/props/{{name}}.glb {{name}} --lift-record "$lift" --prop-record out/props/{{name}}.prop.json
+    else
+        echo "no $lift — the model will say reconstructed, not recorded" >&2
+        {{forge}} promote model out/props/{{name}}.glb {{name}} --prop-record out/props/{{name}}.prop.json
+    fi
 
-# Needs the GPU: ARDY is ~16 GB, so nothing else large may be resident.
+# Needs the GPU: ARDY is ~16 GB, so nothing else large may be resident. One
+# prompt, a grid of seeds and samples, into out/sweeps/<seed>-<8 chars of the
+# prompt's sha>/ — then the review table and sheet over every take there.
+# `just sweep "a person walks forward" --duration 2 --samples 4 --seeds 0 1`
 #
-# Audition animation prompts: `just sweep prompts.txt`
-sweep prompts *flags: (_later "P2" "forge gen motion sweep")
+# Audition an animation prompt: generate the takes, then review them.
+sweep prompt *flags: _build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    seed=$(printf '%s\n' "{{flags}}" | sed -n 's/.*--seeds \([0-9][0-9]*\).*/\1/p'); seed="${seed:-0}"
+    tag=$(printf '%s' "{{prompt}}" | sha256sum | cut -c1-8)
+    dir="out/sweeps/${seed}-${tag}"
+    mkdir -p "$dir"
+    {{forge}} gen motion sweep --out-dir "$dir" --prompt "{{prompt}}" {{flags}}
+    just review "$dir"
 
 # The metrics table (foot contact, drift, frozen joints) and a contact sheet
-# of every take. The user's eye outranks the sheet.
+# of every take; `--intent loop` judges for a cycle. The user's eye outranks
+# the sheet.
 #
-# Review a sweep: `just review out/sweeps/walk`
-review dir *flags: (_later "P2" "forge gen motion review")
+# Review a sweep: `just review out/sweeps/0-1a2b3c4d`
+review dir *flags: _build
+    {{forge}} gen motion review {{dir}}/*.npz --sheet {{dir}}/sheet.png --metrics {{dir}}/metrics.json {{flags}}
+    @echo "sheet: {{dir}}/sheet.png  metrics: {{dir}}/metrics.json"
 
-# One sound effect from a prompt, to out/audio/: `just sfx "door slam"`
-sfx prompt *flags: (_later "P2" "forge gen sfx (MOSS)")
-
-# The ACE-Step server stays resident (~8 GB) until `--stop-server`.
+# Describe the sound, not the game event: material, action, environment,
+# tail. `--seconds 3` by default; the record lands beside the wav.
 #
-# One music track from a prompt, to out/audio/.
-music prompt *flags: (_later "P2" "forge gen music (ACE-Step)")
+# One sound effect from a prompt, to out/audio/sfx/: `just sfx door_slam "heavy oak door slams shut"`
+sfx name prompt *flags: _build
+    mkdir -p out/audio/sfx
+    {{forge}} gen sfx --prompt "{{prompt}}" --out out/audio/sfx/{{name}}.wav \
+        --record out/audio/sfx/{{name}}.json {{flags}}
 
-# One spoken line, to out/audio/: `just speech "Stand down." --voice calm`
-speech text *flags: (_later "P2" "forge gen speech (MOSS-TTS)")
+# The ACE-Step server stays resident (~8 GB) until `--stop-server`, which can
+# ride on the same call: `just music hub_theme "hopeful synthwave" --duration 60 --stop-server`.
+#
+# One music track from a prompt, to out/audio/music/.
+music name prompt *flags: _build
+    mkdir -p out/audio/music
+    {{forge}} gen music --prompt "{{prompt}}" --out out/audio/music/{{name}}.ogg \
+        --record out/audio/music/{{name}}.json {{flags}}
+
+# A voice is a reference clip (5–15 s of clean speech): `--voice assets-src/voices/<who>.wav`.
+#
+# One spoken line, to out/audio/voice/: `just speech kessa_hold "Hold the line." --voice assets-src/voices/kessa.wav`
+speech name text *flags: _build
+    mkdir -p out/audio/voice
+    {{forge}} gen speech --text "{{text}}" --out out/audio/voice/{{name}}.wav \
+        --record out/audio/voice/{{name}}.json {{flags}}
 
 # ------------------------------------------------------------------- look --
 
@@ -169,16 +256,25 @@ catalog *flags: _build
 
 # ------------------------------------------------------------------- ship --
 
-# The rig gates run first, then the write, then the manifest. Refuses an
-# existing name unless told `--overwrite`, and echoes both records when it does.
-# What this recipe ends as: the Blender export (P2, `forge gen export`) and the
-# engine-side rig check (P3, `forge rig check`) in front of the engine-free
-# door that already exists — `forge promote body <glb> <name> --blend
-# --lift-record --rig-record --export-record`, or `forge promote model` for a
-# prop. Until then, call that door directly on a .glb you have checked.
+# The whole path from a rigged .blend into the library, in the order the
+# gates have to run: the Blender export (which refuses a .blend that breaks
+# the contract) into out/export/, then the engine-free door — `forge promote
+# body` — with every record it was made from: the lift beside the PNG, the
+# rig beside the .blend, the export beside the .glb. Refuses an existing name
+# unless told `--overwrite`.
+# TODO(P3): `forge rig check out/export/<name>.glb` joins between the export
+# and the promote, once the engine-side check lands.
 #
-# File a rigged body or a normalized prop into the library with its record.
-promote-mesh name *flags: (_later "P2/P3" "forge gen export + forge rig check, then forge promote body | forge promote model")
+# Export, validate and file one rigged body: `just promote-mesh vex_runner`
+promote-mesh name *flags: _build
+    mkdir -p out/export
+    {{forge}} gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
+        --record out/export/{{name}}.export.json
+    {{forge}} promote body out/export/{{name}}.glb {{name}} \
+        --blend assets-src/blender/{{name}}.blend \
+        --lift-record assets-src/refs/characters/{{name}}.lift.json \
+        --rig-record assets-src/blender/{{name}}.rig.json \
+        --export-record out/export/{{name}}.export.json {{flags}}
 
 # Native bake, no Blender. The shipped recipe is the starting point when the
 # name exists; the flags you state land on top; the whole recipe is echoed.
@@ -188,11 +284,25 @@ promote-mesh name *flags: (_later "P2/P3" "forge gen export + forge rig check, t
 promote-clip name take *flags: _build
     {{forge}} promote clip {{take}} {{name}} {{flags}}
 
-# `just promote-audio sfx door_slam out/audio/door_slam.wav --record out/audio/door_slam.json`
+# The record is the file's stem + .json, which is where `just sfx|music|speech`
+# put it; a `--record` among the flags names another, and no record at all
+# files the sound as `unknown` provenance — honest, and said on stderr.
+# `just promote-audio sfx door_slam out/audio/sfx/door_slam.wav`
 #
 # File one sound from out/audio/ as sfx, music or voice, with its record.
 promote-audio kind name file *flags: _build
-    {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    record="${{file}}"; record="${record%.*}.json"
+    case " {{flags}} " in
+        *" --record "*|*" --record="*) {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}} ;;
+        *) if [ -f "$record" ]; then
+               {{forge}} promote audio {{kind}} {{file}} {{name}} --record "$record" {{flags}}
+           else
+               echo "no record at $record — the sound will say unknown provenance" >&2
+               {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}}
+           fi ;;
+    esac
 
 # Project the library into assets/library.json. Run it after any hand edit.
 manifest: _build
@@ -288,10 +398,12 @@ verify *flags: _build
 #   character, prop, sweep, review, sfx, music, speech
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
-#   rig, rig-mesh, prop-import
+#                   `ci-fake` runs the same paths on placeholders instead.
+#   rig, rig-mesh, prop-import, promote-mesh
 #                   Blender.
 #   promote-*, manifest, rebake, migrate, setup
 #                   they rewrite assets, sources or the machine.
+#   doctor, gpu     they describe this machine, and a runner is not it.
 #
 # Once smoke joins it is not GPU-free: that needs an adapter (llvmpipe is
 # enough) but no display and no Blender. Deliberate — it is the check that
@@ -299,6 +411,60 @@ verify *flags: _build
 #
 # The pre-commit gate: fmt-check, clippy, tests, smoke, audit, manifest-check, verify.
 ci: fmt-check check test smoke audit manifest-check verify
+
+# The generate paths with no GPU, no backend and no Blender: FORGE_FAKE=1
+# makes every `forge gen` write placeholders that pass the same validators
+# the real outputs must — a glb that verify_glb accepts, an npz Take::read
+# accepts, a WAV, a PNG — and a real record saying `fake: true`. Run in a
+# throwaway project made by `forge init`, so nothing under assets/ here is
+# touched, and ending in that project's own audit, manifest-check and
+# verify. The reference PNG is written here too (a 4×4 flat grey), with its
+# ledger row, because a PNG without a row fails verify and should.
+#
+# The four pipelines end to end on placeholders, then every gate.
+ci-fake: _build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    forge="$(pwd)/{{forge}}"
+    work=$(mktemp -d -t forge-fake.XXXXXX)
+    trap 'rm -rf "$work"' EXIT
+    export FORGE_FAKE=1 FORGE_HOME="$(pwd)"
+    "$forge" init --project "$work" --name fake >/dev/null
+    cd "$work"
+    mkdir -p assets-src/refs/props assets-src/refs/characters out/lifts out/props assets-src/blender out/export out/sweeps out/audio/sfx
+    python3 - <<'PY'
+    import struct, zlib
+    def png(path, w, h, rgb):
+        raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+        def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+        with open(path, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    png("assets-src/refs/props/box.png", 4, 4, (200, 200, 200))
+    png("assets-src/refs/characters/figure.png", 4, 4, (200, 200, 200))
+    PY
+    printf '| refs/props/box.png | ci-fake placeholder | box | 2026-08-23 |\n| refs/characters/figure.png | ci-fake placeholder | figure | 2026-08-23 |\n' >> assets-src/SOURCES.md
+    echo "== mesh -> prop -> promote model"
+    "$forge" gen mesh assets-src/refs/props/box.png --preset prop --out out/lifts/box.glb --record assets-src/refs/props/box.lift.json --seed 1 --verts 2000
+    "$forge" gen prop out/lifts/box.glb --out out/props/box.glb --record out/props/box.prop.json --height 1.0
+    "$forge" promote model out/props/box.glb box --lift-record assets-src/refs/props/box.lift.json --prop-record out/props/box.prop.json
+    echo "== mesh -> rig -> export -> promote body"
+    "$forge" gen mesh assets-src/refs/characters/figure.png --preset character --out out/lifts/figure.glb --record assets-src/refs/characters/figure.lift.json --seed 1 --verts 25000
+    "$forge" gen rig out/lifts/figure.glb --out assets-src/blender/figure.blend --record assets-src/blender/figure.rig.json --name figure
+    "$forge" gen export assets-src/blender/figure.blend --out out/export/figure.glb --record out/export/figure.export.json
+    "$forge" promote body out/export/figure.glb figure --blend assets-src/blender/figure.blend --lift-record assets-src/refs/characters/figure.lift.json --rig-record assets-src/blender/figure.rig.json --export-record out/export/figure.export.json
+    echo "== motion sweep -> review -> promote clip"
+    "$forge" gen motion sweep --out-dir out/sweeps/walk --prompt "a person walks forward" --duration 2 --samples 1 --seeds 0
+    "$forge" gen motion review out/sweeps/walk/*.npz --sheet out/sweeps/walk/sheet.png --metrics out/sweeps/walk/metrics.json
+    take=$(ls out/sweeps/walk/*.npz | head -n1)
+    "$forge" promote clip "$take" walk_fake --record "${take%.npz}.take.json"
+    echo "== sfx -> promote audio"
+    "$forge" gen sfx --prompt "a door" --seconds 1 --out out/audio/sfx/door.wav --record out/audio/sfx/door.json
+    "$forge" promote audio sfx out/audio/sfx/door.wav door --record out/audio/sfx/door.json
+    echo "== the gates"
+    "$forge" catalog
+    "$forge" audit
+    "$forge" manifest --check
+    "$forge" verify
 
 # forge_studio, forge_mcp and forge stay `publish = false`.
 #

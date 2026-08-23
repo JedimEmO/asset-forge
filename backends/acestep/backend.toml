@@ -1,0 +1,77 @@
+# ACE-Step 1.5 — prompt (and lyrics) to a music track. `forge gen music`.
+#
+# Unlike the other backends this one is a server: `acestep.api_server` on
+# 127.0.0.1:8001, started by the music command when /health does not answer,
+# and resident at ~8 GB until `forge gen music --stop-server`. The outer
+# layer is a stdlib HTTP client; nothing of torch is imported on this side.
+# What is patched, why the checkpoints live where they do, and why the
+# client asks for WAV and transcodes itself: designs/hosting.md, "ACE-Step".
+
+name = "acestep"
+role = "music"
+upstream = "https://github.com/ACE-Step/ACE-Step-1.5.git"
+commit = "82252c2418de6cb8b3ca99b05592aaf539cc7fb3"
+license = "MIT"
+env_kind = "venv"
+python = "3.12"
+cuda = "12.8"
+vram_gb = 8
+entry = "audio.music"
+cwd = "checkout"
+resident = true
+
+[env]
+# The minimal model set, wherever install.sh put or adopted it. Without it
+# the server downloads into its own tree, including a 3.5 GB LM nobody asked
+# for. `${CHECKPOINTS}` is the .checkpoints link, resolved by the launcher.
+ACESTEP_CHECKPOINTS_DIR = "${CHECKPOINTS}"
+# The LM the install guarantees. Left unset, the server picks one by GPU tier
+# and would take the 4B if a previous install left it lying in the checkpoints
+# directory — a different planner, a different VRAM peak, for the same prompt.
+# A value exported by the user wins over this one.
+ACESTEP_LM_MODEL_PATH = "acestep-5Hz-lm-0.6B"
+# The API server's own host/port defaults, pinned so [server] below and the
+# process agree even when the launcher is bypassed.
+ACESTEP_API_HOST = "127.0.0.1"
+ACESTEP_API_PORT = "8001"
+
+[server]
+host = "127.0.0.1"
+port = 8001
+health = "/health"
+# Seconds the music command waits for /health after starting the server;
+# the first start loads every model and takes minutes.
+ready_timeout_s = 600
+
+# The minimal set (~7.3 GB): the turbo DiT, the 0.6B planner, the text
+# encoder and the VAE. All four live under the .checkpoints link as
+# subdirectories named exactly like this; the server finds them by name.
+# Weights are MIT like the code.
+
+[[models]]
+id = "acestep-v15-turbo"
+store = "checkpoints_dir"
+license = "MIT"
+note = "the diffusion stage (DiT); from ACE-Step/Ace-Step1.5"
+
+[[models]]
+id = "acestep-5Hz-lm-0.6B"
+store = "checkpoints_dir"
+license = "MIT"
+note = "the 5 Hz language-model planner (--thinking); from ACE-Step/acestep-5Hz-lm-0.6B"
+
+[[models]]
+id = "Qwen3-Embedding-0.6B"
+store = "checkpoints_dir"
+license = "MIT"
+note = "the text encoder, as redistributed in the MIT-carded ACE-Step/Ace-Step1.5 repo (Qwen's own Qwen3-Embedding release is Apache-2.0)"
+
+[[models]]
+id = "vae"
+store = "checkpoints_dir"
+license = "MIT"
+note = "the audio VAE; from ACE-Step/Ace-Step1.5"
+
+[[notices]]
+title = "resident server"
+text = "the ACE-Step API server stays on the GPU (~8 GB) after a track until `forge gen music --stop-server`; stop it before a lift or a sweep"

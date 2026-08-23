@@ -1,0 +1,49 @@
+{
+  "forge_record": 1,
+  "kind": "speech",
+  "tool": "moss_tts",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "moss_tts",
+    "commit": "58b20a0d5fcc6766658d50967a90a9d890009a46",
+    "python": "3.12.7",
+    "torch": "2.9.1+cu128",
+    "model": "OpenMOSS/MOSS-TTS-Local-Transformer-4B",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "prompt",
+      "path": null,
+      "sha256": null,
+      "source": null,
+      "prompt": "Stand down."
+    },
+    {
+      "role": "reference",
+      "path": "assets-src/voices/calm.wav",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": "a recording the user owns",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "language": "en",
+    "reference": "assets-src/voices/calm.wav",
+    "seed": 11,
+    "voice": "calm"
+  },
+  "outputs": [
+    {
+      "path": "out/audio/stand_down.wav",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "duration_s": 1.2
+  },
+  "fake": false,
+  "note": "première ligne — the accent is on purpose: ensure_ascii=False"
+}

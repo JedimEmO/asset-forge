@@ -8,9 +8,11 @@
 # The headless job renders with no display server on mesa's lavapipe
 # (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset) and
 # then runs the engine-free gates on the committed library: audit,
-# manifest --check, verify. The P3 renders (sheet, views, rig check) and the
-# P2 FORGE_FAKE=1 generate paths join it as their recipes land. Nothing here
-# needs a secret: no backend is installed, no model is fetched.
+# manifest --check, verify. The test job also runs `just ci-fake`: the four
+# generate pipelines on FORGE_FAKE=1 placeholders in a throwaway project —
+# python3 is on the runner, no backend is installed, no Blender, no GPU.
+# The P3 renders (sheet, views, rig check) join the headless job as their
+# recipes land. Nothing here needs a secret, and no model is fetched.
 
 name: ci
 
@@ -66,7 +68,19 @@ jobs:
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
       - run: cargo test --workspace
+      # The Python layer's own tests (stdlib only, no backend) and the fake
+      # pipelines end to end: mesh→prop→model, mesh→rig→export→body,
+      # sweep→review→clip, sfx→audio, then audit, manifest --check, verify
+      # in the throwaway project.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --quiet "pytest>=8"
+      - run: python3 -m pytest -q
+        working-directory: python
+      - run: just ci-fake
 
   headless:
     name: headless

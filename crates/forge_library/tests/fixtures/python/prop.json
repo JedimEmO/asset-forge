@@ -1,0 +1,48 @@
+{
+  "forge_record": 1,
+  "kind": "prop",
+  "tool": "blender",
+  "created": "2026-08-23",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": "blender",
+    "commit": null,
+    "python": "3.13.2",
+    "torch": null,
+    "model": null,
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "mesh",
+      "path": "out/lifts/barrel.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "height_m": 0.9,
+    "metallic": 0.0,
+    "origin": "floor",
+    "roughness": 0.9,
+    "tri_budget": 12000
+  },
+  "outputs": [
+    {
+      "path": "out/props/barrel.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "bounds_m": [
+      0.62,
+      0.9,
+      0.62
+    ],
+    "triangles": 11804
+  },
+  "fake": false,
+  "note": null
+}

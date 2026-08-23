@@ -5,10 +5,16 @@
 //! hold* (exit 1; fix the library) and *the call could not be honoured as
 //! written* (exit 2; fix the call). Clap's own parse errors already exit 2,
 //! so a mistyped flag and a name that does not exist read the same way.
+//!
+//! A third carries the Python layer's code through unchanged: `forge gen`
+//! exits with what `forge-gen` exited with — 3 install something, 4 fix the
+//! input, 5 read the log, 6 put a tool on PATH — so a skill that reads the
+//! number reads the same number either way.
 
 use std::process::ExitCode;
 
 use forge_library::LibraryError;
+use forge_library::backends::GenExit;
 
 /// A command that did not succeed.
 #[derive(Debug)]
@@ -21,6 +27,8 @@ pub(crate) enum Failure {
     /// there, a name already in use, no project. The message says what does
     /// exist so the next call can be right. Exit 2.
     Refused(String),
+    /// The Python layer refused or failed; its exit code is relayed as is.
+    Gen(GenExit, String),
 }
 
 impl Failure {
@@ -40,10 +48,15 @@ impl Failure {
         Self::Failed(format!("not yet: lands in {phase} ({what})"))
     }
 
+    /// What the Python layer said, under its own code.
+    pub(crate) fn from_gen(exit: GenExit, message: impl Into<String>) -> Self {
+        Self::Gen(exit, message.into())
+    }
+
     /// The text printed on stderr.
     pub(crate) fn message(&self) -> &str {
         match self {
-            Self::Failed(message) | Self::Refused(message) => message,
+            Self::Failed(message) | Self::Refused(message) | Self::Gen(_, message) => message,
         }
     }
 
@@ -52,6 +65,7 @@ impl Failure {
         match self {
             Self::Failed(_) => ExitCode::from(1),
             Self::Refused(_) => ExitCode::from(2),
+            Self::Gen(exit, _) => ExitCode::from(exit.code()),
         }
     }
 }

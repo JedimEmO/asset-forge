@@ -14,18 +14,24 @@
 //! forge promote clip|body|model|audio ...   the four doors into the library
 //! forge audio inspect|list                  measure a sound, or every sound
 //! forge rig export-contract|fixture         the profile's contract and mannequin
-//! forge doctor                              what this machine can do
-//! forge studio | mcp | gpu                  not yet: P3, P4, P2
+//! forge gen <cmd> [args…]                   a generator, through python/forge_gen
+//! forge doctor [--json]                     what this machine can do, every backend probed
+//! forge gpu [--json]                        who holds the card, and whether the largest backend fits
+//! forge studio | mcp                        not yet: P3, P4
 //! ```
 //!
 //! # Exit codes
 //!
 //! - `0` — it worked, or a check passed.
 //! - `1` — a gate did not hold: `verify`, `audit`, `manifest --check`, an
-//!   audio file that is silent or clipped, a bake that failed.
+//!   audio file that is silent or clipped, a bake that failed, a doctor
+//!   with a backend that is not ok, a card without room for the largest
+//!   backend.
 //! - `2` — the call could not be honoured as written: a flag that does not
 //!   parse, a file that is not there, a name already in use, no project
 //!   above the working directory. A refusal says what does exist.
+//! - `3`–`6` — `forge gen` relaying the Python layer's own table: missing
+//!   backend, input rejected, backend failed, missing tool.
 //!
 //! # The project
 //!
@@ -72,8 +78,9 @@ fn run(cli: &Cli) -> Outcome {
         Command::Promote(door) => commands::promote::run(&project(cli)?, door),
         Command::Audio(args) => commands::audio::run(cli, args),
         Command::Rig(args) => commands::rig::run(cli, args),
-        Command::Doctor => commands::doctor::run(&project(cli)?),
-        Command::Gpu(_) => Err(Failure::later("P2", "forge gpu over nvidia-smi")),
+        Command::Gen(args) => commands::generate::run(&project(cli)?, args),
+        Command::Doctor(args) => commands::doctor::run(&project(cli)?, args),
+        Command::Gpu(args) => commands::gpu::run(&project(cli)?, args),
         Command::Studio(_) => Err(Failure::later("P3", "forge studio, the viewer window")),
         Command::Mcp(_) => Err(Failure::later(
             "P4",

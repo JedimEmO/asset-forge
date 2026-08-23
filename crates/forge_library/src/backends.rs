@@ -15,17 +15,25 @@
 //!
 //! In order: `forge.toml`'s `[backends] dir`; the `FORGE_BACKENDS`
 //! environment variable; `<toolkit root>/backends`, the toolkit root being
-//! the directory holding `python/forge_gen` found by walking up from the
-//! running executable; none. No absolute path lives in source.
+//! the directory holding `python/forge_gen` — the project itself when it is
+//! the toolkit, else `$FORGE_HOME` (or the older `$FORGE_TOOLKIT`), else an
+//! ancestor of the running executable; none. No absolute path lives in
+//! source.
 //!
-//! # Doctor
+//! # The Python layer
+//!
+//! `forge gen <cmd>` is [`Backends::python_launcher`] with the command line
+//! appended and `--json` on the end: `python3 <toolkit>/python/forge_gen
+//! <cmd> … --json`. The child is told where this module found the backends
+//! (`FORGE_BACKENDS`) and any per-backend interpreter override from
+//! `forge.toml`, so the two sides never disagree about which directory is
+//! in force. Its last stdout line is one JSON object and its exit code is one
+//! of [`GenExit`], the table `python/forge_gen/exit_codes.py` speaks.
 //!
 //! `forge doctor` aggregates `forge gen doctor --json` (the in-environment
 //! probe: imports, torch, CUDA, weights, licence notices) with the host
-//! checks (GPU, Blender, ffmpeg, profile drift, library counts). That
-//! aggregation lands in P2 with the Python layer; the types here are what it
-//! reads the directory through, and [`Backends::python_launcher`] is the
-//! command it runs.
+//! checks (GPU, Blender, ffmpeg, profile drift, library counts); the types
+//! here are what it reads the directory through.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -43,7 +51,83 @@ pub const BACKENDS_ENV: &str = "FORGE_BACKENDS";
 /// The environment variable naming the toolkit root (the directory holding
 /// `python/forge_gen`), for an installed `forge` that is not running out of
 /// its checkout.
+pub const HOME_ENV: &str = "FORGE_HOME";
+
+/// The older spelling of [`HOME_ENV`], still honoured.
 pub const TOOLKIT_ENV: &str = "FORGE_TOOLKIT";
+
+/// The exit codes the Python layer speaks, mirrored from
+/// `python/forge_gen/exit_codes.py`. A caller that reads the code knows
+/// whether to install something (3), fix its input (4), read a log (5) or
+/// put a tool on PATH (6) without parsing a message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenExit {
+    /// Everything went as asked.
+    Ok,
+    /// The command line was wrong.
+    Usage,
+    /// The backend this command needs is not installed — generation is off.
+    MissingBackend,
+    /// The input was read and refused: a PNG with no flat border, a mesh
+    /// that is not in the T-pose, an empty prompt.
+    InputRejected,
+    /// The backend ran and failed; the log tail says why.
+    BackendFailed,
+    /// A host tool (Blender, ffmpeg, nvidia-smi) is not where it was looked for.
+    MissingTool,
+}
+
+impl GenExit {
+    /// Every code, in order.
+    pub const ALL: [Self; 6] = [
+        Self::Ok,
+        Self::Usage,
+        Self::MissingBackend,
+        Self::InputRejected,
+        Self::BackendFailed,
+        Self::MissingTool,
+    ];
+
+    /// The process exit code.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Ok => 0,
+            Self::Usage => 2,
+            Self::MissingBackend => 3,
+            Self::InputRejected => 4,
+            Self::BackendFailed => 5,
+            Self::MissingTool => 6,
+        }
+    }
+
+    /// The code's word, as the JSON line's `error` field spells it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Usage => "usage",
+            Self::MissingBackend => "missing_backend",
+            Self::InputRejected => "input_rejected",
+            Self::BackendFailed => "backend_failed",
+            Self::MissingTool => "missing_tool",
+        }
+    }
+
+    /// The code a process exited with, when it is one of the table's. A
+    /// signal death or an unknown code is `None`: the caller treats it as a
+    /// backend failure, which is what an interpreter that died is.
+    #[must_use]
+    pub fn from_code(code: i32) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| i32::from(c.code()) == code)
+    }
+}
+
+impl std::fmt::Display for GenExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 /// The file that describes a backend.
 pub const BACKEND_FILE: &str = "backend.toml";
@@ -77,7 +161,7 @@ impl BackendState {
 }
 
 /// One backend as found on disk.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Backend {
     /// The directory's name, which is the backend's.
     pub name: String,
@@ -87,6 +171,14 @@ pub struct Backend {
     pub state: BackendState,
     /// The `forge_gen` entry module `backend.toml` names, when it parsed.
     pub entry: Option<String>,
+    /// What it makes — `mesh`, `motion`, `music`, `sfx`, `speech`, or `tool`
+    /// for a host program like Blender — when the file says.
+    pub role: Option<String>,
+    /// The VRAM one call peaks at, in GB, when the file says. What `forge
+    /// gpu` holds the card's free memory against.
+    pub vram_gb: Option<f64>,
+    /// Whether it stays on the GPU after a call (the ACE-Step server).
+    pub resident: bool,
     /// The interpreter the launcher would exec, when one resolved: an
     /// override, or the `.env` link.
     pub interpreter: Option<PathBuf>,
@@ -98,10 +190,13 @@ pub struct Backend {
 struct BackendToml {
     name: Option<String>,
     entry: Option<String>,
+    role: Option<String>,
+    vram_gb: Option<f64>,
+    resident: Option<bool>,
 }
 
 /// The backends directory and what it holds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Backends {
     /// The directory, when one was found.
     pub dir: Option<PathBuf>,
@@ -182,15 +277,59 @@ impl Backends {
     /// The command that runs the Python layer: `python3 <toolkit>/python/forge_gen`.
     ///
     /// `None` when no toolkit root can be found — the `forge` binary is
-    /// running somewhere that is not a checkout and [`TOOLKIT_ENV`] is not
+    /// running somewhere that is not a checkout and [`HOME_ENV`] is not
     /// set — in which case generation is off and doctor says so.
+    ///
+    /// The child inherits the environment plus what keeps the two sides in
+    /// agreement: `FORGE_BACKENDS` naming the directory this module settled
+    /// on (only when the project named one — otherwise the Python side's own
+    /// lookup lands on the same checkout), and `FORGE_BACKEND_<NAME>_PYTHON`
+    /// for every `[backends.interpreters]` entry in `forge.toml`, without
+    /// overriding a value the user exported.
     #[must_use]
     pub fn python_launcher(project: &Project) -> Option<Command> {
         let toolkit = toolkit_root(project)?;
         let mut command = Command::new("python3");
         command.arg(toolkit.join("python").join("forge_gen"));
         command.current_dir(&project.root);
+        if let Some(dir) = &project.backends_dir
+            && std::env::var_os(BACKENDS_ENV).is_none()
+        {
+            command.env(BACKENDS_ENV, dir);
+        }
+        for (name, python) in &project.backend_interpreters {
+            let key = override_var(name);
+            if std::env::var_os(&key).is_none() {
+                command.env(key, project.root.join(python));
+            }
+        }
         Some(command)
+    }
+
+    /// The largest VRAM peak any described backend declares, in GB: what
+    /// the card has to have free for every generate to be possible.
+    #[must_use]
+    pub fn largest_vram_gb(&self) -> Option<f64> {
+        self.backends
+            .iter()
+            .filter_map(|b| b.vram_gb)
+            .filter(|v| *v > 0.0)
+            .fold(None, |best: Option<f64>, v| {
+                Some(best.map_or(v, |b| b.max(v)))
+            })
+    }
+
+    /// The backend that declares the largest VRAM peak, by name.
+    #[must_use]
+    pub fn largest(&self) -> Option<&Backend> {
+        self.backends
+            .iter()
+            .filter(|b| b.vram_gb.is_some_and(|v| v > 0.0))
+            .max_by(|a, b| {
+                a.vram_gb
+                    .partial_cmp(&b.vram_gb)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 
     /// The toolkit root the launcher would use, for doctor's report.
@@ -220,18 +359,28 @@ fn backends_dir(project: &Project) -> (Option<PathBuf>, String) {
     (None, String::from("nowhere — generation is off"))
 }
 
+/// `FORGE_BACKEND_<NAME>_PYTHON` for a backend: the interpreter override
+/// the Python launcher honours first.
+#[must_use]
+pub fn override_var(name: &str) -> String {
+    format!("FORGE_BACKEND_{}_PYTHON", name.to_ascii_uppercase())
+}
+
 /// The directory holding `python/forge_gen`: the project itself when it is
-/// the toolkit, else [`TOOLKIT_ENV`], else an ancestor of the running
-/// executable (a checkout's `target/debug/forge` is two levels under it).
+/// the toolkit, else [`HOME_ENV`] or [`TOOLKIT_ENV`], else an ancestor of
+/// the running executable (a checkout's `target/debug/forge` is two levels
+/// under it).
 fn toolkit_root(project: &Project) -> Option<PathBuf> {
     let is_toolkit = |dir: &Path| dir.join("python").join("forge_gen").is_dir();
     if is_toolkit(&project.root) {
         return Some(project.root.clone());
     }
-    if let Some(dir) = std::env::var_os(TOOLKIT_ENV) {
-        let dir = PathBuf::from(dir);
-        if is_toolkit(&dir) {
-            return Some(dir);
+    for key in [HOME_ENV, TOOLKIT_ENV] {
+        if let Some(dir) = std::env::var_os(key) {
+            let dir = PathBuf::from(dir);
+            if is_toolkit(&dir) {
+                return Some(dir);
+            }
         }
     }
     let exe = std::env::current_exe().ok()?;
@@ -249,7 +398,7 @@ fn toolkit_root(project: &Project) -> Option<PathBuf> {
 /// One backend's state, from its directory and the overrides.
 fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
     let dir = backends.map_or_else(|| PathBuf::from(name), |b| b.join(name));
-    let override_key = format!("FORGE_BACKEND_{}_PYTHON", name.to_ascii_uppercase());
+    let override_key = override_var(name);
     let interpreter = std::env::var_os(&override_key)
         .map(PathBuf::from)
         .or_else(|| {
@@ -268,6 +417,9 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
                     dir,
                     state: BackendState::Broken(format!("{BACKEND_FILE} does not parse: {err}")),
                     entry: None,
+                    role: None,
+                    vram_gb: None,
+                    resident: false,
                     interpreter,
                 };
             }
@@ -275,6 +427,9 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
         Err(_) => None,
     };
     let entry = described.as_ref().and_then(|d| d.entry.clone());
+    let role = described.as_ref().and_then(|d| d.role.clone());
+    let vram_gb = described.as_ref().and_then(|d| d.vram_gb);
+    let resident = described.as_ref().and_then(|d| d.resident).unwrap_or(false);
     if let Some(declared) = described.as_ref().and_then(|d| d.name.as_deref())
         && declared != name
     {
@@ -285,7 +440,25 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
                 "{BACKEND_FILE} calls itself {declared:?} but lives in {name}/"
             )),
             entry,
+            role,
+            vram_gb,
+            resident,
             interpreter,
+        };
+    }
+    // A tool backend — Blender — has no environment to install; the Python
+    // launcher finds its binary through $BLENDER_BIN or PATH, and doctor's
+    // probe says whether it answers. Described is as found as it gets here.
+    if role.as_deref() == Some("tool") {
+        return Backend {
+            name: name.to_owned(),
+            dir,
+            state: BackendState::Found,
+            entry,
+            role,
+            vram_gb,
+            resident,
+            interpreter: None,
         };
     }
     // An override may name the interpreter binary itself or its prefix; the
@@ -319,6 +492,9 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
         dir,
         state,
         entry,
+        role,
+        vram_gb,
+        resident,
         interpreter,
     }
 }
@@ -350,15 +526,17 @@ mod tests {
 
     #[test]
     fn a_project_with_no_backends_has_every_backend_missing() {
-        let (_dir, project) = temp_project();
-        // The temp project is not the toolkit, names no backends dir, and
-        // this test binary lives under the toolkit's target/ — so the walk
-        // from the executable finds the checkout's backends/, which in P1
-        // holds no backend.toml yet. Either way: nothing is found.
+        let (dir, mut project) = temp_project();
+        // An empty backends directory named by the project: the walk from
+        // this test binary would otherwise land on the checkout's own
+        // backends/, which on a developer's machine are installed.
+        let empty = dir.path().join("backends");
+        std::fs::create_dir_all(&empty).expect("mkdir");
+        project.backends_dir = Some(empty);
         let found = Backends::discover(&project);
         assert_eq!(found.backends.len(), KNOWN.len());
         for backend in &found.backends {
-            assert_ne!(backend.state, BackendState::Found, "{backend:?}");
+            assert_eq!(backend.state, BackendState::Missing, "{backend:?}");
         }
         assert!(!found.is_found("ardy"));
         assert!(
@@ -367,6 +545,54 @@ mod tests {
                 .contains("generation through it is off")
         );
         assert!(found.refusal("gpt").contains("not a backend"));
+        assert_eq!(found.largest_vram_gb(), None);
+    }
+
+    #[test]
+    fn the_exit_table_round_trips_and_unknown_codes_are_none() {
+        for exit in GenExit::ALL {
+            assert_eq!(GenExit::from_code(i32::from(exit.code())), Some(exit));
+        }
+        assert_eq!(GenExit::from_code(1), None);
+        assert_eq!(GenExit::from_code(-9), None);
+        assert_eq!(GenExit::MissingBackend.to_string(), "missing_backend");
+    }
+
+    #[test]
+    fn vram_and_role_are_read_and_a_tool_backend_needs_no_env() {
+        let (dir, mut project) = temp_project();
+        let backends = dir.path().join("backends");
+        for (name, text) in [
+            (
+                "trellis2",
+                "name = \"trellis2\"\nrole = \"mesh\"\nentry = \"mesh\"\nvram_gb = 22\n",
+            ),
+            (
+                "acestep",
+                "name = \"acestep\"\nrole = \"music\"\nentry = \"audio.music\"\nvram_gb = 8\nresident = true\n",
+            ),
+            (
+                "blender",
+                "name = \"blender\"\nrole = \"tool\"\nentry = \"forge_gen.blender\"\nvram_gb = 0\n",
+            ),
+        ] {
+            let sub = backends.join(name);
+            std::fs::create_dir_all(&sub).expect("mkdir");
+            std::fs::write(sub.join(BACKEND_FILE), text).expect("toml");
+        }
+        project.backends_dir = Some(backends);
+        let found = Backends::discover(&project);
+        assert_eq!(found.largest_vram_gb(), Some(22.0));
+        assert_eq!(found.largest().map(|b| b.name.as_str()), Some("trellis2"));
+        assert!(found.get("acestep").expect("listed").resident);
+        let blender = found.get("blender").expect("listed after the known five");
+        assert_eq!(
+            blender.state,
+            BackendState::Found,
+            "a tool has no env to install"
+        );
+        assert_eq!(blender.role.as_deref(), Some("tool"));
+        assert_eq!(found.backends.len(), KNOWN.len() + 1);
     }
 
     #[test]
@@ -421,9 +647,16 @@ mod tests {
     #[test]
     fn the_launcher_needs_a_toolkit_root() {
         let toolkit = Project::discover(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("toolkit");
-        // In P1 python/forge_gen does not exist yet, so the toolkit root
-        // cannot be found from the checkout either and the launcher is off.
+        // The checkout is the toolkit: python/forge_gen is beside this crate.
         let has_python = toolkit.root.join("python/forge_gen").is_dir();
         assert_eq!(Backends::python_launcher(&toolkit).is_some(), has_python);
+        let command = Backends::python_launcher(&toolkit).expect("a checkout");
+        let program = command.get_program().to_string_lossy().into_owned();
+        assert_eq!(program, "python3");
+        let args: Vec<String> = command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args[0].ends_with("python/forge_gen"), "{args:?}");
     }
 }

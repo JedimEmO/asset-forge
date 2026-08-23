@@ -21,6 +21,9 @@ clap = { workspace = true }
 forge_library = { workspace = true }
 forge_audio = { workspace = true }
 forge_rig = { workspace = true }
+# The one line the Python layer speaks back — `forge gen`'s last stdout line,
+# `forge gen doctor --json`'s report — is JSON; nothing else here parses any.
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

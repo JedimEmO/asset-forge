@@ -1,0 +1,39 @@
+{
+  "forge_record": 1,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-23",
+  "created_by": "unknown",
+  "backend": {
+    "name": "trellis2",
+    "commit": "fake",
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/crate.png",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "resolution": null,
+    "seed": null,
+    "texture_baker": null
+  },
+  "outputs": [
+    {
+      "path": "out/lifts/crate.glb",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {},
+  "fake": true,
+  "note": "placeholder output from a --fake run; nothing about it is a measurement"
+}

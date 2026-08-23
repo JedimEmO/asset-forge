@@ -17,5 +17,6 @@ backends/*/.env
 backends/*/.checkout
 backends/*/.text-encoders
 backends/*/installed.json
+backends/*/.checkpoints
 backends.local.toml
 python/.venv

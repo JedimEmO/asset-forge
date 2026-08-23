@@ -59,10 +59,14 @@ pub(crate) enum Command {
     /// The rig profile: export its contract, write its fixture mannequin
     #[command(subcommand)]
     Rig(RigCommand),
-    /// What this machine can do: project, profile drift, library counts, backends
-    Doctor,
-    /// Who holds the GPU right now (not yet: lands in P2)
-    Gpu(Later),
+    /// Run a generator through the Python layer: mesh, prop, rig, export,
+    /// rig-build, motion sweep|keys|review, sfx, music, speech, doctor
+    Gen(GenArgs),
+    /// What this machine can do: project, profile drift, library counts, host
+    /// tools, every backend probed in its own environment
+    Doctor(DoctorArgs),
+    /// Who holds the GPU right now, and whether the largest backend would fit
+    Gpu(GpuArgs),
     /// Open the viewer window (not yet: lands in P3)
     Studio(Later),
     /// Serve the MCP tools over stdio (not yet: lands in P4)
@@ -77,6 +81,47 @@ pub(crate) struct Later {
     /// Ignored until the subcommand lands.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     pub(crate) rest: Vec<String>,
+}
+
+/// `forge gen <cmd> [args…]`: the command line is handed to
+/// `python3 <toolkit>/python/forge_gen` whole, with `--project <root>` and
+/// `--json` appended; the flags are that program's (`forge gen <cmd> --help`
+/// shows them). Exit codes are its table: 0 ok, 2 usage, 3 missing backend,
+/// 4 input rejected, 5 backend failed, 6 missing tool.
+#[derive(Debug, Args)]
+pub(crate) struct GenArgs {
+    /// The forge-gen command and its arguments, verbatim. `--json` among
+    /// them makes the last stdout line the JSON object instead of a summary;
+    /// `--fake` (or `FORGE_FAKE=1`) writes placeholders that pass the same
+    /// validators with no backend.
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        required = true,
+        value_name = "CMD [ARGS]..."
+    )]
+    pub(crate) rest: Vec<String>,
+}
+
+/// `forge doctor`.
+#[derive(Debug, Args)]
+pub(crate) struct DoctorArgs {
+    /// One JSON object instead of the table: the project, the profile, the
+    /// library, and `forge gen doctor --json`'s report under "gen".
+    #[arg(long)]
+    pub(crate) json: bool,
+    /// Skip the in-environment probes (seconds each) and report only what
+    /// the directory says: found, missing, broken.
+    #[arg(long)]
+    pub(crate) quick: bool,
+}
+
+/// `forge gpu`.
+#[derive(Debug, Args)]
+pub(crate) struct GpuArgs {
+    /// One JSON object instead of the lines.
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 /// `forge init`.

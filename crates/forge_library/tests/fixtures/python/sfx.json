@@ -1,0 +1,43 @@
+{
+  "forge_record": 1,
+  "kind": "sfx",
+  "tool": "moss_sound_effect",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "moss_sfx",
+    "commit": "58b20a0d5fcc6766658d50967a90a9d890009a46",
+    "python": "3.12.7",
+    "torch": "2.9.0+cu128",
+    "model": "OpenMOSS/MOSS-SoundEffect-v2",
+    "model_revision": null
+  },
+  "inputs": [
+    {
+      "role": "prompt",
+      "path": null,
+      "sha256": null,
+      "source": null,
+      "prompt": "a heavy wooden door slamming"
+    }
+  ],
+  "params": {
+    "cfg": 4.0,
+    "duration_s": 1.5,
+    "seed": 3,
+    "steps": 50
+  },
+  "outputs": [
+    {
+      "path": "out/audio/door_slam.wav",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "duration_s": 1.5,
+    "peak_dbfs": -3.1
+  },
+  "fake": false,
+  "note": null
+}

@@ -159,7 +159,7 @@ fn no_project_is_a_refusal_naming_the_search_start() {
 #[test]
 fn the_placeholders_say_their_phase_and_exit_one() {
     let dir = tempfile::tempdir().expect("tempdir");
-    for (verb, phase) in [("gpu", "P2"), ("studio", "P3"), ("mcp", "P4")] {
+    for (verb, phase) in [("studio", "P3"), ("mcp", "P4")] {
         let text = exits(dir.path(), &[verb, "--whatever", "x"], 1);
         assert!(
             text.contains(&format!("not yet: lands in {phase}")),
@@ -184,9 +184,106 @@ fn init_refuses_twice_and_a_fresh_project_passes_every_gate() {
     assert!(out.contains("0 asset(s)"), "{out}");
     let out = ok(&root, &["audio", "list"]);
     assert!(out.contains("nothing to measure"), "{out}");
-    let out = ok(&root, &["doctor"]);
+    // Doctor's exit is the backends' verdict — 1 on a machine where any is
+    // missing or partial, which a CI runner always is — so the project half
+    // is checked on the text, not the code.
+    let output = forge(&root, &["doctor", "--quick"]);
+    let out = stdout(&output);
+    assert!(code(&output) == 0 || code(&output) == 1, "{out}");
     assert!(out.contains("no drift"), "{out}");
     assert!(out.contains("manifest current"), "{out}");
+    assert!(out.contains("backends  "), "{out}");
+    assert!(out.contains("doctor: "), "{out}");
+    let output = forge(&root, &["doctor", "--quick", "--json"]);
+    let out = stdout(&output);
+    let json: serde_json::Value = serde_json::from_str(out.trim()).expect("one JSON object");
+    assert_eq!(json["quick"], serde_json::Value::Bool(true));
+    assert!(
+        json["rig"]["bones"].as_u64().is_some_and(|n| n > 0),
+        "{out}"
+    );
+}
+
+#[test]
+fn gen_relays_the_python_layer_and_its_exit_codes() {
+    let (_dir, root) = init_project();
+    // A fake run needs no backend and no Blender: placeholder outputs and a
+    // real record, promoted through the same door a real sound uses.
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a door",
+            "--out",
+            "out/audio/sfx/door.wav",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&root)
+        .output()
+        .expect("run forge");
+    let out = stdout(&output);
+    assert_eq!(code(&output), 0, "{out}\n{}", stderr(&output));
+    assert!(out.contains("record   "), "{out}");
+    assert!(out.contains("fake     true"), "{out}");
+    assert!(root.join("out/audio/sfx/door.json").is_file());
+    let out = ok(
+        &root,
+        &[
+            "promote",
+            "audio",
+            "sfx",
+            "out/audio/sfx/door.wav",
+            "door",
+            "--record",
+            "out/audio/sfx/door.json",
+        ],
+    );
+    assert!(out.contains("recorded"), "{out}");
+
+    // --json among the arguments: the object itself is the last line.
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "x",
+            "--out",
+            "out/audio/sfx/x.wav",
+            "--json",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&root)
+        .output()
+        .expect("run forge");
+    let last = stdout(&output);
+    let last = last.trim().lines().last().unwrap_or_default();
+    let json: serde_json::Value = serde_json::from_str(last).expect("a JSON line");
+    assert_eq!(json["ok"], serde_json::Value::Bool(true));
+
+    // The table: 2 usage, 4 input rejected — relayed unchanged.
+    let text = exits(&root, &["gen", "sfx", "--out", "x.wav"], 2);
+    assert!(text.contains("usage"), "{text}");
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "mesh",
+            "nope.png",
+            "--out",
+            "out/l.glb",
+            "--record",
+            "out/l.json",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&root)
+        .output()
+        .expect("run forge");
+    assert_eq!(code(&output), 4, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("input_rejected"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]

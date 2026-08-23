@@ -323,7 +323,14 @@ fn mesh_findings(
         );
     }
     match sidecar.source.path.as_deref() {
-        None => report.warn(name, "no source .blend — its provenance points at nothing"),
+        // A body is exported from a .blend the rig step wrote, so a body with
+        // no source has lost its provenance. A model normalized by `gen prop`
+        // never had one: its provenance is the lift record and the prop record
+        // in its generator block, and that is the whole story.
+        None if sidecar.kind == Kind::Body => {
+            report.warn(name, "no source .blend — its provenance points at nothing");
+        }
+        None => {}
         Some(source) => {
             let blend = project.root.join(source);
             if blend.is_file() {
