@@ -10,9 +10,11 @@ pub(crate) mod doctor;
 pub(crate) mod generate;
 pub(crate) mod gpu;
 pub(crate) mod init;
+pub(crate) mod look;
 pub(crate) mod manifest;
 pub(crate) mod promote;
 pub(crate) mod rig;
+pub(crate) mod studio;
 
 /// One line of at most `width` characters, for a table cell.
 pub(crate) fn first_line(text: &str, width: usize) -> String {

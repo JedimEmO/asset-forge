@@ -44,8 +44,9 @@ pub(crate) enum Command {
     Manifest(ManifestArgs),
     /// Every engine-free check: sidecars, hashes, the reference ledger, profile drift
     Verify,
-    /// Every clip rebuilds from its own record; every body is what it claims
-    Audit,
+    /// Every clip rebuilds from its own record, by bytes and by pose; every
+    /// body is what it claims and conforms to the rig
+    Audit(AuditArgs),
     /// Re-bake every shipped clip from its own record (bodies are skipped, loudly)
     Rebake(DryRunArgs),
     /// Bring every sidecar up to the current schema, idempotently
@@ -67,10 +68,152 @@ pub(crate) enum Command {
     Doctor(DoctorArgs),
     /// Who holds the GPU right now, and whether the largest backend would fit
     Gpu(GpuArgs),
-    /// Open the viewer window (not yet: lands in P3)
-    Studio(Later),
+    /// Contact sheet of one clip on a body: poses across the clip, one band
+    /// per view. Exits 1 when the clip drives no bone or never moves
+    Sheet(SheetArgs),
+    /// One mesh from the angles a reviewer would walk to: front, back, both
+    /// sides and three head close-ups, culling off for a raw lift
+    Views(ViewsArgs),
+    /// Every view of a body, head row included, posed on the reference clip
+    Turntable(TurntableArgs),
+    /// Which bones a clip drives on a body — driven, at rest, orphaned — with
+    /// no GPU. Exits 1 when nothing binds
+    Bones(BonesArgs),
+    /// Open the viewer window: library browser, stage, transport, metadata,
+    /// audio
+    Studio(StudioArgs),
     /// Serve the MCP tools over stdio (not yet: lands in P4)
     Mcp(Later),
+}
+
+/// `forge audit`.
+#[derive(Debug, Args)]
+pub(crate) struct AuditArgs {
+    /// When a clip does not reproduce as recorded, search the in-place modes
+    /// and a ladder of wrap blends and name the recipe that does. The
+    /// failure stands either way.
+    #[arg(long)]
+    pub(crate) fit: bool,
+}
+
+/// What `sheet`, `turntable` and `bones` pose a clip on.
+///
+/// Unstated, the project's `stage_body`; a library without it falls back to
+/// its first body with a warning, and one with no body at all to the fixture
+/// mannequin written under out/ — a clip is never judged on an empty stage.
+#[derive(Debug, Args)]
+pub(crate) struct BodyArg {
+    /// The body to pose on: a library name, a file name, or a path to a
+    /// rigged glb anywhere.
+    #[arg(long, value_name = "BODY")]
+    pub(crate) body: Option<String>,
+}
+
+/// `forge sheet <clip>`.
+#[derive(Debug, Args)]
+pub(crate) struct SheetArgs {
+    /// The clip: a library name, or a path to a clip glb under the asset
+    /// root.
+    pub(crate) clip: String,
+
+    #[command(flatten)]
+    pub(crate) body: BodyArg,
+
+    /// Poses sampled across the window.
+    #[arg(long, default_value_t = 8, value_name = "N")]
+    pub(crate) frames: u32,
+    /// Comma-separated views, one band each, or `all`: `three_quarter`,
+    /// front, back, left, right, top.
+    #[arg(long, default_value = "three_quarter", value_name = "LIST")]
+    pub(crate) views: String,
+    /// Cells per row.
+    #[arg(long, default_value_t = 4, value_name = "N")]
+    pub(crate) columns: u32,
+    /// Cell pixels, clamped to fit the vision budget.
+    #[arg(long, default_value = "384x512", value_name = "WxH")]
+    pub(crate) cell: String,
+    /// Window start, as a fraction of clip length.
+    #[arg(long, default_value_t = 0.0, value_name = "0..1")]
+    pub(crate) t0: f32,
+    /// Window end, as a fraction of clip length.
+    #[arg(long, default_value_t = 1.0, value_name = "0..1")]
+    pub(crate) t1: f32,
+    /// Add a band of head close-ups under the view bands.
+    #[arg(long)]
+    pub(crate) head_row: bool,
+    /// Where to write the PNG. Default: out/sheets/<clip>.png.
+    #[arg(long, value_name = "PNG")]
+    pub(crate) out: Option<PathBuf>,
+}
+
+/// `forge views <name|path.glb>`.
+#[derive(Debug, Args)]
+pub(crate) struct ViewsArgs {
+    /// A library body or model by name, or a path to any glb — a raw lift
+    /// under out/, an export, a file from elsewhere.
+    pub(crate) target: String,
+    /// Switch back-face culling off on every material, so a missing rear
+    /// surface shows as the inside of the front one. On by default for a
+    /// path under the project's out/ — that is where raw lifts live.
+    #[arg(long)]
+    pub(crate) cull_off: bool,
+    /// Leave the three head close-ups out — for a prop.
+    #[arg(long)]
+    pub(crate) no_head: bool,
+    /// Comma-separated views, or `all`. Default: front, back, left, right.
+    #[arg(long, value_name = "LIST")]
+    pub(crate) views: Option<String>,
+    /// Where to write the PNG. Default: out/views/<stem>.png.
+    #[arg(long, value_name = "PNG")]
+    pub(crate) out: Option<PathBuf>,
+}
+
+/// `forge turntable <body>`.
+#[derive(Debug, Args)]
+pub(crate) struct TurntableArgs {
+    /// The body, by library name.
+    pub(crate) body: String,
+    /// Where to write the PNG. Default: out/views/<body>.png.
+    #[arg(long, value_name = "PNG")]
+    pub(crate) out: Option<PathBuf>,
+}
+
+/// `forge bones <clip>`.
+#[derive(Debug, Args)]
+pub(crate) struct BonesArgs {
+    /// The clip: a library name, or a path to a clip glb under the asset
+    /// root.
+    pub(crate) clip: String,
+
+    #[command(flatten)]
+    pub(crate) body: BodyArg,
+}
+
+/// `forge studio`.
+#[derive(Debug, Args)]
+pub(crate) struct StudioArgs {
+    /// The body or model to open on: a library name, a file name, or a path
+    /// under the asset root. Default: the project's `stage_body`, else the
+    /// first body, else the fixture mannequin.
+    #[arg(long, value_name = "MODEL")]
+    pub(crate) model: Option<String>,
+    /// Open on the first sound rather than the first clip.
+    #[arg(long)]
+    pub(crate) audio: bool,
+    /// Put a raw ARDY take on the stage body, beside the shipped clips.
+    #[arg(long, value_name = "NPZ")]
+    pub(crate) take: Option<PathBuf>,
+    /// A recipe to apply to the take once, at load: a bare recipe or a
+    /// sidecar holding one. Ignored without --take.
+    #[arg(long, value_name = "JSON", requires = "take")]
+    pub(crate) recipe: Option<PathBuf>,
+    /// Capture the window to this PNG once the scene has settled, then quit.
+    #[arg(long, value_name = "PNG")]
+    pub(crate) screenshot: Option<PathBuf>,
+    /// Play every audio asset in turn, then quit. Exits non-zero if one
+    /// will not play.
+    #[arg(long)]
+    pub(crate) selftest: bool,
 }
 
 /// Arguments swallowed by a subcommand whose phase has not landed, so a
@@ -367,6 +510,21 @@ pub(crate) enum RigCommand {
     ExportContract(ExportContractArgs),
     /// Write the fixture mannequin: a capsule figure skinned to the contract
     Fixture(FixtureArgs),
+    /// Hold one rigged glb to the profile's contract: every bone at its
+    /// depth, the rest pose, the weights, stature, feet, the reference clip
+    /// binding. Exits 1 on any FAIL
+    Check(RigCheckArgs),
+}
+
+/// `forge rig check <glb>`.
+#[derive(Debug, Args)]
+pub(crate) struct RigCheckArgs {
+    /// The rigged glb to check — an export under out/, or a shipped body.
+    pub(crate) glb: PathBuf,
+    /// Also render it playing the reference clip (or at rest, when the
+    /// library has none) to this PNG. Needs a wgpu adapter.
+    #[arg(long, value_name = "PNG")]
+    pub(crate) out: Option<PathBuf>,
 }
 
 /// `forge rig export-contract <dir>`.
@@ -455,6 +613,29 @@ mod tests {
             "--no-loop",
         ]);
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn recipe_needs_a_take() {
+        let parsed = Cli::try_parse_from(["forge", "studio", "--recipe", "r.json"]);
+        assert!(parsed.is_err());
+        let parsed =
+            Cli::try_parse_from(["forge", "studio", "--take", "t.npz", "--recipe", "r.json"]);
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn sheet_defaults_are_the_documented_ones() {
+        let cli = Cli::try_parse_from(["forge", "sheet", "walk"]).expect("parses");
+        let Command::Sheet(args) = cli.command else {
+            panic!("not a sheet");
+        };
+        assert_eq!(args.frames, 8);
+        assert_eq!(args.columns, 4);
+        assert_eq!(args.views, "three_quarter");
+        assert_eq!(args.cell, "384x512");
+        assert!(!args.head_row);
+        assert!(args.body.body.is_none());
     }
 
     #[test]

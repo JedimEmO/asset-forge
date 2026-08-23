@@ -2738,6 +2738,7 @@ dependencies = [
  "forge_audio",
  "forge_library",
  "forge_rig",
+ "forge_studio",
  "serde_json",
  "tempfile",
 ]
@@ -2811,6 +2812,22 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "forge_studio"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "forge_audio",
+ "forge_capture",
+ "forge_library",
+ "forge_motion",
+ "forge_raster",
+ "forge_rig",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

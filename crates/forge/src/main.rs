@@ -13,11 +13,16 @@
 //! forge verify | audit | rebake | migrate   the engine-free checks and repairs
 //! forge promote clip|body|model|audio ...   the four doors into the library
 //! forge audio inspect|list                  measure a sound, or every sound
-//! forge rig export-contract|fixture         the profile's contract and mannequin
+//! forge rig export-contract|fixture|check   the profile's contract and mannequin; one mesh held to it
 //! forge gen <cmd> [args…]                   a generator, through python/forge_gen
 //! forge doctor [--json]                     what this machine can do, every backend probed
 //! forge gpu [--json]                        who holds the card, and whether the largest backend fits
-//! forge studio | mcp                        not yet: P3, P4
+//! forge sheet <clip> [--body]               a clip on a body as a contact sheet
+//! forge views <name|path.glb>               one mesh from every angle, culling off for a lift
+//! forge turntable <body>                    every view of a body, posed on the reference clip
+//! forge bones <clip> [--body]               which bones a clip drives, no GPU
+//! forge studio [--model] [--audio] …        the viewer window
+//! forge mcp                                 not yet: P4
 //! ```
 //!
 //! # Exit codes
@@ -72,7 +77,7 @@ fn run(cli: &Cli) -> Outcome {
         Command::Catalog(args) => commands::catalog::run(&project(cli)?, args),
         Command::Manifest(args) => commands::manifest::run(&project(cli)?, args),
         Command::Verify => commands::checks::verify(&project(cli)?),
-        Command::Audit => commands::checks::audit(&project(cli)?),
+        Command::Audit(args) => commands::checks::audit(&project(cli)?, args.fit),
         Command::Rebake(args) => commands::checks::rebake(&project(cli)?, args.dry_run),
         Command::Migrate(args) => commands::checks::migrate(&project(cli)?, args.dry_run),
         Command::Promote(door) => commands::promote::run(&project(cli)?, door),
@@ -81,7 +86,11 @@ fn run(cli: &Cli) -> Outcome {
         Command::Gen(args) => commands::generate::run(&project(cli)?, args),
         Command::Doctor(args) => commands::doctor::run(&project(cli)?, args),
         Command::Gpu(args) => commands::gpu::run(&project(cli)?, args),
-        Command::Studio(_) => Err(Failure::later("P3", "forge studio, the viewer window")),
+        Command::Sheet(args) => commands::look::sheet(&project(cli)?, args),
+        Command::Views(args) => commands::look::views(&project(cli)?, args),
+        Command::Turntable(args) => commands::look::turntable(&project(cli)?, args),
+        Command::Bones(args) => commands::look::bones(&project(cli)?, args),
+        Command::Studio(args) => commands::studio::run(&project(cli)?, args),
         Command::Mcp(_) => Err(Failure::later(
             "P4",
             "forge mcp, the server an agent drives",

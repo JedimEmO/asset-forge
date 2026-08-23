@@ -20,6 +20,12 @@ fn take_fixture() -> PathBuf {
     toolkit("crates/forge_motion/tests/fixtures/blender/gen_roll.npz")
 }
 
+/// A pinned copy of the walk take — the profile's reference clip, once
+/// promoted under that name.
+fn walk_fixture() -> PathBuf {
+    toolkit("crates/forge_motion/tests/fixtures/blender/gen_walk.npz")
+}
+
 /// Run `forge` with these arguments from `cwd`.
 fn forge(cwd: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_forge"))
@@ -128,8 +134,24 @@ fn help_lists_the_tree_without_a_project() {
     let dir = tempfile::tempdir().expect("tempdir");
     let out = ok(dir.path(), &["--help"]);
     for verb in [
-        "init", "catalog", "manifest", "verify", "audit", "rebake", "migrate", "promote", "audio",
-        "rig", "doctor", "gpu", "studio", "mcp",
+        "init",
+        "catalog",
+        "manifest",
+        "verify",
+        "audit",
+        "rebake",
+        "migrate",
+        "promote",
+        "audio",
+        "rig",
+        "doctor",
+        "gpu",
+        "sheet",
+        "views",
+        "turntable",
+        "bones",
+        "studio",
+        "mcp",
     ] {
         assert!(
             out.contains(&format!("\n  {verb}")),
@@ -142,6 +164,10 @@ fn help_lists_the_tree_without_a_project() {
             promote.contains(&format!("\n  {door}")),
             "{door}:\n{promote}"
         );
+    }
+    let rig = ok(dir.path(), &["rig", "--help"]);
+    for verb in ["export-contract", "fixture", "check"] {
+        assert!(rig.contains(&format!("\n  {verb}")), "{verb}:\n{rig}");
     }
 }
 
@@ -157,15 +183,78 @@ fn no_project_is_a_refusal_naming_the_search_start() {
 }
 
 #[test]
-fn the_placeholders_say_their_phase_and_exit_one() {
+fn the_placeholder_says_its_phase_and_exits_one() {
     let dir = tempfile::tempdir().expect("tempdir");
-    for (verb, phase) in [("studio", "P3"), ("mcp", "P4")] {
-        let text = exits(dir.path(), &[verb, "--whatever", "x"], 1);
-        assert!(
-            text.contains(&format!("not yet: lands in {phase}")),
-            "{text}"
-        );
-    }
+    let text = exits(dir.path(), &["mcp", "--whatever", "x"], 1);
+    assert!(text.contains("not yet: lands in P4"), "{text}");
+}
+
+/// The looks that need no GPU: the binding report, the rig check without a
+/// sheet, and the posed half of audit — on a library whose only body is the
+/// mannequin the commands write for themselves.
+#[test]
+fn bones_rig_check_and_the_posed_audit_run_without_a_gpu() {
+    let (_dir, root) = init_project();
+    let walk = walk_fixture();
+    ok(&root, &["promote", "clip", to_str(&walk), "walk"]);
+
+    // No body in the library: the clip is posed on the mannequin, written
+    // under out/fixture, and every driven bone binds.
+    let output = forge(&root, &["bones", "walk"]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("fixture mannequin"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(root.join("out/fixture/mannequin.glb").is_file());
+    let out = stdout(&output);
+    assert!(out.contains("27 of 58 skeleton bones driven"), "{out}");
+
+    // A clip that is not there is a refusal naming what is.
+    let text = exits(&root, &["bones", "sprint"], 2);
+    assert!(text.contains("no clip named \"sprint\""), "{text}");
+    assert!(text.contains("walk"), "{text}");
+    let text = exits(&root, &["sheet", "sprint"], 2);
+    assert!(text.contains("no clip named \"sprint\""), "{text}");
+
+    // The mannequin holds to the contract it was written from, and the
+    // reference walk binds 27/27.
+    let out = ok(&root, &["rig", "check", "out/fixture/mannequin.glb"]);
+    assert!(out.contains("reference: clips/walk.glb"), "{out}");
+    assert!(!out.contains("FAIL:"), "{out}");
+    assert!(out.contains("0 failed"), "{out}");
+    let text = exits(&root, &["rig", "check", "out/nowhere.glb"], 2);
+    assert!(text.contains("is not a file"), "{text}");
+
+    // A named body that is not there is refused the same way.
+    let text = exits(&root, &["bones", "walk", "--body", "nobody"], 2);
+    assert!(text.contains("no body named \"nobody\""), "{text}");
+
+    // Audit now carries the pose compare and the body checks.
+    let out = ok(&root, &["audit"]);
+    assert!(out.contains("clip poses"), "{out}");
+    assert!(
+        out.contains("1/1 clips pose the mannequin exactly as their shipped file"),
+        "{out}"
+    );
+    assert!(out.contains("0/0 bodies conform"), "{out}");
+
+    // Promote the mannequin as a body: audit checks it, and rig check on
+    // the shipped file still passes.
+    ok(
+        &root,
+        &["promote", "body", "out/fixture/mannequin.glb", "mannequin"],
+    );
+    let out = ok(&root, &["audit", "--fit"]);
+    assert!(out.contains("1/1 bodies conform to the contract"), "{out}");
+    let output = forge(&root, &["bones", "walk"]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("first body, mannequin"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]

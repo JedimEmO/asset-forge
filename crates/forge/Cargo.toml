@@ -21,11 +21,18 @@ clap = { workspace = true }
 forge_library = { workspace = true }
 forge_audio = { workspace = true }
 forge_rig = { workspace = true }
+# The studio brings Bevy with it — minutes to build, and the reason the
+# logic stays in the library crates: `cargo test -p forge_library` never
+# pays for a renderer. Every eye-render (sheet, views, turntable), the
+# window, the rig check, the bones report and the posed half of audit come
+# through it.
+forge_studio = { workspace = true }
 # The one line the Python layer speaks back — `forge gen`'s last stdout line,
 # `forge gen doctor --json`'s report — is JSON; nothing else here parses any.
 serde_json = { workspace = true }
-
-[dev-dependencies]
+# Bevy loads nothing from outside an asset root, so a body that is not in
+# the library — the fixture mannequin, an export under out/ — is staged
+# beside its clip in a scratch root that removes itself.
 tempfile = { workspace = true }
 
 [lints]

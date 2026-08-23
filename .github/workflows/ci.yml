@@ -6,13 +6,17 @@
 # each job reads it from the file rather than repeating it here.
 #
 # The headless job renders with no display server on mesa's lavapipe
-# (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset) and
-# then runs the engine-free gates on the committed library: audit,
-# manifest --check, verify. The test job also runs `just ci-fake`: the four
-# generate pipelines on FORGE_FAKE=1 placeholders in a throwaway project —
-# python3 is on the runner, no backend is installed, no Blender, no GPU.
-# The P3 renders (sheet, views, rig check) join the headless job as their
-# recipes land. Nothing here needs a secret, and no model is fetched.
+# (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset):
+# the capture smoke, a contact sheet of every shipped clip (non-zero on one
+# that binds to nothing or never moves), `forge views` on the committed test
+# fixture — the unit cube TRELLIS made from a test image, culling off — and
+# then the gates on the committed library: audit (by bytes and by pose, on
+# the fixture mannequin), check-bodies (the rig profile held against every
+# shipped body), manifest --check, verify. The test job also runs
+# `just ci-fake`: the four generate pipelines on FORGE_FAKE=1 placeholders
+# in a throwaway project — python3 is on the runner, no backend is
+# installed, no Blender, no GPU. Nothing here needs a secret, and no model
+# is fetched.
 
 name: ci
 
@@ -104,7 +108,16 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
-      # No display: the recipe itself unsets DISPLAY and WAYLAND_DISPLAY, and
-      # a runner has neither to begin with.
+      # No display: the smoke recipe itself unsets DISPLAY and WAYLAND_DISPLAY,
+      # and a runner has neither to begin with. The renders after it find the
+      # same adapter the smoke did.
       - run: just smoke
+      # Every shipped clip as a sheet on the stage body; an empty library
+      # renders nothing and passes.
+      - run: just sheets
+      # The seven views of a raw lift, the way `forge-character` looks at one
+      # before the rig: a path under out/ gets culling off by default, so the
+      # fixture is copied there first.
+      - run: mkdir -p out/lifts && cp crates/forge_studio/tests/fixtures/testbox.glb out/lifts/testbox.glb && target/debug/forge views out/lifts/testbox.glb
+      - run: just check-bodies
       - run: just audit manifest-check verify

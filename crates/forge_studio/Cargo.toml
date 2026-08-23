@@ -1,0 +1,40 @@
+[package]
+name = "forge_studio"
+description = "Headless contact sheets and mesh views, and the viewer window, for judging the assets forge_library keeps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# The window and the renders are tools for this repository's workflow; the
+# publishable surface is the engine-free crates beneath them.
+publish = false
+
+[dependencies]
+bevy = { workspace = true }
+# Windowless capture and the contact-sheet composer every headless render
+# goes through.
+forge_capture = { workspace = true }
+# Sidecars, the catalog and the project: what the browser lists and what the
+# metadata panel reads.
+forge_library = { workspace = true }
+# Takes and the edit recipe, so a raw .npz previews on the stage with no
+# Blender in the loop.
+forge_motion = { workspace = true }
+# The rig contract a body on the stage is judged against.
+forge_rig = { workspace = true }
+# Decode, metrics and plots for the audio view.
+forge_audio = { workspace = true }
+# The CPU canvas the labels are burnt in with.
+forge_raster = { workspace = true }
+serde_json = { workspace = true }
+crossbeam-channel = { workspace = true }
+
+[dev-dependencies]
+# The render and fidelity tests bake a fresh clip into a temporary library
+# and load it back through Bevy: a mock of the asset server would not catch
+# a clip that binds to nothing.
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

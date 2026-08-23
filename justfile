@@ -4,21 +4,28 @@
 # (glTF, WAV/OGG, PNG, JSON) plus one manifest. Paths come from forge.toml at
 # the root, so nothing here needs plumbing. `just` on its own lists everything.
 #
+# From another project — one made by `forge init` — the same recipes run as
+# `just --justfile <this file> --working-directory . sheet walk`: the binary
+# is found beside this file, the library is the one under the working
+# directory, because `forge` walks up from there to its forge.toml.
+#
 # A recipe that answers "not yet: lands in P<n>" is a promise, not a bug: the
 # phases are in the plan, and the name is reserved here so the skills can be
-# written against it before the code exists.
+# written against it before the code exists. One is left: publish-check.
 
-stage_body := "bodies/vex_runner.glb"
-forge := "target/debug/forge"
+forge := justfile_directory() / "target/debug/forge"
 
 default:
     @just --list
 
 # The binary is wiring and printing; every recipe below that starts with
-# {{forge}} builds it first. forge_capture rides along so `smoke` and the
-# P3 renders find their crate already compiled.
+# {{forge}} builds it first. It links Bevy through forge_studio — minutes
+# the first time, seconds after — which is the price of one binary that
+# renders, checks and ships; the logic stays in the library crates so
+# `cargo test -p forge_library` never pays it. forge_capture rides along so
+# `smoke` finds its example already compiled.
 _build:
-    cargo build -q -p forge -p forge_capture
+    cargo build -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge -p forge_capture
 
 # ------------------------------------------------------------------ setup --
 
@@ -62,9 +69,11 @@ gpu *flags: _build
     {{forge}} gpu {{flags}}
 
 # Not an asset, a law — the one mesh-shaped thing in the library nobody lifts.
-# Until P2 brings `forge gen rig-build` (Blender) this is the data half: the
-# contract re-derived from the committed rig.glb — a diff here means the rig
-# changed — and the fixture mannequin every test stands on.
+# `forge gen rig-build` (Blender) rebuilds the artifact; this is the data
+# half: the contract re-derived from the committed rig.glb — a diff here
+# means the rig changed — and the fixture mannequin every test stands on,
+# at out/fixture/mannequin.glb, where `sheet` and `studio` also reach for
+# it when the library has no body.
 #
 # Re-export the profile's contract and write its mannequin (rigs/humanoid/).
 rig: _build
@@ -186,38 +195,89 @@ speech name text *flags: _build
 # Front, back, both sides and three head close-ups, to out/views/<stem>.png.
 # Back-face culling is off for anything under out/, so a face's inside
 # showing through from behind means the surface is missing, not flipped.
-# Run it on the raw lift BEFORE rig-mesh. `--no-head` for a prop.
+# Run it on the raw lift BEFORE rig-mesh. `--no-head` for a prop; a library
+# name (`just views barrel`) renders the shipped file, culling on.
 #
 # One contact sheet of a glb from seven angles: `just views out/lifts/vex_runner.glb`
-views target *flags: (_later "P3" "forge views, rendered by the studio")
+views target *flags: _build
+    {{forge}} views {{target}} {{flags}}
 
-# `just studio --model models/barrel.glb`; `--take out/sweeps/x.npz` plays a
-# raw take on the real body.
+# Opens on forge.toml's stage_body, else the first body, else the fixture
+# mannequin — never an empty stage. `just studio --model models/barrel.glb`;
+# `--take out/sweeps/x.npz` plays a raw take on the real body.
 #
 # Open the viewer: library browser, stage, transport, metadata, audio.
-studio *flags: (_later "P3" "forge studio")
+studio *flags: _build
+    {{forge}} studio {{flags}}
 
 # The same window, opened on the audio library: hear a file, see it, check the mix.
-play *flags: (_later "P3" "forge studio --audio")
+play *flags: _build
+    {{forge}} studio --audio {{flags}}
 
+# Eight poses, three-quarter view, to out/sheets/<clip>.png; `--views all`,
+# `--head-row`, `--body <name>` for another body. Exits 1 when the clip
+# drives no bone or never moves — a picture of a T-pose is not a sheet.
+#
 # Contact sheet for one clip on the stage body: `just sheet walk`
-sheet clip *flags: (_later "P3" "forge sheet")
+sheet clip *flags: _build
+    {{forge}} sheet {{clip}} {{flags}}
 
+# Every clip the catalog holds, to out/sheets/. A clip that binds to nothing
+# or never moves is named at the end and fails the recipe; an empty library
+# passes, because a project that ships no clip is not a broken one.
+#
 # Contact sheet for every clip. Exits non-zero naming any that render badly.
-sheets *flags: (_later "P3" "forge sheet over the catalog")
+sheets *flags: _build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    mkdir -p out/sheets
+    failed=()
+    count=0
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        count=$((count + 1))
+        if ! {{forge}} sheet "$name" {{flags}} >/dev/null 2>&1; then
+            failed+=("$name")
+        fi
+    done < <({{forge}} catalog --kind clip | awk 'NR > 1 && $1 == "clip" { print $2 }')
+    echo "rendered $count clip(s) to out/sheets"
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "did not render cleanly: ${failed[*]}" >&2
+        exit 1
+    fi
 
-# Not a gate: renders are not byte-stable across GPUs.
+# Every view and the head row, posed on the reference walk, to
+# out/sheets/bodies/<name>.png. Not a gate: renders are not byte-stable
+# across GPUs, and what a turntable shows is for a person to judge.
 #
 # Turntable sheets of every shipped body, for a human to judge.
-body-sheets *flags: (_later "P3" "forge turntable over the catalog")
+body-sheets *flags: _build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    mkdir -p out/sheets/bodies
+    count=0
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        count=$((count + 1))
+        {{forge}} turntable "$name" --out out/sheets/bodies/$name.png {{flags}} >/dev/null 2>&1 \
+            || echo "did not render: $name" >&2
+    done < <({{forge}} catalog --kind body | awk 'NR > 1 && $1 == "body" { print $2 }')
+    echo "wrote $(ls out/sheets/bodies/*.png 2>/dev/null | wc -l) sheets for $count body(s) to out/sheets/bodies"
 
+# No GPU: the names are hashed the way Bevy binds them and compared. Exits 1
+# when nothing binds — the silent failure the whole check exists for.
+#
 # Which bones a clip actually drives on the stage body: `just bones walk`
-bones clip *flags: (_later "P3" "forge bones")
+bones clip *flags: _build
+    {{forge}} bones {{clip}} {{flags}}
 
-# `--out sheet.png` also renders it playing the reference walk.
+# Every contract bone at its depth, the rest pose, the weights, stature and
+# feet, the reference walk binding 27/27. `--out sheet.png` also renders it
+# playing the reference walk. Exits 1 on any FAIL line.
 #
 # Validate a mesh against the rig profile: `just check-mesh out/export/x.glb`
-check-mesh glb *flags: (_later "P3" "forge rig check")
+check-mesh glb *flags: _build
+    {{forge}} rig check {{glb}} {{flags}}
 
 # Exits non-zero if the file is silent, clipped or will not decode; the plot
 # lands beside the others in out/audio/.
@@ -258,18 +318,19 @@ catalog *flags: _build
 
 # The whole path from a rigged .blend into the library, in the order the
 # gates have to run: the Blender export (which refuses a .blend that breaks
-# the contract) into out/export/, then the engine-free door — `forge promote
-# body` — with every record it was made from: the lift beside the PNG, the
-# rig beside the .blend, the export beside the .glb. Refuses an existing name
-# unless told `--overwrite`.
-# TODO(P3): `forge rig check out/export/<name>.glb` joins between the export
-# and the promote, once the engine-side check lands.
+# the contract) into out/export/, then the engine-side check — `forge rig
+# check`, the hierarchy as Bevy will actually bind it, every contract bone
+# at its depth, the reference walk 27/27 — and only then the door, `forge
+# promote body`, with every record it was made from: the lift beside the
+# PNG, the rig beside the .blend, the export beside the .glb. Refuses an
+# existing name unless told `--overwrite`.
 #
 # Export, validate and file one rigged body: `just promote-mesh vex_runner`
 promote-mesh name *flags: _build
     mkdir -p out/export
     {{forge}} gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
         --record out/export/{{name}}.export.json
+    {{forge}} rig check out/export/{{name}}.glb
     {{forge}} promote body out/export/{{name}}.glb {{name}} \
         --blend assets-src/blender/{{name}}.blend \
         --lift-record assets-src/refs/characters/{{name}}.lift.json \
@@ -349,21 +410,46 @@ test:
 smoke:
     env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q -p forge_capture --example smoke
 
-# Rebuild every shipped clip from its own record and compare against the glb,
-# by pose on the rig to under a millimetre; and hold every shipped body to
-# the claim its record makes — the bytes that were approved, the source that
-# is still there.
+# Rebuild every shipped clip from its own record and compare against the glb
+# — by bytes, then by pose on the fixture mannequin to under a millimetre —
+# and hold every shipped body to the claim its record makes (the bytes that
+# were approved, the source that is still there) and to the rig contract.
+# The posed half needs an animation player, not a renderer: no adapter.
+# `--fit` names the recipe that would reproduce a clip whose recorded one
+# does not.
 #
-# Every clip rebuilds, every body is what it claims.
+# Every clip rebuilds, by bytes and by pose; every body is what it claims.
 audit *flags: _build
     {{forge}} audit {{flags}}
 
 # Every contract bone at its depth, the rest pose, the weights, stature and
-# feet, the reference walk binding 27/27. An empty directory passes: a
-# library that ships no body is not a broken one.
+# feet, the reference walk binding 27/27 — `forge rig check` on every glb
+# under assets/bodies. An empty directory passes: a library that ships no
+# body is not a broken one. No renderer: the mesh is spawned in a headless
+# app and its hierarchy read as Bevy will bind it.
 #
 # Validate every shipped body against the rig profile.
-check-bodies *flags: (_later "P3" "forge rig check over assets/bodies")
+check-bodies *flags: _build
+    #!/usr/bin/env bash
+    set -uo pipefail
+    failed=()
+    bodies=0
+    while IFS= read -r glb; do
+        [ -n "$glb" ] || continue
+        bodies=$((bodies + 1))
+        echo "== $glb"
+        if ! {{forge}} rig check "$glb" {{flags}}; then
+            failed+=("$(basename "$glb")")
+        fi
+    done < <(find assets/bodies -type f -name '*.glb' 2>/dev/null | sort)
+    if [ "$bodies" -eq 0 ]; then
+        echo "no bodies under assets/bodies — nothing to hold to the contract, and that passes"
+    fi
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "failed the rig contract: ${failed[*]}" >&2
+        exit 1
+    fi
+    echo "$bodies body(ies) conform to the rig profile"
 
 # Fail if the committed manifest no longer matches a rebuild of the library.
 manifest-check: _build
@@ -380,21 +466,23 @@ verify *flags: _build
 # question with no judgement in it, and the whole recipe is minutes, not
 # tens of minutes.
 #
-# What it covers today: formatting, clippy over the workspace, the test
-# suite, offscreen rendering with no display server, every clip rebuilding
-# from its own record, the committed manifest against a rebuild, and the
+# What it covers: formatting, clippy over the workspace, the test suite,
+# offscreen rendering with no display server, every clip rebuilding from
+# its own record by bytes and by pose, the rig profile held against every
+# shipped body, the committed manifest against a rebuild, and the
 # engine-free verify — sidecars, hashes, profile drift, the reference ledger.
-# What still joins it, in the phase that makes it real:
-#   check-bodies    P3   the rig profile held against every shipped body
-# so that it ends as:
-#   ci: fmt-check check test smoke audit check-bodies manifest-check verify
 #
 # What it deliberately leaves out, and why:
 #   publish-check   `cargo package` runs in isolation; only a release can
 #                   break it, and only a release cares.
 #   views, sheet, sheets, body-sheets, audio-plots, studio, play
 #                   renders for a human to look at. Not byte-stable across
-#                   GPUs, so there is no pass/fail in them.
+#                   GPUs, so there is no pass/fail in them — though `sheets`
+#                   does exit non-zero on a clip that binds to nothing or
+#                   never moves, and GitHub Actions runs it for that.
+#   bones, check-mesh
+#                   one asset at a time; `check-bodies` and `audit` run the
+#                   same checks over the whole library.
 #   character, prop, sweep, review, sfx, music, speech
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
@@ -405,12 +493,13 @@ verify *flags: _build
 #                   they rewrite assets, sources or the machine.
 #   doctor, gpu     they describe this machine, and a runner is not it.
 #
-# Once smoke joins it is not GPU-free: that needs an adapter (llvmpipe is
-# enough) but no display and no Blender. Deliberate — it is the check that
-# catches what a component assertion cannot.
+# It is not GPU-free: smoke needs an adapter (llvmpipe is enough) but no
+# display and no Blender. Deliberate — it is the check that catches what a
+# component assertion cannot. check-bodies and audit's posed half need no
+# adapter at all: a headless app with an animation player and no renderer.
 #
-# The pre-commit gate: fmt-check, clippy, tests, smoke, audit, manifest-check, verify.
-ci: fmt-check check test smoke audit manifest-check verify
+# The pre-commit gate: fmt-check, clippy, tests, smoke, audit, check-bodies, manifest-check, verify.
+ci: fmt-check check test smoke audit check-bodies manifest-check verify
 
 # The generate paths with no GPU, no backend and no Blender: FORGE_FAKE=1
 # makes every `forge gen` write placeholders that pass the same validators
@@ -425,10 +514,10 @@ ci: fmt-check check test smoke audit manifest-check verify
 ci-fake: _build
     #!/usr/bin/env bash
     set -euo pipefail
-    forge="$(pwd)/{{forge}}"
+    forge="{{forge}}"
     work=$(mktemp -d -t forge-fake.XXXXXX)
     trap 'rm -rf "$work"' EXIT
-    export FORGE_FAKE=1 FORGE_HOME="$(pwd)"
+    export FORGE_FAKE=1 FORGE_HOME="{{justfile_directory()}}"
     "$forge" init --project "$work" --name fake >/dev/null
     cd "$work"
     mkdir -p assets-src/refs/props assets-src/refs/characters out/lifts out/props assets-src/blender out/export out/sweeps out/audio/sfx

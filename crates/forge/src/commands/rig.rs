@@ -1,6 +1,6 @@
-//! `forge rig export-contract` and `forge rig fixture`: the profile's
-//! contract derived from its artifact, and the mannequin built from the
-//! contract.
+//! `forge rig export-contract`, `forge rig fixture` and `forge rig check`:
+//! the profile's contract derived from its artifact, the mannequin built
+//! from the contract, and one mesh held to it.
 
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use forge_rig::{
     CONTRACT_FILE, Contract, MOTION_SKELETON_FILE, MotionSkeleton, RigProfile, Stature, export,
 };
 
-use crate::cli::{Cli, ExportContractArgs, FixtureArgs, RigCommand};
+use crate::cli::{Cli, ExportContractArgs, FixtureArgs, RigCheckArgs, RigCommand};
 use crate::outcome::{Failure, Outcome};
 
 /// Dispatch.
@@ -16,6 +16,35 @@ pub(crate) fn run(cli: &Cli, command: &RigCommand) -> Outcome {
     match command {
         RigCommand::ExportContract(args) => export_contract(args),
         RigCommand::Fixture(args) => fixture(cli, args),
+        RigCommand::Check(args) => check(cli, args),
+    }
+}
+
+/// Hold one rigged glb to the project's contract; with `--out`, also render
+/// it playing the reference clip.
+///
+/// The report prints whole even when it failed — a human deciding what to
+/// send back wants the findings, not the exit code — and a mesh the check
+/// could not run on at all (not a file, no skeleton spawned) is a refusal
+/// or a failure with the reason, never a pass.
+fn check(cli: &Cli, args: &RigCheckArgs) -> Outcome {
+    let project = crate::project(cli)?;
+    let report = forge_studio::rig_check::run(&project, &args.glb, args.out.as_deref()).map_err(
+        |error| match error {
+            forge_studio::rig_check::RigCheckError::NotAFile(_) => {
+                Failure::refused(error.to_string())
+            }
+            _ => Failure::failed(error.to_string()),
+        },
+    )?;
+    println!("{report}");
+    if report.failed() {
+        Err(Failure::failed(format!(
+            "rig check: {} finding(s) failed",
+            report.count(forge_studio::rig_findings::Severity::Fail)
+        )))
+    } else {
+        Ok(())
     }
 }
 

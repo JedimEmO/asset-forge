@@ -2,7 +2,7 @@
 //! engine-free checks and repairs, each printing the library's own report
 //! and turning its verdict into the exit code.
 
-use forge_library::{Project, audit, migrate, rebake, verify};
+use forge_library::{Project, migrate, rebake, verify};
 
 use crate::outcome::{Failure, Outcome};
 
@@ -21,9 +21,16 @@ pub(crate) fn verify(project: &Project) -> Outcome {
     }
 }
 
-/// Every clip rebuilds from its own record; every body is what it claims.
-pub(crate) fn audit(project: &Project) -> Outcome {
-    let audit = audit::run(project);
+/// Every clip rebuilds from its own record, by bytes and then by pose on
+/// the fixture mannequin; every body is what it claims and conforms to the
+/// contract.
+///
+/// The engine-free four run inside [`forge_studio::audit::run`] first; the
+/// pose compare and the body checks need an animation player, which is
+/// `MinimalPlugins` plus animation — no renderer, no adapter — so this is
+/// still a gate a runner can hold.
+pub(crate) fn audit(project: &Project, fit: bool) -> Outcome {
+    let audit = forge_studio::audit::run(project, fit);
     print!("{}", audit.render());
     if audit.ok() {
         Ok(())
