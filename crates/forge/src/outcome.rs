@@ -42,12 +42,6 @@ impl Failure {
         Self::Failed(message.into())
     }
 
-    /// A subcommand whose phase has not landed yet. Exit 1 rather than 2:
-    /// the call is well-formed, the toolkit is what is behind.
-    pub(crate) fn later(phase: &str, what: &str) -> Self {
-        Self::Failed(format!("not yet: lands in {phase} ({what})"))
-    }
-
     /// What the Python layer said, under its own code.
     pub(crate) fn from_gen(exit: GenExit, message: impl Into<String>) -> Self {
         Self::Gen(exit, message.into())

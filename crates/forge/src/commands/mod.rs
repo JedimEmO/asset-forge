@@ -12,6 +12,7 @@ pub(crate) mod gpu;
 pub(crate) mod init;
 pub(crate) mod look;
 pub(crate) mod manifest;
+pub(crate) mod mcp;
 pub(crate) mod promote;
 pub(crate) mod rig;
 pub(crate) mod studio;

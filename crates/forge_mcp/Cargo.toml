@@ -1,0 +1,41 @@
+[package]
+name = "forge_mcp"
+description = "The MCP tools an agent drives: look at the library (lists, contact sheets, audio plots), run a generator, ship a clip or a sound — as a library the `forge` binary serves over stdio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# The server is the toolkit's own agent surface; the engine-free crates
+# beneath it are the library surface.
+publish = false
+
+[dependencies]
+# Every rmcp type stays inside this crate (see the workspace pin): the
+# `forge` binary sees a `Config` and a `serve`, nothing else.
+rmcp = { workspace = true }
+tokio = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+# The library: project, catalog, sidecars, the metrics cache, the promote
+# doors, the backend table.
+forge_library = { workspace = true }
+# Decode-measure-plot in process: a sound is the one asset this server can
+# inspect without a renderer.
+forge_audio = { workspace = true }
+# The consumer contract, so the text an agent reads names the same kinds a
+# game reads.
+forge_manifest = { workspace = true }
+# No forge_studio: every render shells out to the same `forge` binary that
+# serves this, so Bevy is linked once and the server builds in seconds.
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# The fixture mannequin, written from the profile, is the one body a test
+# can promote with no generator.
+forge_rig = { workspace = true }
+
+[lints]
+workspace = true

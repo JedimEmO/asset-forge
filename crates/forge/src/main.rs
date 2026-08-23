@@ -4,7 +4,10 @@
 //! are turned into a request, a library crate does the work, the result is
 //! printed and becomes an exit code. No command has logic of its own, which
 //! is what keeps this binary, the MCP server and the studio from disagreeing
-//! about what a promote does or what `verify` checks.
+//! about what a promote does or what `verify` checks. `forge mcp` is the
+//! same binary serving the same library to an agent: every render and
+//! generate it answers is this executable re-invoked with `sheet`, `views`,
+//! `gen` or `doctor`, never a second build.
 //!
 //! ```text
 //! forge init [--name]                       make a project here
@@ -22,7 +25,7 @@
 //! forge turntable <body>                    every view of a body, posed on the reference clip
 //! forge bones <clip> [--body]               which bones a clip drives, no GPU
 //! forge studio [--model] [--audio] …        the viewer window
-//! forge mcp                                 not yet: P4
+//! forge mcp                                 serve the MCP tools over stdio, for an agent
 //! ```
 //!
 //! # Exit codes
@@ -91,10 +94,7 @@ fn run(cli: &Cli) -> Outcome {
         Command::Turntable(args) => commands::look::turntable(&project(cli)?, args),
         Command::Bones(args) => commands::look::bones(&project(cli)?, args),
         Command::Studio(args) => commands::studio::run(&project(cli)?, args),
-        Command::Mcp(_) => Err(Failure::later(
-            "P4",
-            "forge mcp, the server an agent drives",
-        )),
+        Command::Mcp => commands::mcp::run(cli),
     }
 }
 

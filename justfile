@@ -455,6 +455,43 @@ check-bodies *flags: _build
 manifest-check: _build
     {{forge}} manifest --check
 
+# The server .mcp.json launches, driven the way a client drives it: a
+# scripted initialize, the initialized notification and tools/list over
+# stdin, newline-delimited JSON-RPC, and the reply checked for every tool
+# name the skills are written against — no more, no fewer, and never a
+# promote for a mesh. No GPU: nothing is rendered, the list is the test.
+# The server's own banner goes to stderr, which is the rule this also
+# proves: anything on stdout that is not a frame would break the parse.
+#
+# Handshake `forge mcp` over stdio and check the tool surface.
+mcp-check: _build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    expected="doctor generate_audio generate_clips inspect_audio list_audio list_clips list_models promote_audio promote_clip render_clip_strip render_model"
+    reply=$(printf '%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
+        '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+        '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+        | timeout 20 {{forge}} mcp 2>/dev/null)
+    listed=$(printf '%s\n' "$reply" | python3 -c '
+    import json, sys
+    names = []
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        frame = json.loads(line)
+        if frame.get("id") == 2:
+            names = sorted(t["name"] for t in frame["result"]["tools"])
+    print(" ".join(names))
+    ')
+    if [ "$listed" != "$expected" ]; then
+        echo "mcp-check: tools/list said: ${listed:-(nothing)}" >&2
+        echo "mcp-check: expected:        $expected" >&2
+        exit 1
+    fi
+    echo "forge mcp serves $(echo "$expected" | wc -w | tr -d ' ') tools: $expected"
+
 # Sidecars, hashes, the rig profile's drift, the reference ledger — a PNG
 # without a row in assets-src/SOURCES.md fails.
 #
@@ -510,8 +547,9 @@ ci: fmt-check check test smoke audit check-bodies manifest-check verify
 # verify. The reference PNG is written here too (a 4×4 flat grey), with its
 # ledger row, because a PNG without a row fails verify and should.
 #
-# The four pipelines end to end on placeholders, then every gate.
-ci-fake: _build
+# The four pipelines end to end on placeholders, then every gate — after
+# the MCP server has handshaken and listed its tools (mcp-check).
+ci-fake: _build mcp-check
     #!/usr/bin/env bash
     set -euo pipefail
     forge="{{forge}}"

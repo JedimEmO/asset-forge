@@ -82,8 +82,9 @@ pub(crate) enum Command {
     /// Open the viewer window: library browser, stage, transport, metadata,
     /// audio
     Studio(StudioArgs),
-    /// Serve the MCP tools over stdio (not yet: lands in P4)
-    Mcp(Later),
+    /// Serve the MCP tools over stdio for an agent: lists, contact sheets,
+    /// audio plots, doctor, the generators, and the two direct promote doors
+    Mcp,
 }
 
 /// `forge audit`.
@@ -214,16 +215,6 @@ pub(crate) struct StudioArgs {
     /// will not play.
     #[arg(long)]
     pub(crate) selftest: bool,
-}
-
-/// Arguments swallowed by a subcommand whose phase has not landed, so a
-/// skill written against the final flag table is refused with the phase
-/// rather than with a parse error.
-#[derive(Debug, Args)]
-pub(crate) struct Later {
-    /// Ignored until the subcommand lands.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
-    pub(crate) rest: Vec<String>,
 }
 
 /// `forge gen <cmd> [args…]`: the command line is handed to

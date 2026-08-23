@@ -27,6 +27,12 @@ forge_rig = { workspace = true }
 # window, the rig check, the bones report and the posed half of audit come
 # through it.
 forge_studio = { workspace = true }
+# The MCP server, as a library: a `Config` and a `serve`. Every rmcp type
+# stays behind that door, so the SDK's pin is forge_mcp's problem alone.
+forge_mcp = { workspace = true }
+# The runtime `serve` is awaited on. Multi-threaded because a tool that
+# blocks on a bake must not stop the server answering the next frame.
+tokio = { workspace = true }
 # The one line the Python layer speaks back — `forge gen`'s last stdout line,
 # `forge gen doctor --json`'s report — is JSON; nothing else here parses any.
 serde_json = { workspace = true }

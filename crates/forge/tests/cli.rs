@@ -182,11 +182,92 @@ fn no_project_is_a_refusal_naming_the_search_start() {
     assert!(text.contains("no forge.toml in"), "{text}");
 }
 
+/// `forge mcp` driven the way a client drives it: newline-delimited JSON-RPC
+/// on stdin, frames and nothing else on stdout, the banner on stderr. The
+/// tool surface is pinned here by name — it is what the skills are written
+/// against — and it holds no promote for a mesh.
 #[test]
-fn the_placeholder_says_its_phase_and_exits_one() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let text = exits(dir.path(), &["mcp", "--whatever", "x"], 1);
-    assert!(text.contains("not yet: lands in P4"), "{text}");
+fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let (_dir, root) = init_project();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args(["--project", to_str(&root), "mcp"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn forge mcp");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        for frame in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli-test","version":"0"}}}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
+        ] {
+            writeln!(stdin, "{frame}").expect("write a frame");
+        }
+        // Dropping stdin is the hang-up; the server exits on it.
+    }
+    let output = child.wait_with_output().expect("forge mcp");
+    let out = stdout(&output);
+    let err = stderr(&output);
+    assert_eq!(code(&output), 0, "--- stdout\n{out}\n--- stderr\n{err}");
+    assert!(
+        err.contains("forge mcp: project="),
+        "banner on stderr:\n{err}"
+    );
+
+    // Every stdout line is a frame: a stray print here would corrupt the
+    // protocol, and this is where it would show.
+    let mut listed: Vec<String> = Vec::new();
+    for line in out.lines().filter(|l| !l.trim().is_empty()) {
+        let frame: serde_json::Value =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("not a frame ({e}): {line}"));
+        assert_eq!(frame["jsonrpc"], "2.0", "{line}");
+        if frame["id"] == 1 {
+            assert_eq!(frame["result"]["serverInfo"]["name"], "forge_mcp", "{line}");
+            assert!(
+                frame["result"]["instructions"]
+                    .as_str()
+                    .is_some_and(|t| t.contains("promote")),
+                "{line}"
+            );
+        }
+        if frame["id"] == 2 {
+            listed = frame["result"]["tools"]
+                .as_array()
+                .expect("a tools array")
+                .iter()
+                .map(|t| t["name"].as_str().expect("a name").to_owned())
+                .collect();
+        }
+    }
+    listed.sort();
+    assert_eq!(
+        listed,
+        [
+            "doctor",
+            "generate_audio",
+            "generate_clips",
+            "inspect_audio",
+            "list_audio",
+            "list_clips",
+            "list_models",
+            "promote_audio",
+            "promote_clip",
+            "render_clip_strip",
+            "render_model",
+        ],
+        "--- stdout\n{out}\n--- stderr\n{err}"
+    );
+
+    // No project is the same refusal every other verb gives, before any
+    // frame is read.
+    let empty = tempfile::tempdir().expect("tempdir");
+    let text = exits(empty.path(), &["mcp"], 2);
+    assert!(text.contains("no forge.toml above"), "{text}");
 }
 
 /// The looks that need no GPU: the binding report, the rig check without a
