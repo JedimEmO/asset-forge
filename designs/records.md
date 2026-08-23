@@ -25,17 +25,18 @@ writers to byte equality. One record per run, beside the output, named by
 convention: `<name>.lift.json` beside the reference PNG, `<name>.rig.json`
 beside the `.blend`, `<name>.export.json` beside the exported `.glb`,
 `<name>.prop.json` beside the normalized prop, `<take>.take.json` beside the
-`.npz`, `<stem>.json` beside a sound.
+`.npz`, `<stem>.json` beside a sound, `voice.json` beside a designed
+voice's `ref.wav`.
 
 | Field | Type | What it says |
 |---|---|---|
 | `forge_record` | `1` | the schema; a reader refuses any other number before parsing a field |
-| `kind` | `lift \| prop \| rig \| export \| take \| sfx \| music \| speech` | what kind of run |
-| `tool` | string | `trellis2`, `blender`, `ardy`, `moss_sound_effect`, `ace_step`, `moss_tts` — the name the sidecar's generator block will carry |
+| `kind` | `lift \| prop \| rig \| export \| take \| sfx \| music \| speech \| voice` | what kind of run |
+| `tool` | string | `trellis2`, `blender`, `ardy`, `moss_sound_effect`, `ace_step`, `moss_tts`, `moss_voice_generator` — the name the sidecar's generator block will carry |
 | `created` | `YYYY-MM-DD` | the day the run finished |
 | `created_by` | `human \| agent:<name> \| unknown` | who asked; `forge gen` writes `unknown` unless `--created-by` is among the command's flags |
 | `backend` | `{name, commit, python, torch, model, model_revision}` | which backend ran, pinned; every key present, `null` where unread |
-| `inputs[]` | `{role, path, sha256, source, prompt}` | what the run was handed: `image`, `mesh`, `blend`, `reference` by role, hashed as read; a prompt is an input with no path |
+| `inputs[]` | `{role, path, sha256, source, prompt}` | what the run was handed: `image`, `mesh`, `blend`, `reference`, `voice_record` by role, hashed as read; a prompt is an input with no path |
 | `params` | object | every knob, stated, `null` where the generator was not told; a lift carries `texture_baker` |
 | `outputs[]` | `{path, sha256, bytes}` | what it produced, hashed after the file was final |
 | `measured` | object | what the run measured of its own output (vertices, triangles, the fit numbers, a frame count) |
@@ -45,6 +46,18 @@ beside the `.blend`, `<name>.export.json` beside the exported `.glb`,
 Paths inside a record are relative to the project root when the file sits
 under it, absolute otherwise — a record that said `../../tmp/x.glb` would be
 relative to wherever its reader stood.
+
+**A designed voice is a source with its record beside it.** `forge gen
+voice <name>` writes `assets-src/voices/<name>/ref.wav` and `voice.json`
+(kind `voice`, tool `moss_voice_generator`: no inputs; the description,
+the audition line, the seed and the four sampling knobs in `params`; the
+clip hashed in `outputs`). Every line of that character is cloned from
+`ref.wav` by `forge gen speech --voice <name>`, whose record carries the
+clip as a `reference` input and the `voice.json` as a `voice_record`
+input, both hashed, so a shipped line's provenance reaches the description
+and the seed. `forge verify` holds every `voices/<name>/ref.*` to either
+that record (kind `voice`, output hash = the clip) or a row in
+`SOURCES.md` for a brought clip.
 
 **The lift record lives beside the PNG**, as `<name>.lift.json`, because
 the PNG is the durable input and the `out/lifts/<name>.glb` it produced is
@@ -75,7 +88,7 @@ manifest --check`.
 | `provenance` | `recorded \| reconstructed \| unknown` | how much of the record to believe (below) |
 | `rig` | profile name or `null` | what a body is skinned to, a clip baked against; `null` on models and sounds |
 | `generator` | tagged by `tool` | `ardy {seed, duration_s, cfg, sample, sweep_take…}`; `trellis2 {resolution, seed, decimation_target_vertices, texture_size, remesh, texture_baker, image, image_sha256, lift_sha256, post {tool, script, version}}`; `moss_sound_effect`, `ace_step`, `moss_tts` with their own knobs — one struct per tool so a music record cannot claim an `arm_bend_deg` |
-| `source` | `{path, sha256, skeleton}` | the durable input: the `.npz` take a clip is editable from, the `.blend` a body was exported from, the voice reference a line was cloned from — hashed, so drift is visible |
+| `source` | `{path, sha256, skeleton}` | the durable input: the `.npz` take a clip is editable from, the `.blend` a body was exported from, the voice reference a line was cloned from (`assets-src/voices/<name>/ref.wav`) — hashed, so a re-designed voice shows as drift on every line that still carries the old one |
 | `recipe` | `ClipRecipe` or `null` | clips only: trims, in-place and height modes, loop and blend, the four style knobs, retime, the clip's name inside the glb — every field written, identity values included |
 | `measured` | `{frames, fps, duration_s, avg_speed_mps, root_motion, mesh {vertices, triangles, bones_skinned, lowest_y, bounds}}` | facts read from the built file, never asked of the generator |
 | `events` | `[event]`, `[]` or `null` | `null` means nothing ever examined the clip; `[]` means something looked and found none — the two empties are different facts |

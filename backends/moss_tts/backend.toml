@@ -5,6 +5,11 @@
 # for an import. Shares the clone with moss_sfx ($PREFIX/../moss-tts) and
 # keeps its own venv: torch 2.9.1 and transformers 5.0.0, against the
 # sound-effect model's 2.9.0 / 4.57.1.
+#
+# The same env also runs MOSS-VoiceGenerator (1.7B, MossTTSDelay, 24 kHz
+# mono): `forge gen voice` designs a reference clip from a description so a
+# project never has to bring one, and `forge gen speech --voice <name>`
+# clones every line from it.
 name = "moss_tts"
 role = "speech"
 upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
@@ -13,7 +18,8 @@ license = "Apache-2.0"
 env_kind = "venv"
 python = "3.12"
 cuda = "12.8"
-# The 4B in bf16 with the audio tokenizer resident. Not resident after the call.
+# The 4B in bf16 with the audio tokenizer resident. Not resident after the
+# call. The 1.7B voice generator needs less; the row is the larger of the two.
 vram_gb = 12
 entry = "audio.speech"
 cwd = "checkout"
@@ -27,6 +33,13 @@ id = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
 store = "hf"
 license = "Apache-2.0"
 note = "~8 GB; downloaded by install.sh, or by the first `forge gen speech`. MOSS_TTS_MODEL overrides the id."
+
+[[models]]
+id = "OpenMOSS-Team/MOSS-VoiceGenerator"
+store = "hf"
+license = "Apache-2.0"
+gated = false
+note = "~4 GB; the 1.7B voice designer behind `forge gen voice`. Downloaded by install.sh, or by the first design. MOSS_VOICE_MODEL overrides the id."
 
 [[notices]]
 title = "VRAM"

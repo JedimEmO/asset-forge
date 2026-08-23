@@ -961,6 +961,14 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
             Kind::Music => RecordKind::Music,
             _ => RecordKind::Speech,
         };
+        if record.kind == RecordKind::Voice {
+            return Err(LibraryError::rejected(format!(
+                "{} is a designed voice's record, not a spoken line's — lines are cloned from \
+                 the voice with `forge gen speech --voice <name>`, and that run's record is \
+                 the one to promote",
+                record.output().map_or("the record", |o| o.path.as_str())
+            )));
+        }
         if record.kind != expected {
             return Err(LibraryError::rejected(format!(
                 "the record describes a {} run, not a {} — it is not this sound's record",
@@ -1019,6 +1027,18 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
             _ => Generator::MossTts(run.speech_params()),
         });
         record.provenance = Provenance::Recorded;
+        // A line's durable input is the voice it was cloned from: the
+        // reference clip, hashed as it was read, so a re-designed voice
+        // shows as drift on every line that still carries the old one.
+        if request.kind == Kind::Voice
+            && let Some(reference) = run.input("reference")
+        {
+            record.source = Source {
+                path: reference.path.clone(),
+                sha256: reference.sha256.clone(),
+                skeleton: None,
+            };
+        }
         if record.created_by == Actor::Unknown {
             record.created_by = Actor::parse(&run.created_by);
         }

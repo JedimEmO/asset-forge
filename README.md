@@ -60,10 +60,11 @@ log lines to read:
 just character hero && just views out/lifts/hero.glb          # then: just rig-mesh hero; just promote-mesh hero
 just sweep "a person walks forward" --duration 2 --samples 4  # then: just promote-clip walk <take.npz> --loop
 just sfx door_slam "heavy oak door slams shut"                # then: just audio …; just promote-audio sfx …
+just voice warden "Deep, slow, weathered male voice, grave and calm"   # then: just speech greet "…" --voice warden
 ```
 
-`.claude/skills/forge-character`, `forge-clip` and `forge-audio` are the
-full paths; `just` on its own lists every recipe.
+`.claude/skills/forge-character`, `forge-clip`, `forge-audio` and
+`forge-voice` are the full paths; `just` on its own lists every recipe.
 
 ## What is in the box
 
@@ -74,7 +75,7 @@ door that names what would have passed.
 |---|---|---|---|---|
 | Bodies and models | `just character` / `just prop` (TRELLIS.2), `just rig-mesh` (headless Blender auto-rig), `just prop-import` (normalize) | `just views`, `just check-mesh`, the studio | `just promote-mesh`, `just prop-import` (→ `forge promote body` / `model`) | a mesh not near the T-pose (the message names the reference image); a bind that leaves a fifth of the mesh weightless; a prop over the tri budget; an existing name without `--overwrite` |
 | Clips | `just sweep` (ARDY, many takes in one load) | `just review` table + sheet, `just sheet` on the real body, `just bones` | `just promote-clip` (native bake, no Blender) | a clip that drives no bone or never moves (`sheet` exits 1); an unstated recipe knob (every knob is echoed) |
-| Audio | `just sfx`, `just music`, `just speech` (MOSS, ACE-Step) — always to `out/audio/` | `just audio` plot + numbers, `just audio-list` | `just promote-audio` | a silent or clipped file; a sound with no record ships as `unknown` provenance and says so |
+| Audio | `just sfx`, `just music`, `just speech` (MOSS, ACE-Step) — always to `out/audio/`; `just voice` designs a character's voice from a description into `assets-src/voices/<name>/` (MOSS-VoiceGenerator), so a project never has to bring a reference clip, and every line is cloned from it by name | `just audio` plot + numbers, `just audio-list` | `just promote-audio` | a silent or clipped file; a sound with no record ships as `unknown` provenance and says so; a voice clip with neither its record nor a ledger row fails `verify` |
 
 Every promote writes a `<name>.json` sidecar beside the file and `just
 manifest` projects the sidecars into `assets/library.json`, the one file a
@@ -205,7 +206,7 @@ The sheets, views and turntables need no window at all: a wgpu adapter
 
 ## For agents
 
-Six skills under `.claude/skills/`, each with prerequisites checked, the
+Seven skills under `.claude/skills/`, each with prerequisites checked, the
 commands in order, the log lines to read, and a seen → consequence → fix
 table:
 
@@ -216,6 +217,7 @@ table:
 | `forge-character` | a rigged body from a PNG, starting with the reference checklist |
 | `forge-clip` | a clip from a prompt: sweep, review, promote with a recipe, strip on the body |
 | `forge-audio` | a sound, a track or a line, plotted and promoted |
+| `forge-voice` | a character's voice designed from a description — the source every line of that character is cloned from |
 | `forge-review` | how to read a sheet: wiring → mechanics → picture; gates versus hints |
 
 The CLI is one binary:
@@ -224,7 +226,7 @@ The CLI is one binary:
 forge init | catalog | manifest [--check] | verify | audit [--fit] | rebake | migrate
       promote clip|body|model|audio        (direct; refuse an existing name unless --overwrite)
       audio inspect|list                   rig export-contract|fixture|check
-      gen <cmd…>                           (mesh, prop, rig, export, rig-build, motion sweep|keys|review, sfx, music, speech, doctor)
+      gen <cmd…>                           (mesh, prop, rig, export, rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor)
       doctor | gpu | sheet | views | turntable | bones | studio | mcp
 ```
 
@@ -242,7 +244,7 @@ exist, so a wrong name costs one turn, not a guess.
 | `render_clip_strip` | `forge sheet` — poses across a clip on a body; 0 bones driven comes back as an error with the picture |
 | `inspect_audio` | numbers, the record, a waveform-over-spectrogram plot |
 | `generate_clips` | `forge gen motion sweep` + `review`; refuses with the doctor line when ARDY is absent |
-| `generate_audio` | sfx, music or speech to `out/audio/`, never the library |
+| `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
 | `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
 | `promote_audio` | file an auditioned sound as sfx, music or voice |
 | `doctor` | what this machine can run |
@@ -283,6 +285,7 @@ the files on disk, 2026-08-23:
 | LLM2Vec | MIT | |
 | ACE-Step 1.5 code + weights | MIT | |
 | MOSS-TTS family, MOSS-SoundEffect-v2 | Apache-2.0 | MOSS-SoundEffect weights are ~11 GB |
+| `OpenMOSS-Team/MOSS-VoiceGenerator` (1.7B) | Apache-2.0 | the voice designer behind `just voice`; ~4 GB, the same env as MOSS-TTS |
 | Blender | GPL | a tool; nothing of it ships in an asset |
 
 [backends/README.md](backends/README.md) has the install order, the adopt
@@ -319,9 +322,9 @@ python/        forge_gen: the generator launcher, one module per command, the Bl
 backends/      one directory per generator: backend.toml, install.sh, probe.py (envs live outside the tree)
 rigs/humanoid/ the rig profile: contract.json, sockets.json, motion_skeleton.json, profile.toml, rig.glb, rig.blend
 assets/        the library: bodies/ models/ clips/ audio/{sfx,music,voice}/, one .json beside each file, library.json
-assets-src/    what assets are made from: refs/{characters,props}/<name>.png + .lift.json, SOURCES.md, takes/, blender/
+assets-src/    what assets are made from: refs/{characters,props}/<name>.png + .lift.json, SOURCES.md, takes/, blender/, voices/<name>/{ref.wav,voice.json}
 designs/       decisions.md (the lessons ledger; it wins), records.md, rig-contract.md, style-guide-template.md, hosting.md
-.claude/skills/ forge-{setup,prop,character,clip,audio,review}
+.claude/skills/ forge-{setup,prop,character,clip,audio,voice,review}
 out/           gitignored: lifts/ props/ export/ sweeps/ sheets/ views/ audio/
 ```
 

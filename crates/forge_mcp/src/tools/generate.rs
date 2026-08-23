@@ -34,7 +34,7 @@ use std::time::Duration;
 use forge_library::backends::{Backends, GenExit};
 use forge_library::project::OutKind;
 use forge_library::promote::validate_name;
-use forge_library::{GeneratorRecord, hash};
+use forge_library::{GeneratorRecord, Project, hash};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -102,8 +102,10 @@ pub(crate) struct GenerateAudioArgs {
     pub(crate) seconds: Option<f32>,
     /// Sampler seed. Omitted, the backend draws one and records it.
     pub(crate) seed: Option<i64>,
-    /// Speech only: a reference clip to clone the voice from, 5–15 s of
-    /// clean speech (.wav/.mp3/.flac). Omitted, an uncloned voice.
+    /// Speech only: the voice to clone — the name of one designed by
+    /// `forge gen voice` (`assets-src/voices/<name>/ref.wav`), or a path
+    /// to a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac).
+    /// Omitted, an uncloned voice.
     pub(crate) voice: Option<String>,
     /// Music only: `ogg` (default; needs ffmpeg) or `wav`. Sfx and speech
     /// are always wav.
@@ -346,7 +348,8 @@ impl ForgeServer {
     #[tool(
         description = "Generate one sound with the local audio backends: kind sfx (MOSS sound \
                        effect from a prompt), music (ACE-Step track from a description) or \
-                       speech (MOSS-TTS from text, optionally cloning a reference voice). The \
+                       speech (MOSS-TTS from text, cloning a voice designed by `forge gen \
+                       voice` when one is named). The \
                        file, its record and a plot land under out/audio/<kind>/ — never in the \
                        library; the response carries the measurements and the plot, so check \
                        it for clipping, dead air and truncation, then pass the file to \
@@ -463,14 +466,10 @@ impl ForgeServer {
             AudioKind::Speech => {
                 command.arg("--text").arg(&line);
                 if let Some(voice) = stated(args.voice.as_deref()) {
-                    let voice = resolve_path(project, &voice);
-                    if !voice.is_file() {
-                        return util::refuse(format!(
-                            "no reference voice at {} — pass a 5-15 s clip of clean speech, or \
-                             omit voice for an uncloned one",
-                            voice.display()
-                        ));
-                    }
+                    let voice = match resolve_voice(project, &voice) {
+                        Ok(path) => path,
+                        Err(refusal) => return util::refuse(refusal),
+                    };
                     command.arg("--voice").arg(voice);
                 }
             }
@@ -865,6 +864,59 @@ fn free_name(dir: &Path, stem: &str, extension: &str) -> String {
         .unwrap_or_else(|| stem.to_owned())
 }
 
+/// The clip a `voice` argument names: a bare name is a voice designed by
+/// `forge gen voice` under `assets-src/voices/<name>/ref.wav`; anything
+/// else is a path to a brought clip. A name nothing designed is refused
+/// with the voices that do exist, so a wrong name costs one turn.
+fn resolve_voice(project: &Project, voice: &str) -> Result<PathBuf, String> {
+    let text = voice.trim();
+    let is_name = !text.is_empty()
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    if is_name {
+        let path = project.voices_dir().join(text).join("ref.wav");
+        if path.is_file() {
+            return Ok(path);
+        }
+        let designed = designed_voices(project);
+        return Err(format!(
+            "no designed voice named {text} — {}; `forge gen voice {text} --describe \"…\"` \
+             designs one, or pass a path to a 5-15 s clip of clean speech",
+            if designed.is_empty() {
+                String::from("none has been designed yet")
+            } else {
+                format!("designed: {}", designed.join(", "))
+            }
+        ));
+    }
+    let path = resolve_path(project, text);
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "no reference voice at {} — pass a 5-15 s clip of clean speech, the name of a \
+             designed voice, or omit voice for an uncloned one",
+            path.display()
+        ))
+    }
+}
+
+/// Every `<name>` under `assets-src/voices/` with a `ref.wav`, sorted.
+fn designed_voices(project: &Project) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(project.voices_dir())
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.path().join("ref.wav").is_file())
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -875,6 +927,37 @@ mod tests {
             stdout: stdout.to_owned(),
             stderr: stderr.to_owned(),
         }
+    }
+
+    #[test]
+    fn a_voice_is_a_designed_name_or_a_brought_path_and_a_wrong_name_lists_what_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let project = Project::init(dir.path(), "voices").expect("init");
+        let refusal = resolve_voice(&project, "crypt_warden").expect_err("nothing designed");
+        assert!(refusal.contains("none has been designed yet"), "{refusal}");
+        assert!(
+            refusal.contains("forge gen voice crypt_warden"),
+            "{refusal}"
+        );
+
+        let warden = project.voices_dir().join("crypt_warden");
+        std::fs::create_dir_all(&warden).expect("mkdir");
+        std::fs::write(warden.join("ref.wav"), b"RIFF").expect("clip");
+        assert_eq!(
+            resolve_voice(&project, "crypt_warden").expect("designed"),
+            warden.join("ref.wav")
+        );
+        let refusal = resolve_voice(&project, "kessa").expect_err("not this one");
+        assert!(refusal.contains("designed: crypt_warden"), "{refusal}");
+
+        let brought = dir.path().join("calm.wav");
+        std::fs::write(&brought, b"RIFF").expect("clip");
+        assert_eq!(
+            resolve_voice(&project, brought.to_str().expect("utf8")).expect("path"),
+            brought
+        );
+        let refusal = resolve_voice(&project, "nowhere/calm.wav").expect_err("missing path");
+        assert!(refusal.contains("no reference voice at"), "{refusal}");
     }
 
     #[test]

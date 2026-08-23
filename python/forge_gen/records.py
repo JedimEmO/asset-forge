@@ -39,7 +39,7 @@ from pathlib import Path
 SCHEMA = 1
 
 #: The record kinds the Rust reader knows, as ``RecordKind`` spells them.
-KINDS = ("lift", "prop", "rig", "export", "take", "sfx", "music", "speech")
+KINDS = ("lift", "prop", "rig", "export", "take", "sfx", "music", "speech", "voice")
 
 #: Top-level keys, in the Rust field order. ``write`` refuses a record that
 #: has any other key or lacks any of these.
@@ -192,7 +192,8 @@ def add_input(
     """Append one input: a file (hashed now, so the record says what was read) or a prompt.
 
     ``role`` is what the input was for — ``image``, ``mesh``, ``blend``,
-    ``prompt``, ``reference`` — and is how the Rust projections find it.
+    ``prompt``, ``reference``, ``voice_record`` — and is how the Rust
+    projections find it.
     """
     entry = {
         "role": role,

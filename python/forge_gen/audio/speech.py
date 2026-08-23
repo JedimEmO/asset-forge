@@ -1,15 +1,20 @@
 """``forge-gen speech``: one spoken line from text, a voice cloned from a reference clip.
 
     forge-gen speech --text "Hold the line. They breach on my mark." \\
-        --voice assets-src/voices/kessa/ref.wav --out out/audio/kessa_hold_the_line.wav
+        --voice kessa --out out/audio/kessa_hold_the_line.wav
 
-    forge-gen speech --text "Testing a fresh voice" --out out/audio/test.wav   # no cloning
+    forge-gen speech --text "..." --voice path/to/clip.wav --out out/audio/line.wav   # a brought clip
+    forge-gen speech --text "Testing a fresh voice" --out out/audio/test.wav         # no cloning
 
 A voice is a reference clip — 5–15 s of clean speech defines a character's
 voice permanently. Same reference in, same voice out; the record carries
-the clip's hash so "same" is checkable. Loading the 4B model is most of a
-call; ``--lines-file`` (one ``stem|text`` per line, into ``--out-dir``)
-renders a session on one load.
+the clip's hash so "same" is checkable. A bare ``--voice <name>`` is a voice
+designed by ``forge-gen voice``: it resolves to
+``assets-src/voices/<name>/ref.wav``, and the ``voice.json`` beside it is
+recorded too, so a line's provenance chains back through the audition clip
+to the description and the seed that made the voice. Loading the 4B model is
+most of a call; ``--lines-file`` (one ``stem|text`` per line, into
+``--out-dir``) renders a session on one load.
 
 The command is backend-agnostic on its face — ``--backend`` names who
 speaks — and ``moss_tts`` is the one backend v1 ships. OmniVoice is a
@@ -33,6 +38,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -61,6 +67,12 @@ DEFAULT_MODEL = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
 
 #: Reference clip containers the processor reads (it decodes through its own audio loader).
 REFERENCE_SUFFIXES = (".wav", ".mp3", ".flac", ".m4a")
+
+#: Where designed voices live (``forge-gen voice``), relative to the project root.
+VOICES_DIR = "assets-src/voices"
+
+#: A bare ``--voice`` argument that is a voice's name rather than a path.
+VOICE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
 #: What a reference should be, and what it must be. Outside the first pair
 #: is a warning — the voice may come back thin; outside the second is a
@@ -112,6 +124,38 @@ def language_name(code_or_name: str | None) -> str | None:
     return text
 
 
+def resolve_voice(arg: str) -> Path:
+    """``--voice`` as a path to a clip: a bare name is ``<project>/assets-src/voices/<name>/ref.wav``.
+
+    A name that resolves to nothing is refused with the command that makes
+    it: a project never has to bring a voice, it designs one. Anything with
+    a separator or a suffix is a path to a brought clip and is taken as is.
+    """
+    text = arg.strip()
+    if VOICE_NAME_RE.match(text):
+        root = records.project() or Path.cwd()
+        ref = root / VOICES_DIR / text / "ref.wav"
+        if not ref.is_file():
+            raise InputRejected(
+                f"--voice {text}: no designed voice at {ref} — `forge gen voice {text} --describe \"...\"` designs one, "
+                f"or pass a path to a 5–15 s reference clip",
+                voice=text,
+            )
+        return ref
+    return Path(text)
+
+
+def voice_record_beside(reference: str | os.PathLike | None) -> Path | None:
+    """The ``voice.json`` beside a designed voice's ``ref.*``, when there is one."""
+    if reference is None:
+        return None
+    ref = Path(reference)
+    if ref.stem.lower() != "ref":
+        return None
+    record = ref.with_name("voice.json")
+    return record if record.is_file() else None
+
+
 def voice_name(reference: str | os.PathLike | None) -> str | None:
     """The voice's name from its clip: the file's stem, or the folder's when the file is ``ref.*``.
 
@@ -137,6 +181,7 @@ def build_record(
     reference: str | os.PathLike | None,
     language: str | None,
     voice_text: str | None = None,
+    voice_record: str | os.PathLike | None = None,
     seed: int | None = None,
     sampling: dict | None = None,
     created_by: str | None = None,
@@ -152,9 +197,12 @@ def build_record(
     model resident. The line itself is the ``prompt`` input; the reference
     clip is the ``reference`` input, hashed, and ``params.reference`` repeats
     its path because the Rust projection (``speech_params``) reads it from
-    either place. ``seed`` is ``None`` unless one was given to torch's RNG.
-    ``voice_text`` is carried as given and unused by this backend: MOSS-TTS
-    takes no transcript of the reference; OmniVoice will.
+    either place. ``voice_record`` — the ``voice.json`` of a designed voice —
+    is a second hashed input and ``params.voice_record``, so the line's
+    provenance reaches the description and the seed. ``seed`` is ``None``
+    unless one was given to torch's RNG. ``voice_text`` is carried as given
+    and unused by this backend: MOSS-TTS takes no transcript of the
+    reference; OmniVoice will.
     """
     if fake:
         rec = placeholders.fake_record("speech", TOOL, backend=TOOL, created_by=created_by, model=model)
@@ -166,11 +214,13 @@ def build_record(
         rec["note"] = "MOSS-TTS takes no seed; the hash is what identifies this render" if seed is None else None
     records.add_input(rec, "prompt", prompt=text)
     reference_entry = records.add_input(rec, "reference", reference) if reference is not None else None
+    record_entry = records.add_input(rec, "voice_record", voice_record) if voice_record is not None else None
     params = {
         "model": model,
         "seed": None if seed is None else int(seed),
         "voice": voice_name(reference),
         "reference": reference_entry["path"] if reference_entry else None,
+        "voice_record": record_entry["path"] if record_entry else None,
         "language": language,
         "voice_text": voice_text,
     }
@@ -209,7 +259,7 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--text", metavar="TEXT", help="the line to speak; [pause 1.5s] is an explicit pause")
     parser.add_argument("--out", metavar="WAV", help="where the WAV goes (single line)")
     parser.add_argument("--record", metavar="JSON", help="where the record goes (default: <out stem>.json beside it)")
-    parser.add_argument("--voice", metavar="REF", help="reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); omit for an uncloned voice")
+    parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); omit for an uncloned voice")
     parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference (recorded; moss_tts does not use it)")
     parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "Norwegian", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
     parser.add_argument("--backend", default=DEFAULT_BACKEND, metavar="NAME", help=f"who speaks (default {DEFAULT_BACKEND}; OmniVoice is v1.1)")
@@ -277,8 +327,9 @@ def check_reference(path: str | os.PathLike) -> Path:
 def plan(args) -> dict:
     """Turn the arguments into the spec the inner half speaks: validated, absolute.
 
-    ``{"backend", "model", "reference", "language", "voice_text", "seed",
-    "sampling", "created_by", "project", "jobs": [{"text", "out", "record"}]}``.
+    ``{"backend", "model", "reference", "voice_record", "language",
+    "voice_text", "seed", "sampling", "created_by", "project", "jobs":
+    [{"text", "out", "record"}]}``.
     """
     backend = (args.backend or DEFAULT_BACKEND).strip()
     if backend not in BACKENDS:
@@ -307,7 +358,8 @@ def plan(args) -> dict:
             raise InputRejected(f"--out {args.out}: the generator writes PCM WAV; name it .wav (transcode afterwards if needed)")
         record = Path(args.record).resolve() if args.record else out.with_suffix(".json")
         jobs = [{"text": args.text, "out": str(out), "record": str(record)}]
-    reference = check_reference(args.voice) if args.voice else None
+    reference = check_reference(resolve_voice(args.voice)) if args.voice else None
+    voice_record = voice_record_beside(reference)
     if args.voice_text and reference is None:
         raise UsageError("--voice-text describes a --voice clip; there is none")
     if args.voice_text and backend == "moss_tts":
@@ -320,6 +372,7 @@ def plan(args) -> dict:
         "backend": backend,
         "model": args.model or model_id(),
         "reference": str(reference) if reference else None,
+        "voice_record": str(voice_record) if voice_record else None,
         "language": language_name(args.language),
         "voice_text": args.voice_text or None,
         "seed": seed,
@@ -395,6 +448,7 @@ def run_fake(args) -> dict:
             reference=spec["reference"],
             language=spec["language"],
             voice_text=spec["voice_text"],
+            voice_record=spec.get("voice_record"),
             seed=spec["seed"],
             sampling=spec["sampling"],
             created_by=spec["created_by"],
@@ -474,6 +528,18 @@ def main_inner(argv: list[str]) -> int:
     sampling = spec.get("sampling") or dict(SAMPLING)
     sample_rate = int(processor.model_config.sampling_rate)
 
+    # The reference is read here and tokenized once, not handed to the
+    # processor as a path: a path goes through torchaudio.load → torchcodec,
+    # whose ffmpeg libraries collide with the system glib on this box (the
+    # same reason the writer is soundfile). Codes in, the processor never
+    # opens the file. Resampling to the codec's rate is torchaudio's pure
+    # torch kernel and needs no codec.
+    reference_codes = None
+    if reference:
+        wav, wav_rate = soundfile.read(reference, dtype="float32", always_2d=True)
+        reference_codes = processor.encode_audios_from_wav([torch.from_numpy(wav.T)], int(wav_rate))[0]
+        print(f"[tts] reference {reference}: {wav.shape[0] / wav_rate:.2f} s at {wav_rate} Hz -> {reference_codes.shape[0]} codes", flush=True)
+
     rendered = []
     for job in spec["jobs"]:
         if seed is not None:
@@ -483,8 +549,8 @@ def main_inner(argv: list[str]) -> int:
             if device == "cuda":
                 torch.cuda.manual_seed_all(int(seed))
         kwargs = {"text": job["text"]}
-        if reference:
-            kwargs["reference"] = [reference]
+        if reference_codes is not None:
+            kwargs["reference"] = [reference_codes]
         if language:
             kwargs["language"] = language
         conversation = [processor.build_user_message(**kwargs)]
@@ -520,6 +586,7 @@ def main_inner(argv: list[str]) -> int:
             reference=reference,
             language=language,
             voice_text=spec.get("voice_text"),
+            voice_record=spec.get("voice_record"),
             seed=seed,
             sampling=sampling,
             created_by=spec.get("created_by"),

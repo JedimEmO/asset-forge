@@ -38,11 +38,13 @@ The five the toolkit knows, in the order doctor lists them:
 | `ardy` | prompt → motion take | nv-tlabs/ardy @ `693f74d1` | venv, python 3.12 | `forge gen motion sweep\|keys` |
 | `acestep` | prompt → music | ACE-Step/ACE-Step-1.5 @ `82252c24` | venv, python 3.12 | `forge gen music` (a resident server) |
 | `moss_sfx` | prompt → sound effect | OpenMOSS/MOSS-TTS @ `58b20a0d`, `moss_soundeffect_v2/` | venv, python 3.12 | `forge gen sfx` |
-| `moss_tts` | text → speech | OpenMOSS/MOSS-TTS @ `58b20a0d` | venv, python 3.12 | `forge gen speech` |
+| `moss_tts` | text → speech; description → voice | OpenMOSS/MOSS-TTS @ `58b20a0d` | venv, python 3.12 | `forge gen speech`, `forge gen voice` |
 
 `moss_sfx` and `moss_tts` share one clone and keep two venvs: the
-sound-effect model pins a different torch. Nothing heavy lives in this
-tree. Envs and clones go under `$PREFIX` — `${FORGE_BACKENDS_HOME:-~/.cache/
+sound-effect model pins a different torch. `moss_tts` hosts two models:
+MOSS-TTS clones a line from a 5–15 s reference clip, and MOSS-VoiceGenerator
+designs that clip from a description (`forge gen voice`) so a project never
+has to bring a voice it does not own. Nothing heavy lives in this tree. Envs and clones go under `$PREFIX` — `${FORGE_BACKENDS_HOME:-~/.cache/
 asset-forge/backends}/<name>` by default — and the directory here holds only
 links to them. No absolute path is ever written into a tracked file.
 
@@ -93,6 +95,7 @@ installers.
 | LLM2Vec | MIT | |
 | ACE-Step 1.5 code + weights | MIT | |
 | MOSS-TTS family | Apache-2.0 | |
+| `OpenMOSS-Team/MOSS-VoiceGenerator` (1.7B, MossTTSDelay) | Apache-2.0 | the voice designer behind `forge gen voice`; the same env as MOSS-TTS |
 | MOSS-SoundEffect-v2 | Apache-2.0 | |
 | Blender | GPL | A tool; nothing of it ships in an asset. |
 
@@ -113,6 +116,7 @@ ACE-Step server before a lift. Doctor says who is holding the card
 | `ardy` sweep | ~16 GB (one model load covers a batch) | no |
 | `acestep` server | ~8 GB | **yes**, until `forge gen music --stop-server` |
 | `moss_tts` (Local-Transformer 4B) | ~12 GB | no |
+| `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | ~12 GB measured at the peak of a 7 s audition — the generation loop, not the weights | no |
 | `moss_sfx` | ~6–8 GB | no |
 | studio viewer on the real adapter | small; not measured | while open |
 
@@ -129,7 +133,8 @@ Each installer is idempotent (`set -euo pipefail`, sources
    `numpy<2`; assembles the Llama-3 + LLM2Vec text encoder under `$PREFIX`
    (the Llama 3 notice prints; `--yes` accepts it without a TTY).
 2. `bash backends/moss_sfx/install.sh` and `bash backends/moss_tts/install.sh`
-   — one clone, two venvs; weights download on first run (~11 GB / ~8 GB).
+   — one clone, two venvs; weights download on first run (~11 GB / ~8 GB,
+   plus ~4 GB for the voice designer).
 3. `bash backends/acestep/install.sh` — venv, the soundfile patch,
    `ACESTEP_CHECKPOINTS_DIR` at the minimal ~7.5 GB model set.
 4. `bash backends/trellis2/install.sh --yes` — conda (python 3.11, CUDA

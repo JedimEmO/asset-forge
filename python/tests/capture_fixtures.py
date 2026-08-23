@@ -111,6 +111,17 @@ def build(project: Path) -> dict[str, dict]:
     rec["note"] = "première ligne — the accent is on purpose: ensure_ascii=False"
     out["speech"] = rec
 
+    rec = records.new_record("voice", "moss_voice_generator", created_by="human", created=TODAY)
+    rec["backend"] = records.backend_block("moss_tts", "58b20a0d5fcc6766658d50967a90a9d890009a46", "3.12.7", "2.9.1+cu128", "OpenMOSS-Team/MOSS-VoiceGenerator")
+    rec["params"] = {
+        "name": "crypt_warden", "instruction": "Deep, slow, weathered male voice, English, low pitch, unhurried, grave and calm",
+        "text": "The river runs past the old mill at dawn.", "seed": 7,
+        "audio_temperature": 1.5, "audio_top_p": 0.6, "audio_top_k": 50, "audio_repetition_penalty": 1.1,
+    }
+    records.add_output(rec, _file(project, "assets-src/voices/crypt_warden/ref.wav"))
+    rec["measured"] = {"duration_s": 7.9, "sample_rate": 24000, "channels": 1}
+    out["voice"] = rec
+
     fake = records.new_record("lift", "trellis2", created_by="unknown", created=TODAY)
     fake["backend"] = records.backend_block("trellis2", "fake", None, None, None)
     records.add_input(fake, "image", _file(project, "assets-src/refs/props/crate.png"))

@@ -129,6 +129,20 @@ not.
 - **The Local-Transformer 4B fits 24 GB; the 8B Delay model OOMs** with
   the audio tokenizer loaded. `MOSS_TTS_MODEL` overrides if a low-VRAM path
   ever exists. 2026-08.
+- **Never hand the processor a reference as a path.** `torchaudio.load`
+  in this env goes through torchcodec, whose ffmpeg libraries do not load
+  beside the system glib (`Could not load libtorchcodec`, exit 5, after the
+  4B has loaded) — the same collision that made soundfile the writer. The
+  speech inner half reads the clip with soundfile and tokenizes it through
+  `processor.encode_audios_from_wav` (resampling is torchaudio's pure
+  torch kernel), then passes the codes tensor as the reference. Found on
+  the first real `just speech`, 2026-08-23.
+- **MOSS-VoiceGenerator runs in the same env** (`forge gen voice`): its
+  `generate` takes no `do_sample` — the Delay model samples when
+  `audio_temperature > 0` — and its processor wants `normalize_inputs=True`.
+  The first load after a download spent ~80 s before the GPU saw anything
+  (a cold 4 GB safetensors); warm loads are ~20 s. The same seed gave the
+  same bytes on two runs on this card. 2026-08-23.
 
 ## Blender (`BLENDER_BIN`, ≥ 4.2 headless; 5.2 is the reference)
 

@@ -183,9 +183,23 @@ music name prompt *flags: _build
     {{forge}} gen music --prompt "{{prompt}}" --out out/audio/music/{{name}}.ogg \
         --record out/audio/music/{{name}}.json {{flags}}
 
-# A voice is a reference clip (5–15 s of clean speech): `--voice assets-src/voices/<who>.wav`.
+# Describe who speaks — gender, age, pitch, pace, accent, texture, mood —
+# and the model speaks one audition line in that voice. The seed is the
+# voice: reroll `--seed N` until it is the character, never edit the wav.
+# Lands as a source, assets-src/voices/<name>/{ref.wav,voice.json}, and
+# refuses an existing one without --overwrite — every line cloned from it
+# afterwards would change. `--line` replaces the default audition sentence.
 #
-# One spoken line, to out/audio/voice/: `just speech kessa_hold "Hold the line." --voice assets-src/voices/kessa.wav`
+# Design a voice from a description: `just voice warden "Deep, slow, weathered male voice, grave and calm"`
+voice name describe *flags: _build
+    {{forge}} gen voice {{name}} --describe "{{describe}}" {{flags}}
+
+# A voice is a reference clip (5–15 s of clean speech). `--voice <name>` is
+# one designed by `just voice` (assets-src/voices/<name>/ref.wav, its record
+# carried into the line's); `--voice path/to/clip.wav` is one you brought,
+# which then needs a row in assets-src/SOURCES.md.
+#
+# One spoken line, to out/audio/voice/: `just speech kessa_hold "Hold the line." --voice kessa`
 speech name text *flags: _build
     mkdir -p out/audio/voice
     {{forge}} gen speech --text "{{text}}" --out out/audio/voice/{{name}}.wav \
@@ -521,7 +535,7 @@ verify *flags: _build
 #   bones, check-mesh
 #                   one asset at a time; `check-bodies` and `audit` run the
 #                   same checks over the whole library.
-#   character, prop, sweep, review, sfx, music, speech
+#   character, prop, sweep, review, sfx, music, speech, voice
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
 #                   `ci-fake` runs the same paths on placeholders instead.
@@ -546,9 +560,11 @@ ci: fmt-check check test smoke audit check-bodies manifest-check verify
 # throwaway project made by `forge init`, so nothing under assets/ here is
 # touched, and ending in that project's own audit, manifest-check and
 # verify. The reference PNG is written here too (a 4×4 flat grey), with its
-# ledger row, because a PNG without a row fails verify and should.
+# ledger row, because a PNG without a row fails verify and should. The
+# voice path designs a placeholder voice, clones a line from it by name and
+# files the line, so verify's voice check runs on a record it has to read.
 #
-# The four pipelines end to end on placeholders, then every gate — after
+# The five pipelines end to end on placeholders, then every gate — after
 # the MCP server has handshaken and listed its tools (mcp-check).
 ci-fake: _build mcp-check
     #!/usr/bin/env bash
@@ -588,6 +604,10 @@ ci-fake: _build mcp-check
     echo "== sfx -> promote audio"
     "$forge" gen sfx --prompt "a door" --seconds 1 --out out/audio/sfx/door.wav --record out/audio/sfx/door.json
     "$forge" promote audio sfx out/audio/sfx/door.wav door --record out/audio/sfx/door.json
+    echo "== voice -> speech --voice <name> -> promote audio voice"
+    "$forge" gen voice warden --describe "deep, slow, grave" --seed 1
+    "$forge" gen speech --text "Few come this deep." --voice warden --out out/audio/voice/warden_greeting.wav --record out/audio/voice/warden_greeting.json
+    "$forge" promote audio voice out/audio/voice/warden_greeting.wav warden_greeting --record out/audio/voice/warden_greeting.json
     echo "== the gates"
     "$forge" catalog
     "$forge" audit

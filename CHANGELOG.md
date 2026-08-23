@@ -56,7 +56,12 @@ never in the tree):
 - `ardy` — prompt → motion takes (sweeps over seeds and samples), and the
   Python review metrics behind a frozen `--json` contract.
 - `acestep` — music, through a resident server (`--stop-server`).
-- `moss_sfx`, `moss_tts` — sound effects and speech.
+- `moss_sfx`, `moss_tts` — sound effects and speech; `moss_tts` also hosts
+  MOSS-VoiceGenerator, so `forge gen voice <name> --describe "…"` designs a
+  character's voice from a description into `assets-src/voices/<name>/`
+  (`ref.wav` + a `voice` record with the description, the line and the
+  seed) and `forge gen speech --voice <name>` clones every line from it —
+  a project never has to bring a reference clip it does not own.
 - `blender` — headless auto-rig to the profile, prop normalize, the
   contract-checked export, and `rig-build`.
 - `forge doctor` (ok | partial | missing | broken per backend, Blender,
@@ -77,7 +82,11 @@ of ARDY's skeleton, so no retargeting exists anywhere.
 moves down; clips claim reproduction (`forge audit`: bytes, then poses on
 the fixture mannequin to 1 mm), bodies, models and audio claim integrity.
 A reference PNG is an input: sha256 plus a row in `assets-src/SOURCES.md`.
-Every lift record names its texture baker.
+Every lift record names its texture baker. A designed voice is a source
+with its record beside it, and `forge verify` holds every
+`assets-src/voices/<name>/ref.*` to that record (or a ledger row for a
+brought clip); a shipped line carries the clip as its `source` and the
+voice record in its generator block.
 
 **Skills** — six under `.claude/skills/`, every command checked against the
 justfile and every log line captured from a real run: `forge-setup`,

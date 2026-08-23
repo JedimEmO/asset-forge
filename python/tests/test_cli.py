@@ -17,7 +17,7 @@ def _run(*argv: str, env=None):
 def test_help_lists_every_command():
     done = _run("--help")
     assert done.returncode == 0
-    for name in ("doctor", "mesh", "prop", "rig", "export", "rig-build", "motion", "sfx", "music", "speech"):
+    for name in ("doctor", "mesh", "prop", "rig", "export", "rig-build", "motion", "sfx", "music", "speech", "voice"):
         assert f"\n    {name} " in done.stdout or f"    {name}\n" in done.stdout, name
     done = _run("motion", "--help")
     assert done.returncode == 0

@@ -36,7 +36,7 @@ use forge_library::generator_record::{RECORD_SCHEMA, RecordKind};
 use forge_motion::Take;
 
 /// One fixture per kind, plus the fake lift.
-const RECORDS: [(&str, RecordKind); 9] = [
+const RECORDS: [(&str, RecordKind); 10] = [
     ("lift.json", RecordKind::Lift),
     ("prop.json", RecordKind::Prop),
     ("rig.json", RecordKind::Rig),
@@ -45,6 +45,7 @@ const RECORDS: [(&str, RecordKind); 9] = [
     ("sfx.json", RecordKind::Sfx),
     ("music.json", RecordKind::Music),
     ("speech.json", RecordKind::Speech),
+    ("voice.json", RecordKind::Voice),
     ("fake_lift.json", RecordKind::Lift),
 ];
 
@@ -195,6 +196,27 @@ fn the_projections_read_what_the_python_stated() {
         speech.note.as_deref(),
         Some("première ligne — the accent is on purpose: ensure_ascii=False"),
         "non-ASCII is written raw on both sides"
+    );
+
+    let voice = GeneratorRecord::load(&fixtures().join("voice.json")).expect("voice");
+    assert_eq!(voice.kind, RecordKind::Voice);
+    assert!(
+        voice.inputs.is_empty(),
+        "a designed voice is handed nothing"
+    );
+    assert_eq!(voice.param_i64("seed"), Some(7), "every design is seeded");
+    assert_eq!(
+        voice.param_str("instruction").as_deref(),
+        Some("Deep, slow, weathered male voice, English, low pitch, unhurried, grave and calm")
+    );
+    assert_eq!(voice.param_f32("audio_temperature"), Some(1.5));
+    assert_eq!(
+        voice.output().map(|o| o.path.as_str()),
+        Some("assets-src/voices/crypt_warden/ref.wav")
+    );
+    assert_eq!(
+        voice.backend.model.as_deref(),
+        Some("OpenMOSS-Team/MOSS-VoiceGenerator")
     );
 
     let fake = GeneratorRecord::load(&fixtures().join("fake_lift.json")).expect("fake");

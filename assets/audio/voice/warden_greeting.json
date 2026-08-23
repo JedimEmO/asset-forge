@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "kind": "voice",
+  "name": "warden_greeting",
+  "prompt": "Few come this deep. Fewer leave. State your business, and mind the dust.",
+  "tags": [
+    "sample"
+  ],
+  "created": "2026-08-23",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_tts",
+    "model": "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5",
+    "seed": null,
+    "voice": "crypt_warden",
+    "reference": "assets-src/voices/crypt_warden/ref.wav",
+    "voice_record": "assets-src/voices/crypt_warden/voice.json",
+    "language": "English"
+  },
+  "source": {
+    "path": "assets-src/voices/crypt_warden/ref.wav",
+    "sha256": "sha256:fe540c6276214a6b8b625090dbc66d794311742b663d941917903a972e89d875",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 5.28,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "events": null,
+  "content_hash": "sha256:a0b5eac5045f0e5766c56f71037909445e67494e3adb817ee5383fe1e5d6411e",
+  "note": null
+}

@@ -200,6 +200,22 @@ tests is the thing to delete. **Why:** a second path is a second set of
 habits to keep correct, and the one nothing ships through is the one that
 rots. 2026-08-22.
 
+**Voices are designed, not brought.** A character's voice is
+`assets-src/voices/<name>/ref.wav` spoken by MOSS-VoiceGenerator from a
+description at a seed, with `voice.json` beside it; every line is cloned
+from that clip by name, and `forge verify` fails a voice clip that has
+neither its record nor a `SOURCES.md` row. **Why:** a reference clip nobody
+owns is unshippable — a line cloned from a recording found on the net is a
+line whose provenance is a person who never agreed — and the sample library
+went without a voice for exactly that reason. A designed one is
+reproducible from description + seed (the same seed gave the same bytes
+twice on this card, though the record claims only the hash), it is the
+durable source two lines a month apart are both cloned from, and its
+licence is the model's (Apache-2.0). The first real `just speech` also
+found that the cloner cannot open a reference by path in this env
+(torchaudio → torchcodec); the inner half reads the clip itself and hands
+over codes. 2026-08-23.
+
 **Retire in phases.** Each phase ends green and committed, with the reason
 written here. **Why:** a retirement that spans a red tree is one nobody can
 bisect, and a reason that lives only in a commit message is one nobody

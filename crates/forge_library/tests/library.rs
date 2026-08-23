@@ -699,6 +699,87 @@ fn a_sound_with_a_record_is_recorded_and_a_record_of_the_wrong_kind_is_refused()
     assert!(error.to_string().contains("sfx run"), "{error}");
 }
 
+#[test]
+fn a_voice_line_keeps_its_designed_voice_as_source_and_a_voice_record_is_not_a_line() {
+    let (dir, project) = temp_project();
+    // The designed voice: its audition clip, hashed, and its record.
+    let warden = project.voices_dir().join("crypt_warden");
+    std::fs::create_dir_all(&warden).expect("mkdir");
+    let reference = warden.join("ref.wav");
+    write_sine_wav(&reference, 6.0);
+    let reference_sha = forge_library::hash::sha256_file(&reference).expect("hash");
+    let voice_record = format!(
+        r#"{{"forge_record": 1, "kind": "voice", "tool": "moss_voice_generator",
+            "created": "2026-08-23", "created_by": "human",
+            "backend": {{"name": "moss_tts", "model": "OpenMOSS-Team/MOSS-VoiceGenerator"}},
+            "params": {{"instruction": "deep, slow, weathered", "seed": 7}},
+            "outputs": [{{"path": "assets-src/voices/crypt_warden/ref.wav", "sha256": "{reference_sha}"}}]}}"#
+    );
+    std::fs::write(warden.join("voice.json"), &voice_record).expect("record");
+
+    // The line cloned from it, with the speech record `forge gen speech
+    // --voice crypt_warden` writes: the reference and the voice record as
+    // hashed inputs.
+    let wav = dir.path().join("greeting.wav");
+    write_sine_wav(&wav, 0.25);
+    let speech = GeneratorRecord::from_slice(
+        format!(
+            r#"{{"forge_record": 1, "kind": "speech", "tool": "moss_tts", "created": "2026-08-23",
+                "created_by": "human", "backend": {{"model": "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"}},
+                "inputs": [{{"role": "prompt", "prompt": "Few come this deep."}},
+                           {{"role": "reference", "path": "assets-src/voices/crypt_warden/ref.wav", "sha256": "{reference_sha}"}},
+                           {{"role": "voice_record", "path": "assets-src/voices/crypt_warden/voice.json", "sha256": "sha256:00"}}],
+                "params": {{"seed": null, "voice": "crypt_warden", "reference": "assets-src/voices/crypt_warden/ref.wav",
+                           "voice_record": "assets-src/voices/crypt_warden/voice.json", "language": "English"}},
+                "outputs": [{{"path": "out/audio/voice/greeting.wav"}}]}}"#
+        )
+        .as_bytes(),
+        Path::new("greeting.json"),
+    )
+    .expect("record");
+    let mut request = audio_request(Kind::Voice, "greeting", &wav, false);
+    request.record = Some(speech);
+    request.prompt = None;
+    let promoted = promote_audio(&project, &request).expect("promote");
+    assert_eq!(promoted.record.provenance, Provenance::Recorded);
+    assert_eq!(
+        promoted.record.source.path.as_deref(),
+        Some("assets-src/voices/crypt_warden/ref.wav"),
+        "the voice is the line's durable source"
+    );
+    assert_eq!(
+        promoted.record.source.sha256.as_deref(),
+        Some(reference_sha.as_str())
+    );
+    match promoted.record.generator.expect("generator") {
+        Generator::MossTts(params) => {
+            assert_eq!(params.voice.as_deref(), Some("crypt_warden"));
+            assert_eq!(
+                params.voice_record.as_deref(),
+                Some("assets-src/voices/crypt_warden/voice.json")
+            );
+            assert_eq!(
+                params.seed, None,
+                "MOSS-TTS took no seed, and the record says so"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    let report = verify::all(&project);
+    assert!(report.ok(), "{report}");
+
+    // The voice's own record is not a line's record.
+    let voice = GeneratorRecord::from_slice(voice_record.as_bytes(), Path::new("voice.json"))
+        .expect("record");
+    let mut wrong = audio_request(Kind::Voice, "warden_ref", &reference, false);
+    wrong.record = Some(voice);
+    let error = promote_audio(&project, &wrong).expect_err("refuse");
+    assert!(
+        error.to_string().contains("designed voice's record"),
+        "{error}"
+    );
+}
+
 // --------------------------------------------------------- the empty case ---
 
 #[test]

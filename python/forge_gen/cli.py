@@ -44,6 +44,7 @@ COMMANDS: tuple[tuple[str, str, str], ...] = (
     ("sfx", "forge_gen.audio.sfx", "One sound effect from a prompt (MOSS-SoundEffect)"),
     ("music", "forge_gen.audio.music", "One track from a prompt (ACE-Step; the server stays resident)"),
     ("speech", "forge_gen.audio.speech", "One spoken line (MOSS-TTS)"),
+    ("voice", "forge_gen.audio.voice", "Design a character's voice from a description (MOSS-VoiceGenerator)"),
 )
 
 #: The ``motion`` group's subcommands.

@@ -49,6 +49,9 @@ pub enum RecordKind {
     Music,
     /// A MOSS TTS line.
     Speech,
+    /// A MOSS `VoiceGenerator` design: a description in, the audition clip
+    /// that every line of that character is then cloned from out.
+    Voice,
 }
 
 impl RecordKind {
@@ -64,6 +67,7 @@ impl RecordKind {
             Self::Sfx => "sfx",
             Self::Music => "music",
             Self::Speech => "speech",
+            Self::Voice => "voice",
         }
     }
 }
@@ -98,7 +102,7 @@ pub struct RecordBackend {
 #[serde(default)]
 pub struct RecordInput {
     /// What the input was for: `image`, `mesh`, `blend`, `prompt`,
-    /// `reference`.
+    /// `reference`, `voice_record`.
     pub role: String,
     /// The file, when the input was one, relative to where the run was
     /// started from.
@@ -403,6 +407,9 @@ impl GeneratorRecord {
             reference: self
                 .param_str("reference")
                 .or_else(|| self.input("reference").and_then(|i| i.path.clone())),
+            voice_record: self
+                .param_str("voice_record")
+                .or_else(|| self.input("voice_record").and_then(|i| i.path.clone())),
             language: self.param_str("language"),
         }
     }

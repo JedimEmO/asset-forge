@@ -28,13 +28,18 @@
 //!    time agrees with its take time through the recipe, and every audio
 //!    link resolves to a shipped sound;
 //! 5. every reference PNG under `<sources>/refs` has a row in `SOURCES.md`;
-//! 6. the rig profile has not drifted from its artifacts: the `.glb` hash
+//! 6. every voice under `<sources>/voices/<name>/ref.*` is accounted for:
+//!    a `voice.json` beside it (a `voice` record whose output hash is the
+//!    file) or a row in `SOURCES.md` (a brought clip), and a voice line's
+//!    reference is still where its sidecar says;
+//! 7. the rig profile has not drifted from its artifacts: the `.glb` hash
 //!    mismatching is a failure, the `.blend` a warning, and the bones derived
 //!    from the `.glb` still match the contract.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::generator_record::{GeneratorRecord, RecordKind};
 use crate::report::{Report, Severity};
 use crate::schema::{DEFAULT_FPS, Kind, Sidecar, valid_event_name};
 use crate::{Catalog, Project, hash};
@@ -50,6 +55,9 @@ const EVENT_ROUND_SLACK_S: f32 = 0.001;
 /// fail honest frame rounding; looser would pass a footstep on the wrong
 /// frame.
 const EVENT_MAP_TOLERANCE_S: f32 = 0.025;
+
+/// The generator record beside a designed voice's clip.
+const VOICE_RECORD: &str = "voice.json";
 
 /// What a self-contained `.glb` container holds, read with nothing but the
 /// container format — the questions an outside consumer would ask of the
@@ -235,7 +243,8 @@ pub fn library(project: &Project) -> Report {
                 profile_name.as_deref(),
             ),
             Kind::Body | Kind::Model => mesh_findings(&mut report, project, record, sidecar),
-            Kind::Sfx | Kind::Music | Kind::Voice => {}
+            Kind::Voice => voice_line_findings(&mut report, project, record, sidecar),
+            Kind::Sfx | Kind::Music => {}
         }
         event_findings(&mut report, &record.name, sidecar, &audio);
     }
@@ -379,6 +388,40 @@ fn mesh_findings(
             }
         }
         Some(_) => {}
+    }
+}
+
+/// What a voice line's record has to say for itself: the reference it was
+/// cloned from is still there. Drift is a warning — the voice was
+/// re-designed and this line still carries the old one, which is the
+/// ordinary state between a re-design and the re-render of its lines — and
+/// absence is a failure, because the line's provenance then points at
+/// nothing. A line with no source (an uncloned voice, or one promoted
+/// without its record) has nothing to check here.
+fn voice_line_findings(
+    report: &mut Report,
+    project: &Project,
+    record: &crate::AssetRecord,
+    sidecar: &Sidecar,
+) {
+    let Some(source) = sidecar.source.path.as_deref() else {
+        return;
+    };
+    let reference = project.root.join(source);
+    if reference.is_file() {
+        source_hash_findings(
+            report,
+            &record.name,
+            source,
+            &reference,
+            sidecar.source.sha256.as_deref(),
+            Severity::Warning,
+        );
+    } else {
+        report.fail(
+            &record.name,
+            format!("voice reference {source} is gone — the line's provenance points at nothing"),
+        );
     }
 }
 
@@ -544,17 +587,7 @@ pub fn refs(project: &Project) -> Report {
     }
     let ledger_path = project.sources_ledger();
     let ledger = std::fs::read_to_string(&ledger_path).unwrap_or_default();
-    let rows: Vec<String> = ledger
-        .lines()
-        .filter(|line| line.trim_start().starts_with('|'))
-        .filter_map(|line| {
-            line.trim()
-                .trim_start_matches('|')
-                .split('|')
-                .next()
-                .map(|cell| cell.trim().to_owned())
-        })
-        .collect();
+    let rows = ledger_cells(&ledger);
     for png in pngs {
         report.checked += 1;
         let file_name = png
@@ -587,6 +620,152 @@ pub fn refs(project: &Project) -> Report {
         }
     }
     report
+}
+
+/// Every voice under `<sources>/voices/<name>/ref.*` is accounted for.
+///
+/// A voice is the one source a project makes rather than brings, so it has
+/// two ways to be accounted for and needs one of them: a `voice.json` beside
+/// the clip — a `voice` generator record whose output hash is the clip, so
+/// the description and the seed that made it are on record — or, for a clip
+/// that was brought, a row in `SOURCES.md` where its origin and licence
+/// live. A clip with neither is a voice nobody can account for, and every
+/// line cloned from it inherits that.
+#[must_use]
+pub fn voices(project: &Project) -> Report {
+    let mut report = Report::default();
+    let voices_dir = project.voices_dir();
+    let mut clips = Vec::new();
+    collect_voice_clips(&voices_dir, &mut clips);
+    clips.sort();
+    if clips.is_empty() {
+        return report;
+    }
+    let ledger = std::fs::read_to_string(project.sources_ledger()).unwrap_or_default();
+    let rows = ledger_cells(&ledger);
+    for clip in clips {
+        report.checked += 1;
+        let voice = clip
+            .parent()
+            .and_then(Path::file_name)
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let rel = project
+            .rel_to_root(&clip)
+            .unwrap_or_else(|| clip.display().to_string());
+        let record_path = clip.with_file_name(VOICE_RECORD);
+        if record_path.is_file() {
+            voice_record_findings(&mut report, &voice, &rel, &clip, &record_path);
+            continue;
+        }
+        let brought = rows
+            .iter()
+            .any(|cell| cell.contains(&format!("voices/{voice}")) || cell.contains(&rel));
+        if !brought {
+            report.fail(
+                &voice,
+                format!(
+                    "{rel} has no {VOICE_RECORD} beside it and no row in {} — a designed voice \
+                     keeps its record (`forge gen voice {voice} --describe \"…\"` writes it), \
+                     a brought clip needs a ledger row with its origin and licence",
+                    crate::project::SOURCES_LEDGER
+                ),
+            );
+        }
+    }
+    report
+}
+
+/// The record beside a designed voice's clip says what it must: it parses,
+/// it is a `voice` run, and its output is this clip.
+fn voice_record_findings(
+    report: &mut Report,
+    voice: &str,
+    rel: &str,
+    clip: &Path,
+    record_path: &Path,
+) {
+    let record = match GeneratorRecord::load(record_path) {
+        Ok(record) => record,
+        Err(err) => {
+            report.fail(
+                voice,
+                format!("{VOICE_RECORD} beside {rel} does not read: {err}"),
+            );
+            return;
+        }
+    };
+    if record.kind != RecordKind::Voice {
+        report.fail(
+            voice,
+            format!(
+                "{VOICE_RECORD} beside {rel} describes a {} run, not a voice design",
+                record.kind
+            ),
+        );
+        return;
+    }
+    let Some(recorded) = record.output().and_then(|o| o.sha256.clone()) else {
+        report.fail(
+            voice,
+            format!("{VOICE_RECORD} beside {rel} records no output hash — the clip is unprovable"),
+        );
+        return;
+    };
+    match hash::sha256_file(clip) {
+        Err(err) => report.fail(voice, format!("{rel} cannot be hashed: {err}")),
+        Ok(actual) if actual != recorded => report.fail(
+            voice,
+            format!(
+                "{rel} is not the clip its {VOICE_RECORD} describes — a designed voice is never \
+                 edited; re-design it (`forge gen voice {voice} … --overwrite`) so the record \
+                 and the clip agree"
+            ),
+        ),
+        Ok(_) => {}
+    }
+}
+
+/// The first cell of every table row in a ledger.
+fn ledger_cells(ledger: &str) -> Vec<String> {
+    ledger
+        .lines()
+        .filter(|line| line.trim_start().starts_with('|'))
+        .filter_map(|line| {
+            line.trim()
+                .trim_start_matches('|')
+                .split('|')
+                .next()
+                .map(|cell| cell.trim().to_owned())
+        })
+        .collect()
+}
+
+/// Every `<voices>/<name>/ref.<ext>` one level down.
+fn collect_voice_clips(root: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.is_file()
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.eq_ignore_ascii_case("ref"))
+                && path.extension().is_some()
+            {
+                out.push(path);
+            }
+        }
+    }
 }
 
 /// Every `.png` under `root`, recursively.
@@ -666,11 +845,12 @@ pub fn profile(project: &Project) -> Report {
 }
 
 /// Every engine-free check, as one report: the library, the reference
-/// ledger, the profile. An empty library passes.
+/// ledger, the voices, the profile. An empty library passes.
 #[must_use]
 pub fn all(project: &Project) -> Report {
     let mut report = library(project);
     report.absorb(refs(project));
+    report.absorb(voices(project));
     report.absorb(profile(project));
     report
 }
@@ -879,6 +1059,123 @@ mod tests {
         assert!(!report.ok(), "{report}");
         assert!(report.render().contains("crate.png"), "{report}");
         assert_eq!(report.failures(), 1);
+    }
+
+    /// A `voice` generator record for `assets-src/voices/<name>/ref.wav`,
+    /// its output hash being whatever `clip_bytes` hashes to.
+    fn voice_record(name: &str, clip_bytes: &[u8]) -> String {
+        format!(
+            r#"{{"forge_record": 1, "kind": "voice", "tool": "moss_voice_generator",
+                "created": "2026-08-23", "created_by": "human",
+                "backend": {{"name": "moss_tts", "model": "OpenMOSS-Team/MOSS-VoiceGenerator"}},
+                "params": {{"instruction": "deep and slow", "seed": 7}},
+                "outputs": [{{"path": "assets-src/voices/{name}/ref.wav", "sha256": "{}"}}]}}"#,
+            hash::sha256_bytes(clip_bytes),
+        )
+    }
+
+    #[test]
+    fn a_designed_voice_needs_its_record_or_a_ledger_row() {
+        let (_dir, project) = temp_project();
+        assert_eq!(voices(&project).checked, 0, "no voices, nothing to check");
+        let warden = project.voices_dir().join("crypt_warden");
+        std::fs::create_dir_all(&warden).expect("mkdir");
+        std::fs::write(warden.join("ref.wav"), b"RIFFwarden").expect("clip");
+
+        // Neither: a failure that names both fixes.
+        let report = voices(&project);
+        assert!(!report.ok(), "{report}");
+        assert_eq!(report.checked, 1);
+        let text = report.render();
+        assert!(
+            text.contains("voice.json") && text.contains("SOURCES.md"),
+            "{text}"
+        );
+        assert!(text.contains("forge gen voice crypt_warden"), "{text}");
+
+        // The record branch: a voice record whose output hash is the clip.
+        std::fs::write(
+            warden.join("voice.json"),
+            voice_record("crypt_warden", b"RIFFwarden"),
+        )
+        .expect("record");
+        let report = voices(&project);
+        assert!(report.ok(), "{report}");
+
+        // The clip edited by hand no longer hashes to what the record says.
+        std::fs::write(warden.join("ref.wav"), b"RIFFedited").expect("edit");
+        let report = voices(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(report.render().contains("never edited"), "{report}");
+
+        // A record of another kind beside the clip is not a voice's record.
+        std::fs::write(warden.join("ref.wav"), b"RIFFwarden").expect("restore");
+        std::fs::write(
+            warden.join("voice.json"),
+            voice_record("crypt_warden", b"RIFFwarden").replacen(
+                "\"kind\": \"voice\"",
+                "\"kind\": \"speech\"",
+                1,
+            ),
+        )
+        .expect("record");
+        let report = voices(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(report.render().contains("speech run"), "{report}");
+        std::fs::remove_file(warden.join("voice.json")).expect("rm");
+
+        // The ledger branch: a brought clip with a row.
+        std::fs::write(
+            project.sources_ledger(),
+            "# Sources\n\n| file | origin | licence |\n|---|---|---|\n| voices/crypt_warden/ref.wav | recorded by the user | CC0 |\n",
+        )
+        .expect("ledger");
+        let report = voices(&project);
+        assert!(report.ok(), "{report}");
+
+        // And the whole report carries it.
+        std::fs::remove_file(project.sources_ledger()).expect("rm");
+        assert!(!all(&project).ok());
+    }
+
+    #[test]
+    fn a_voice_line_whose_reference_moved_or_vanished_says_so() {
+        let (_dir, project) = temp_project();
+        let warden = project.voices_dir().join("crypt_warden");
+        std::fs::create_dir_all(&warden).expect("mkdir");
+        std::fs::write(warden.join("ref.wav"), b"RIFFwarden").expect("clip");
+        std::fs::write(
+            warden.join("voice.json"),
+            voice_record("crypt_warden", b"RIFFwarden"),
+        )
+        .expect("record");
+        let lines = project.kind_dir(Kind::Voice);
+        std::fs::write(lines.join("greeting.wav"), b"RIFFline").expect("line");
+        let mut sidecar = Sidecar::new(Kind::Voice, "greeting");
+        sidecar.content_hash = hash::sha256_bytes(b"RIFFline");
+        sidecar.source.path = project.rel_to_root(&warden.join("ref.wav"));
+        sidecar.source.sha256 = Some(hash::sha256_bytes(b"RIFFwarden"));
+        crate::sidecar::save(&lines.join("greeting.json"), &sidecar).expect("sidecar");
+        let report = all(&project);
+        assert!(report.ok(), "{report}");
+
+        // The voice re-designed: the line still carries the old one — a warning.
+        std::fs::write(warden.join("ref.wav"), b"RIFFredesigned").expect("redesign");
+        std::fs::write(
+            warden.join("voice.json"),
+            voice_record("crypt_warden", b"RIFFredesigned"),
+        )
+        .expect("record");
+        let report = all(&project);
+        assert!(report.ok(), "{report}");
+        assert_eq!(report.warnings(), 1, "{report}");
+        assert!(report.render().contains("has changed"), "{report}");
+
+        // The voice gone: a failure.
+        std::fs::remove_dir_all(&warden).expect("rm");
+        let report = all(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(report.render().contains("is gone"), "{report}");
     }
 
     #[test]

@@ -382,6 +382,13 @@ impl Project {
         self.sources.join("blender")
     }
 
+    /// Voices: `<sources>/voices/<name>/ref.wav` beside its `voice.json`,
+    /// the durable source every line of that character is cloned from.
+    #[must_use]
+    pub fn voices_dir(&self) -> PathBuf {
+        self.sources.join("voices")
+    }
+
     /// `<sources>/SOURCES.md`, the reference ledger.
     #[must_use]
     pub fn sources_ledger(&self) -> PathBuf {

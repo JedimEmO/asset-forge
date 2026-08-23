@@ -27,7 +27,7 @@ guesses at what the table can say.
   | `ardy` | venv 3.12 + clone | `nvidia/ARDY-Core-RP-20FPS-Horizon40` in the HF cache; the Llama-3 + LLM2Vec text encoder assembled in-env — **~16 GB downloaded, ~31 GB written** | `.text-encoders` |
   | `acestep` | venv + patched clone | the minimal set, ~7.3 GB (`--all-models` adds ~38 GB nobody asks for) | `.checkpoints` |
   | `moss_sfx` | venv + the `moss_soundeffect_v2/` subdirectory of the MOSS-TTS clone | `OpenMOSS-Team/MOSS-SoundEffect-v2.0`, ~11 GB | HF cache |
-  | `moss_tts` | venv + the MOSS-TTS clone (shared with `moss_sfx`) | `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5`, ~8 GB | HF cache |
+  | `moss_tts` | venv + the MOSS-TTS clone (shared with `moss_sfx`) | `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5`, ~8 GB; `OpenMOSS-Team/MOSS-VoiceGenerator`, ~4 GB (the voice designer) | HF cache |
 
 ## Steps
 

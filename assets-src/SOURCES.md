@@ -87,11 +87,30 @@ file that was auditioned (`just audio`, verdict `clean`) and its record is
 the account of the run that made it; a re-render at the same seed gives the
 same measurements and different bytes.
 
-## Voice
+## Voices (`voices/`) and voice lines (`assets/audio/voice/`)
 
-No voice line ships. A spoken line needs a reference voice clip the project
-owns the rights to, and this project has none; the MOSS-TTS weights are
-also not downloaded on the machine that built this library (`just doctor`
-reports `moss_tts partial`). When a reference voice exists, `just speech`
-records it as an input with its hash and the line as the prompt — give it a
-row here, under a `voices/` table, before committing it.
+A voice here is designed, not brought. `voices/crypt_warden/ref.wav` was
+spoken by MOSS-VoiceGenerator (OpenMOSS-Team, 1.7B, Apache-2.0) on
+2026-08-23 from the description *"Deep, slow, weathered male voice,
+English, low pitch, unhurried, grave and calm, the keeper of an old tomb"*
+at seed 7, reading the toolkit's default audition sentence; `voice.json`
+beside it is the run's record (the description, the line, the seed, the
+four sampling knobs, the clip's sha256), and the provenance is
+**recorded**. Seeds 11 and 1234 were auditioned alongside it; 1234 cut its
+last word (`tail 0 ms`) and 7 had the cleanest plot (lead 1 ms, tail
+91 ms, verdict clean). Nobody's voice was recorded to make it, which is
+the point: a reference clip the project does not own is a line it cannot
+ship. A designed voice is accounted for by its `voice.json` and needs no
+row here; a voice that *is* brought has no record and gets one — a
+`voices/` table with origin, terms and what was made from it — and `forge
+verify` refuses a `voices/<name>/ref.*` with neither.
+
+The one line, `warden_greeting` ("Few come this deep. Fewer leave. State
+your business, and mind the dust."), was cloned from that clip by
+MOSS-TTS-Local-Transformer-v1.5 (Apache-2.0) the same day through
+`just speech … --voice crypt_warden`; its record carries the clip and the
+voice record as hashed inputs, and its sidecar names the clip as its
+`source`, so the line's provenance reaches the description and the seed.
+MOSS-TTS takes no seed, so the line's `seed` is `null` and the shipped
+file is the exact render that was judged (`just audio`: 5.28 s, verdict
+clean).

@@ -12,9 +12,11 @@
 # the clone is here for its pins and its commit.
 #
 # Leaves behind: .env -> the venv, .checkout -> the clone root,
-# installed.json. Idempotent. Weights (~8 GB, Apache-2.0) go to the Hugging
-# Face cache unless --no-models; the 8B Delay model is never fetched — it
-# OOMs on 24 GB with the audio tokenizer resident, and the 4B fits.
+# installed.json. Idempotent. Weights (the 4B TTS, ~8 GB, and the 1.7B
+# MOSS-VoiceGenerator behind `forge gen voice`, ~4 GB; both Apache-2.0) go
+# to the Hugging Face cache unless --no-models; the 8B Delay model is never
+# fetched — it OOMs on 24 GB with the audio tokenizer resident, and the 4B
+# fits.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_NAME="moss_tts"
@@ -26,6 +28,7 @@ UPSTREAM="https://github.com/OpenMOSS/MOSS-TTS.git"
 COMMIT="58b20a0d5fcc6766658d50967a90a9d890009a46"
 PYVER="3.12"
 MODEL_ID="OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
+VOICE_MODEL_ID="OpenMOSS-Team/MOSS-VoiceGenerator"
 TORCH_INDEX="https://download.pytorch.org/whl/cu128"
 
 # pip_install_with_torch_index PREFIX ARGS... — as common.sh's pip_install,
@@ -77,17 +80,19 @@ fi
 
 # ------------------------------------------------------------------ models --
 if [ "$NO_MODELS" = 1 ]; then
-    log "--no-models: $MODEL_ID is fetched by the first \`forge gen speech\`; doctor says partial until then"
+    log "--no-models: $MODEL_ID is fetched by the first \`forge gen speech\` and $VOICE_MODEL_ID by the first \`forge gen voice\`; doctor says partial until then"
 else
-    log "downloading $MODEL_ID into the Hugging Face cache (~8 GB, Apache-2.0)"
-    if [ -x "$ENV_DIR/bin/hf" ]; then
-        PYTHONNOUSERSITE=1 "$ENV_DIR/bin/hf" download "$MODEL_ID" >/dev/null
-    else
-        PYTHONNOUSERSITE=1 "$(env_python)" -c "from huggingface_hub import snapshot_download; snapshot_download('$MODEL_ID')" >/dev/null
-    fi
+    for id in "$MODEL_ID" "$VOICE_MODEL_ID"; do
+        log "downloading $id into the Hugging Face cache (Apache-2.0; ~8 GB for the TTS, ~4 GB for the voice designer)"
+        if [ -x "$ENV_DIR/bin/hf" ]; then
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/hf" download "$id" >/dev/null
+        else
+            PYTHONNOUSERSITE=1 "$(env_python)" -c "from huggingface_hub import snapshot_download; snapshot_download('$id')" >/dev/null
+        fi
+    done
 fi
 
 # ------------------------------------------------------------------- probe --
 run_probe
 write_installed_json
-log "done — \`forge doctor\` for the table; \`forge gen speech --text \"Stand down.\" --voice ref.wav --out out/audio/line.wav\` for a line"
+log "done — \`forge doctor\` for the table; \`forge gen voice kessa --describe \"...\"\` designs a voice, \`forge gen speech --text \"Stand down.\" --voice kessa --out out/audio/line.wav\` speaks a line in it"

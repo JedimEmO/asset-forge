@@ -267,6 +267,7 @@ fn generator_pairs(generator: &Generator) -> Vec<(String, String)> {
             push("model", p.model.clone());
             push("voice", p.voice.clone());
             push("reference", p.reference.clone());
+            push("voice record", p.voice_record.clone());
             push("language", p.language.clone());
             push("seed", p.seed.map(|s| s.to_string()));
         }

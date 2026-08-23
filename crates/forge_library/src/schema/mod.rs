@@ -491,6 +491,11 @@ pub struct SpeechParams {
     pub voice: Option<String>,
     /// Explicit reference audio, when it overrode the named voice.
     pub reference: Option<String>,
+    /// The designed voice's record (`assets-src/voices/<name>/voice.json`)
+    /// when the reference was made by `forge gen voice`, so the line's
+    /// provenance chains back to the description and the seed. `null` for a
+    /// brought clip. Additive at schema 1: an older sidecar reads as `null`.
+    pub voice_record: Option<String>,
     /// Language, when it was not inferred.
     pub language: Option<String>,
 }

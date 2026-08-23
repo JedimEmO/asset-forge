@@ -1450,6 +1450,16 @@
       "tags": [
         "sample"
       ]
+    },
+    {
+      "name": "warden_greeting",
+      "path": "audio/voice/warden_greeting.wav",
+      "sha256": "sha256:a0b5eac5045f0e5766c56f71037909445e67494e3adb817ee5383fe1e5d6411e",
+      "kind": "voice",
+      "duration_s": 5.28,
+      "tags": [
+        "sample"
+      ]
     }
   ]
 }

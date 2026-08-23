@@ -1,0 +1,41 @@
+{
+  "forge_record": 1,
+  "kind": "voice",
+  "tool": "moss_voice_generator",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "moss_tts",
+    "commit": "58b20a0d5fcc6766658d50967a90a9d890009a46",
+    "python": "3.12.7",
+    "torch": "2.9.1+cu128",
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "model_revision": "97521ec2b6f3ec5026ac1f5751f8fc302d82c2d4"
+  },
+  "inputs": [],
+  "params": {
+    "audio_repetition_penalty": 1.1,
+    "audio_temperature": 1.5,
+    "audio_top_k": 50,
+    "audio_top_p": 0.6,
+    "instruction": "Deep, slow, weathered male voice, English, low pitch, unhurried, grave and calm, the keeper of an old tomb",
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "name": "crypt_warden",
+    "seed": 7,
+    "text": "The river runs past the old mill at dawn, and the bells across the valley ring twice before the market opens."
+  },
+  "outputs": [
+    {
+      "path": "assets-src/voices/crypt_warden/ref.wav",
+      "sha256": "sha256:fe540c6276214a6b8b625090dbc66d794311742b663d941917903a972e89d875",
+      "bytes": 349484
+    }
+  ],
+  "measured": {
+    "channels": 1,
+    "duration_s": 7.28,
+    "sample_rate": 24000
+  },
+  "fake": false,
+  "note": null
+}
