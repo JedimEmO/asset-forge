@@ -88,6 +88,11 @@ def flush_all() -> None:
     The C flush is what puts Blender's start-up banner *before* the JSON
     line rather than after it; without it the banner is the last line of
     the pipe and the launcher's held-line trick sees prose instead of JSON.
+    ``ctypes.CDLL(None)`` is the POSIX way to reach the running process's
+    own C runtime (``dlopen(NULL, ...)``); Windows' loader has no such
+    "the calling program itself" handle and raises on a ``None`` name, so
+    that name is only used there — ``msvcrt``, the C runtime every Windows
+    Python build links against, is asked for by name instead.
     """
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -97,8 +102,9 @@ def flush_all() -> None:
     try:
         import ctypes
 
-        ctypes.CDLL(None).fflush(None)
-    except (OSError, AttributeError, ValueError):
+        libc = ctypes.CDLL("msvcrt") if os.name == "nt" else ctypes.CDLL(None)
+        libc.fflush(None)
+    except (OSError, AttributeError, ValueError, TypeError):
         pass
 
 
