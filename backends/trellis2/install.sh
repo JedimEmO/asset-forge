@@ -286,23 +286,56 @@ else
             PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y flash-attn 2>/dev/null || true
         fi
     fi
-    # xformers.ops, not the bare package: a version built for a different
-    # torch (its own prebuilt wheels are only ever paired with one exact
-    # pin) still lets `import xformers` succeed — its C++/CUDA extension
-    # just silently fails to load — and only breaks on the submodule
-    # mesh.py actually calls (xformers.ops.memory_efficient_attention).
-    if have_mod xformers.ops; then
-        log "xformers $(mod_version xformers) present"
+    # xformers_runs — not have_mod, and not just xformers.ops importing:
+    # a prebuilt wheel for a GPU generation newer than its own kernels
+    # cover (Blackwell/sm_120 against a Hopper-only build, measured)
+    # imports fine and only fails "no kernel image is available" at the
+    # first real launch. This is the only check that actually proves it.
+    xformers_runs() {
+        PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -c '
+import torch, xformers.ops as xops
+q = torch.randn(1, 8, 16, 64, device="cuda", dtype=torch.float16)
+xops.memory_efficient_attention(q, q, q)
+torch.cuda.synchronize()
+' >/dev/null 2>&1
+    }
+
+    if xformers_runs; then
+        log "xformers $(mod_version xformers) present and runs on this GPU"
     elif have_mod flash_attn; then
         log "flash-attn is present; xformers not needed"
     else
         if "$ENV_DIR/bin/python" -m pip show xformers >/dev/null 2>&1; then
-            log "xformers is installed but not built for this torch — uninstalling before reinstall"
+            log "xformers is installed but does not run on this GPU — uninstalling before reinstall"
             PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y xformers
         fi
         log "pip: $XFORMERS_SPEC --no-deps --index-url $TORCH_INDEX (flash-attn's fallback — trellis2's sparse sampler has no sdpa path)"
-        if ! pipi -q "$XFORMERS_SPEC" --no-deps --index-url "$TORCH_INDEX"; then
-            warn "xformers did not install either; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
+        pipi -q "$XFORMERS_SPEC" --no-deps --index-url "$TORCH_INDEX" || true
+        if xformers_runs; then
+            log "xformers $(mod_version xformers) present and runs on this GPU"
+        else
+            # The prebuilt wheel's own kernels do not cover this GPU's
+            # compute capability (a fresh GPU generation ahead of what
+            # PyPI has published wheels for is the case this was written
+            # for) — built from source instead, for exactly the
+            # capability this GPU reports, not a guess.
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y xformers 2>/dev/null || true
+            arch="$(PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -c 'import torch; c = torch.cuda.get_device_capability(); print(f"{c[0]}.{c[1]}")' 2>/dev/null || true)"
+            if [ -z "$arch" ]; then
+                warn "no CUDA device visible to determine TORCH_CUDA_ARCH_LIST — skipping the source build; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
+            else
+                xf_src="$SRC_DIR/xformers"
+                if [ ! -d "$xf_src/.git" ]; then
+                    log "cloning xformers ${XFORMERS_SPEC#*==} (recursive — pulls cutlass and flash-attention's own source, a large checkout)"
+                    git clone -q --recursive -b "v${XFORMERS_SPEC#*==}" https://github.com/facebookresearch/xformers.git "$xf_src"
+                fi
+                log "building xformers from source for TORCH_CUDA_ARCH_LIST=$arch (minutes; needs a real compiler and disk — a failure here is a warning)"
+                if ! (cd "$xf_src" && TORCH_CUDA_ARCH_LIST="$arch" MAX_JOBS="${MAX_JOBS:-8}" CUDA_HOME="$ENV_DIR" CC="$ENV_DIR/bin/x86_64-conda-linux-gnu-gcc" CXX="$ENV_DIR/bin/x86_64-conda-linux-gnu-g++" CUDAHOSTCXX="$ENV_DIR/bin/x86_64-conda-linux-gnu-g++" PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip install --no-build-isolation -q .); then
+                    warn "xformers did not build from source either; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
+                elif ! xformers_runs; then
+                    warn "xformers built from source but still does not run a kernel on this GPU"
+                fi
+            fi
         fi
     fi
 
