@@ -70,6 +70,13 @@ FLASH_ATTN_SPEC="flash-attn==2.7.3"
 # own PyPI metadata pairs it with $TORCH_SPEC, installed --no-deps from
 # $TORCH_INDEX so it never floats the torch pin as a side effect.
 XFORMERS_SPEC="xformers==0.0.30"
+# The bundled version torch pulls in as its own dependency; PyPI's 3.3.0
+# wheel predates consumer Blackwell (sm_120) in its tensor-core lowering
+# pass specifically (a hard C++ assertion, not a Python-catchable one:
+# "getMMAVersionSafe: computeCapability not supported") — measured on an
+# RTX 5080, fixed by this version upstream. Installed --no-deps for the
+# same reason as xformers above.
+TRITON_SPEC="triton==3.4.0"
 NVDIFFRAST_URL="https://github.com/NVlabs/nvdiffrast.git"
 NVDIFFRAST_TAG="v0.4.0"
 CUMESH_URL="https://github.com/JeffreyXiang/CuMesh.git"
@@ -388,6 +395,54 @@ torch.cuda.synchronize()
     else
         log "building o-voxel from $CHECKOUT/o-voxel"
         pipi -q "$CHECKOUT/o-voxel" --no-build-isolation
+    fi
+fi
+
+# --------------------------------------------------------------- triton --
+# Checked last, after every other pip install above (not right after torch,
+# where it was first written): FlexGEMM's own pyproject.toml declares an
+# unpinned "triton>=3.2.0", and something in this env's dependency
+# resolution — traced to FlexGEMM's install specifically, not confirmed
+# beyond that — was silently re-landing torch's bundled 3.3.0 over a
+# correctly-upgraded 3.4.0 checked earlier in the script. This is the
+# single point nothing installed above can still undo: real tl.dot call,
+# not an import, since every FlexGEMM kernel (this backend's whole sparse
+# conv path) is Triton, and a version that predates this GPU's tensor-core
+# generation imports fine, only crashing the first time a kernel needs it.
+cat > "$SRC_DIR/_triton_dot_probe.py" <<'PYEOF'
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _dot_probe(a_ptr, b_ptr, c_ptr, BLOCK: tl.constexpr):
+    offs = tl.arange(0, BLOCK)
+    a = tl.load(a_ptr + offs[:, None] * BLOCK + offs[None, :])
+    b = tl.load(b_ptr + offs[:, None] * BLOCK + offs[None, :])
+    acc = tl.zeros((BLOCK, BLOCK), dtype=tl.float32)
+    acc = tl.dot(a, b, acc)
+    tl.store(c_ptr + offs[:, None] * BLOCK + offs[None, :], acc)
+
+BLOCK = 32
+a = torch.randn(BLOCK, BLOCK, device="cuda", dtype=torch.float16)
+b = torch.randn(BLOCK, BLOCK, device="cuda", dtype=torch.float16)
+c = torch.empty(BLOCK, BLOCK, device="cuda", dtype=torch.float32)
+_dot_probe[(1,)](a, b, c, BLOCK=BLOCK)
+torch.cuda.synchronize()
+PYEOF
+triton_dot_works() {
+    PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" "$SRC_DIR/_triton_dot_probe.py" >/dev/null 2>&1
+}
+if triton_dot_works; then
+    log "triton $(mod_version triton) runs tl.dot on this GPU"
+else
+    log "triton $(mod_version triton) does not run tl.dot on this GPU — installing $TRITON_SPEC"
+    PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y triton 2>/dev/null || true
+    pipi -q "$TRITON_SPEC" --no-deps
+    if triton_dot_works; then
+        log "triton $(mod_version triton) runs tl.dot on this GPU"
+    else
+        warn "triton still does not run tl.dot on this GPU; FlexGEMM's sparse conv kernels will fail at generation time"
     fi
 fi
 
