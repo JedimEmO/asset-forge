@@ -175,6 +175,34 @@ def test_inner_command_wraps_wsl_in_wsl_exe_with_a_restricted_env(backends_tree,
     assert "-m forge_gen.motion.session --inner --prompt walk" in joined
 
 
+def test_translate_argv_paths_maps_windows_absolute_paths_only():
+    argv = [
+        r"H:\src\asset-forge\assets-src\refs\props\barrel2.png",
+        "--preset",
+        "prop",
+        "--out",
+        r"H:\src\asset-forge\out\lifts\barrel2.glb",
+        "relative/path.json",
+    ]
+    translated = launcher._translate_argv_paths(argv)
+    assert translated[0] == "/mnt/h/src/asset-forge/assets-src/refs/props/barrel2.png"
+    assert translated[1:3] == ["--preset", "prop"]
+    assert translated[4] == "/mnt/h/src/asset-forge/out/lifts/barrel2.glb"
+    assert translated[5] == "relative/path.json", "a relative path is not Windows-absolute and passes through"
+
+
+def test_inner_command_translates_windows_paths_in_argv_for_wsl(backends_tree, monkeypatch):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "nt")
+    interpreter = launcher.resolve_interpreter(backend)
+    argv = ["--image", r"H:\src\asset-forge\assets-src\refs\props\barrel2.png"]
+    command = launcher.inner_command(backend, "mesh", argv, interpreter, env={})
+    joined = " ".join(command)
+    assert "H:\\src" not in joined, "a Windows path in argv must not reach wsl.exe verbatim"
+    assert "/mnt/h/src/asset-forge/assets-src/refs/props/barrel2.png" in joined
+
+
 def test_run_inner_without_checkout_is_missing(installed_tree):
     backend = backends.load_backend("ardy")
     os.remove(backend.checkout)

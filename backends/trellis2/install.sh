@@ -65,6 +65,11 @@ TORCH_VERSION_EXPECT="$(printf '%s' "$TORCH_SPEC" | sed -n 's/^torch==\([0-9.]*\
 TRANSFORMERS_SPEC="transformers==4.57.6" # 5.x restructured DINOv3ViTModel; the pipeline indexes model.layer directly
 UTILS3D_SPEC="utils3d @ git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"
 FLASH_ATTN_SPEC="flash-attn==2.7.3"
+# trellis2's sparse sampler has no sdpa fallback (see below); this is what
+# runs when flash-attn's from-source build fails. Pinned to a release whose
+# own PyPI metadata pairs it with $TORCH_SPEC, installed --no-deps from
+# $TORCH_INDEX so it never floats the torch pin as a side effect.
+XFORMERS_SPEC="xformers==0.0.30"
 NVDIFFRAST_URL="https://github.com/NVlabs/nvdiffrast.git"
 NVDIFFRAST_TAG="v0.4.0"
 CUMESH_URL="https://github.com/JeffreyXiang/CuMesh.git"
@@ -244,14 +249,60 @@ else
             wheel==0.47.0 setuptools==83.0.0 huggingface_hub==0.36.2 "$UTILS3D_SPEC"
     fi
 
-    # flash-attn: --no-build-isolation (its metadata imports torch). Absent,
-    # the launcher runs with ATTN_BACKEND=sdpa — slower, correct.
+    # flash-attn: --no-build-isolation (its metadata imports torch). have_mod
+    # actually imports it, so it catches a stale build too (a torch bump
+    # leaves the old flash_attn_2_cuda.so ABI-broken, "undefined symbol",
+    # even though `pip show` still calls it 2.7.3 present) — but pip's own
+    # version check does not know that, and would silently no-op a
+    # reinstall of the exact same pinned version, so a broken import is
+    # uninstalled first to force a real rebuild.
+    #
+    # sdpa is not a fallback here — trellis2/modules/sparse/config.py's own
+    # ATTN whitelist is only xformers/flash_attn/flash_attn_3; the sparse
+    # diffusion sampler has no sdpa path at all. xformers is the fallback,
+    # pinned to a version its own PyPI metadata pairs with $TORCH_SPEC and
+    # installed --no-deps: an unconstrained `pip install xformers` pulls in
+    # whatever torch it wants as a dependency, silently floating the pinned
+    # version everything else here was built against.
     if have_mod flash_attn; then
         log "flash-attn $(mod_version flash_attn) present"
     else
+        if "$ENV_DIR/bin/python" -m pip show flash-attn >/dev/null 2>&1; then
+            log "flash-attn is installed but broken (stale build against a prior torch) — uninstalling before rebuild"
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y flash-attn
+        fi
         log "pip: $FLASH_ATTN_SPEC --no-build-isolation (minutes; a failure here is a warning)"
-        if ! pipi -q "$FLASH_ATTN_SPEC" --no-build-isolation; then
-            warn "flash-attn did not install; the lift will run with ATTN_BACKEND=sdpa (slower, correct)"
+        pipi -q "$FLASH_ATTN_SPEC" --no-build-isolation || true
+        # pip reports success even when the built extension is ABI-broken
+        # (it does not run an import check) — have_mod is what actually
+        # proves it, same as the check this whole branch started from.
+        if ! have_mod flash_attn; then
+            warn "flash-attn did not build a working import"
+            # Left half-installed, it poisons xformers too:
+            # xformers/ops/fmha/flash.py imports flash_attn itself at module
+            # load, unconditionally. Gone entirely, that import fails cleanly
+            # (ModuleNotFoundError, which xformers' own optional-backend
+            # guard expects) instead of hitting the same broken .so again.
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y flash-attn 2>/dev/null || true
+        fi
+    fi
+    # xformers.ops, not the bare package: a version built for a different
+    # torch (its own prebuilt wheels are only ever paired with one exact
+    # pin) still lets `import xformers` succeed — its C++/CUDA extension
+    # just silently fails to load — and only breaks on the submodule
+    # mesh.py actually calls (xformers.ops.memory_efficient_attention).
+    if have_mod xformers.ops; then
+        log "xformers $(mod_version xformers) present"
+    elif have_mod flash_attn; then
+        log "flash-attn is present; xformers not needed"
+    else
+        if "$ENV_DIR/bin/python" -m pip show xformers >/dev/null 2>&1; then
+            log "xformers is installed but not built for this torch — uninstalling before reinstall"
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y xformers
+        fi
+        log "pip: $XFORMERS_SPEC --no-deps --index-url $TORCH_INDEX (flash-attn's fallback — trellis2's sparse sampler has no sdpa path)"
+        if ! pipi -q "$XFORMERS_SPEC" --no-deps --index-url "$TORCH_INDEX"; then
+            warn "xformers did not install either; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
         fi
     fi
 

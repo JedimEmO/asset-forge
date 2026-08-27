@@ -522,7 +522,23 @@ def run_in_trellis_env(ns: argparse.Namespace) -> dict:
         try:
             import flash_attn  # noqa: F401, PLC0415
         except ImportError:
-            os.environ["ATTN_BACKEND"] = "sdpa"
+            # Not sdpa: trellis2/modules/sparse/config.py's own ATTN
+            # whitelist is only xformers/flash_attn/flash_attn_3 — the
+            # sparse diffusion sampler has no sdpa path at all, and would
+            # silently keep its hardcoded 'flash_attn' default (then crash
+            # importing the very module this branch is working around).
+            # xformers is accepted by both the sparse and non-sparse config,
+            # so it is the one universal fallback.
+            try:
+                import xformers.ops  # noqa: F401, PLC0415
+            except ImportError as err:
+                raise MissingTool(
+                    "neither flash-attn nor xformers is importable in the trellis2 env — no attention "
+                    "backend is available (sdpa is not a fallback: trellis2's sparse sampler does not support it)",
+                    tool="flash-attn",
+                    hint="bash backends/trellis2/install.sh --yes",
+                ) from err
+            os.environ["ATTN_BACKEND"] = "xformers"
     attn_backend = os.environ.get("ATTN_BACKEND", "flash_attn")
 
     # The texture baker is consent-gated at install; without it there is no

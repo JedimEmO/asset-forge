@@ -36,6 +36,7 @@ from __future__ import annotations
 import collections
 import json
 import os
+import re
 import shlex
 import shutil
 import string
@@ -109,6 +110,25 @@ def _win_to_wsl_path(path: Path) -> str:
     if not drive:
         return resolved.replace("\\", "/")
     return f"/mnt/{drive.rstrip(':').lower()}{rest.replace(chr(92), '/')}"
+
+
+#: A Windows absolute path, e.g. ``H:\src\asset-forge\...`` or ``H:/...``.
+_WINDOWS_ABS_PATH = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _translate_argv_paths(argv: list[str]) -> list[str]:
+    """``argv``, with every Windows-absolute-looking value mapped to its WSL form.
+
+    The outer launcher runs natively and resolves file arguments (a
+    reference image, ``--out``, ``--record``, ...) to absolute Windows paths
+    before handing off to the inner half; a bare ``H:\\...`` string means
+    nothing inside the distro and is read back as a relative path joined
+    onto whatever the inner process's cwd happens to be — the exact bug this
+    fixes (a lift refusing to find its own reference image). Only values
+    that already look like a Windows absolute path are touched; flags,
+    presets and relative paths pass through unchanged.
+    """
+    return [_win_to_wsl_path(Path(arg)) if _WINDOWS_ABS_PATH.match(arg) else arg for arg in argv]
 
 
 def _wsl_interpreter(backend: Backend) -> WslInterpreter | None:
@@ -419,10 +439,15 @@ def inner_command(
     The env forwarded into a WSL child is restricted to what the inner
     process actually needs: ``PYTHONPATH``, ``PYTHONNOUSERSITE``,
     ``FORGE_BACKEND``, and every key ``backend.toml``'s ``[env]``/``[env.force]``
-    declares — not the rest of the Windows environment.
+    declares — not the rest of the Windows environment. ``argv`` itself is
+    translated the same way (see :func:`_translate_argv_paths`): the outer
+    half resolves file arguments to absolute Windows paths before this is
+    ever called, and those mean nothing inside the distro.
     """
     interpreter = interpreter or resolve_interpreter(backend)
     name = module if module.startswith("forge_gen.") else f"forge_gen.{module}"
+    if isinstance(interpreter, WslInterpreter):
+        argv = _translate_argv_paths(argv)
     inner_argv = ["-m", name, "--inner", *argv]
     if isinstance(interpreter, WslInterpreter):
         wanted = ["PYTHONPATH", "PYTHONNOUSERSITE", "FORGE_BACKEND", *backend.env, *backend.env_force]
