@@ -17,7 +17,7 @@
 //! toolkit not being findable is a 6 of this side's own — the tool that is
 //! missing is `python/forge_gen`, and the hint names `FORGE_HOME`.
 
-use std::io::{BufRead as _, BufReader, Write as _};
+use std::io::{Read, Write as _};
 use std::process::{Command, Stdio};
 
 use forge_library::Project;
@@ -144,6 +144,48 @@ pub(crate) fn run(project: &Project, args: &GenArgs) -> Outcome {
     }
 }
 
+/// Read a child's stdout, splitting on `\n` at the byte level rather than
+/// `BufRead::lines()`, whose UTF-8 check is all-or-nothing: one invalid byte
+/// anywhere in the stream discards every line already buffered, not just
+/// the bad one — measured losing a whole ~80s WSL2 probe's JSON this way,
+/// with the underlying bytes themselves perfectly valid UTF-8 on a second,
+/// whole-stream read (`read_to_end`), so the corruption was in the
+/// incremental reader, not the data. Each line is decoded lossily instead
+/// (any actually-bad byte becomes U+FFFD, never a lost line) and the last
+/// one is held back rather than relayed, so the caller can parse it as a
+/// possible JSON payload without it being printed twice.
+fn relay_lines<R: Read>(mut reader: R, relay: bool) -> Option<String> {
+    let mut held: Option<String> = None;
+    let mut carry: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 8192];
+    let mut out = std::io::stdout().lock();
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        carry.extend_from_slice(&buf[..n]);
+        while let Some(pos) = carry.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = carry.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes[..line_bytes.len() - 1]).into_owned();
+            if let Some(previous) = held.replace(line)
+                && relay
+            {
+                let _ = writeln!(out, "{previous}");
+                let _ = out.flush();
+            }
+        }
+    }
+    if !carry.is_empty()
+        && let Some(previous) = held.replace(String::from_utf8_lossy(&carry).into_owned())
+        && relay
+    {
+        let _ = writeln!(out, "{previous}");
+        let _ = out.flush();
+    }
+    held
+}
+
 /// Spawn `python3 <toolkit>/python/forge_gen <argv> --project <root> --json`,
 /// stream its stdout through (holding the last line back), and return what
 /// it exited with and the object on that last line.
@@ -189,20 +231,11 @@ fn spawn_with(
         )
     })?;
     let stdout = child.stdout.take();
-    let mut held: Option<String> = None;
-    if let Some(stdout) = stdout {
-        let reader = BufReader::new(stdout);
-        let mut out = std::io::stdout().lock();
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            if let Some(previous) = held.replace(line)
-                && relay
-            {
-                let _ = writeln!(out, "{previous}");
-                let _ = out.flush();
-            }
-        }
-    }
+    let held = if let Some(stdout) = stdout {
+        relay_lines(stdout, relay)
+    } else {
+        None
+    };
     let status = child
         .wait()
         .map_err(|e| Failure::from_gen(GenExit::BackendFailed, format!("forge-gen: {e}")))?;
