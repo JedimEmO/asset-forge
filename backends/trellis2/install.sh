@@ -44,11 +44,24 @@ parse_common_flags "$@"
 UPSTREAM="https://github.com/microsoft/TRELLIS.2"
 COMMIT="75fbf0183001ed9876c8dbb35de6b68552ee08bd"
 PYVER="3.11"
-CUDA_LABEL="nvidia/label/cuda-12.4.1"   # the label channel: plain cuda-toolkit=12.4 floats components to 13.x
-CUDA_RELEASE="12.4"
-GCC_MAJOR="13"                          # CUDA 12.4's host_config.h refuses gcc > 13
-TORCH_SPEC="torch==2.6.0 torchvision==0.21.0"
-TORCH_INDEX="https://download.pytorch.org/whl/cu124"
+CUDA_LABEL="nvidia/label/cuda-12.8.1"   # the label channel: plain cuda-toolkit=12.4 floats components to 13.x
+CUDA_RELEASE="12.8"
+GCC_MAJOR="13"                          # CUDA 12.4's host_config.h refuses gcc > 13; 12.8's ceiling is the same
+# EXPERIMENTAL 2026-08-27: bumped from the upstream-pinned torch==2.6.0+cu124
+# because stable PyTorch has no sm_120 (RTX 50-series/Blackwell) kernels
+# before 2.7.0+cu128 — cu124 detects the GPU but cannot run a kernel on it.
+# This moves off Microsoft's verified combination; watch for anything
+# torch-2.6-specific in TRELLIS.2's own pipeline code, not just the
+# extensions (which rebuild from source against whatever torch is present).
+TORCH_SPEC="torch==2.7.0 torchvision==0.22.0"
+TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+# What `pip show torch`'s Version ends up as, e.g. "2.7.0+cu128" — derived,
+# not re-typed, so the idempotency check below never drifts from the pins
+# above the way a hand-copied literal did (it used to re-run the whole torch
+# + flash-attn install, flash-attn's --no-build-isolation compile included,
+# on every single re-run once the pins moved past what it still compared
+# against).
+TORCH_VERSION_EXPECT="$(printf '%s' "$TORCH_SPEC" | sed -n 's/^torch==\([0-9.]*\).*/\1/p')+$(printf '%s' "$TORCH_INDEX" | sed -n 's#.*/##p')"
 TRANSFORMERS_SPEC="transformers==4.57.6" # 5.x restructured DINOv3ViTModel; the pipeline indexes model.layer directly
 UTILS3D_SPEC="utils3d @ git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"
 FLASH_ATTN_SPEC="flash-attn==2.7.3"
@@ -171,8 +184,24 @@ else
         fi
         log "cuda-toolkit $release present"
     else
-        log "conda install --override-channels -c $CUDA_LABEL cuda-toolkit"
-        "$(conda_bin)" install -y -q -p "$ENV_DIR" --override-channels -c "$CUDA_LABEL" cuda-toolkit
+        log "conda install --override-channels -c $CUDA_LABEL -c defaults cuda-toolkit"
+        # defaults, alongside the label: 12.8.1's cuda-nvml-dev needs
+        # libstdcxx-ng >=11.2.0, which the label channel alone does not
+        # carry (12.4.1's did, or it was already cached) — --override-channels
+        # still keeps out anything from the user's own conda config.
+        "$(conda_bin)" install -y -q -p "$ENV_DIR" --override-channels -c "$CUDA_LABEL" -c defaults cuda-toolkit
+    fi
+    # 12.8.1's package keeps its headers only under targets/x86_64-linux/
+    # include/ (12.4.1's landed them at the top level too, or a prior conda
+    # release did the linking) — every downstream build (nvdiffrast et al.)
+    # expects $CUDA_HOME/include/cuda_runtime.h directly. Symlinked in,
+    # never overwriting a header conda's other packages already placed there.
+    if [ -d "$ENV_DIR/targets/x86_64-linux/include" ] && [ ! -e "$ENV_DIR/include/cuda_runtime.h" ]; then
+        for header in "$ENV_DIR"/targets/x86_64-linux/include/*; do
+            name="$(basename "$header")"
+            [ -e "$ENV_DIR/include/$name" ] || ln -s "$header" "$ENV_DIR/include/$name"
+        done
+        log "linked $(ls "$ENV_DIR/targets/x86_64-linux/include" | wc -l) CUDA headers into $ENV_DIR/include"
     fi
 
     # gcc 13 in the env, exported at build time and at run time (the JIT).
@@ -188,8 +217,8 @@ else
     # a typing_extensions wheel whose metadata name the stock pip
     # mis-normalises, and the sdist fallback cannot see flit_core because
     # --index-url replaced PyPI.
-    if have_mod torch && [ "$(mod_version torch)" = "2.6.0+cu124" ]; then
-        log "torch 2.6.0+cu124 present"
+    if have_mod torch && [ "$(mod_version torch)" = "$TORCH_VERSION_EXPECT" ]; then
+        log "torch $TORCH_VERSION_EXPECT present"
     else
         log "pip: pip, typing-extensions, then $TORCH_SPEC from $TORCH_INDEX"
         pipi -q -U pip

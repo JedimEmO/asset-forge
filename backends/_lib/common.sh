@@ -188,6 +188,19 @@ env_python() {
     if [ -x "$link/bin/python" ]; then echo "$link/bin/python"; else echo "$link/bin/python3"; fi
 }
 
+# _wsl_marker — write <backend>/.wsl-distro (just the distro name) whenever
+# this install is running inside WSL2 ($WSL_DISTRO_NAME, which WSL sets in
+# every session). A native-Windows `forge` uses its presence to route the
+# interpreter through `wsl.exe -d <distro>`, which resolves the .env/.checkout
+# symlinks above itself from inside the distro — they are POSIX symlinks to a
+# Linux path and a Windows process cannot read them directly. Nothing else
+# about link_env/link_checkout changes, and on real Linux/macOS
+# $WSL_DISTRO_NAME is never set, so this is a no-op there.
+_wsl_marker() {
+    [ -n "${WSL_DISTRO_NAME:-}" ] || return 0
+    printf '%s\n' "$WSL_DISTRO_NAME" > "$BACKEND_DIR/.wsl-distro"
+}
+
 # ----------------------------------------------------------------- receipt --
 
 # write_installed_json — installed.json beside backend.toml: the commit the
@@ -217,6 +230,7 @@ write_installed_json() {
 }
 EOF
     log "wrote installed.json (python $pyver, torch ${torch//\"/}, adopted=$adopted)"
+    _wsl_marker
 }
 
 # ---------------------------------------------------------------- hf token --

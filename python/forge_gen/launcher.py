@@ -10,8 +10,19 @@ package on ``PYTHONPATH`` so the inner half is the same source tree.
 Resolution order for the interpreter::
 
     $FORGE_BACKEND_<NAME_UPPER>_PYTHON   a binary or a prefix
+    backends/<name>/.wsl-distro           a WSL2 install, native Windows only
     backends/<name>/.env/bin/python      the symlink install.sh wrote
     → MissingBackend (exit 3, with the install line as the hint)
+
+A backend whose CUDA extensions need a Linux host toolchain (trellis2, on
+Windows) is installed by running its unmodified install.sh inside a WSL2
+distro instead — nothing about install.sh changes for that, and native
+Linux/macOS installs are untouched either way. What differs is only how a
+native-Windows `forge` reaches it afterwards: install.sh's usual `.env`/
+`.checkout` symlinks point at a Linux path a Windows process cannot read, so
+`.wsl-distro` (just the distro name) tells the launcher to go through
+`wsl.exe -d <distro>` instead, which resolves those same symlinks itself
+from inside the distro. See :class:`WslInterpreter`.
 
 Blender is a host tool, not a backend: ``$BLENDER_BIN``, else ``blender`` on
 PATH, else exit 6. It is run ``--background --factory-startup`` so a user's
@@ -25,13 +36,14 @@ from __future__ import annotations
 import collections
 import json
 import os
+import shlex
 import shutil
 import string
 import subprocess
 import sys
 import threading
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from forge_gen import exit_codes
 from forge_gen.backends import Backend
@@ -68,12 +80,58 @@ def _python_under(prefix: Path) -> Path | None:
     return None
 
 
-def resolve_interpreter(backend: Backend) -> Path:
+@dataclass(frozen=True)
+class WslInterpreter:
+    """A backend whose env was installed inside WSL2, reached through ``wsl.exe``.
+
+    ``install.sh`` writes ``.env``/``.checkout`` as POSIX symlinks to a Linux
+    path; a native Windows process cannot read those directly (they resolve
+    to nothing it understands), so this bridges by handing the *repo-relative*
+    path to ``wsl.exe`` and letting the distro resolve its own symlinks —
+    they are valid there, since it wrote them.
+    """
+
+    #: The distro named in ``<backend>/.wsl-distro``.
+    distro: str
+    #: ``<backend-dir>``, translated to its ``/mnt/<drive>/...`` form.
+    backend_dir_wsl: str
+
+
+def _win_to_wsl_path(path: Path) -> str:
+    """``H:\\src\\asset-forge`` -> ``/mnt/h/src/asset-forge`` — the default WSL2 drive mount.
+
+    Only meaningful on Windows; a custom ``automount root`` in the distro's
+    ``/etc/wsl.conf`` would need a different prefix, which this does not
+    detect.
+    """
+    resolved = str(path.resolve())
+    drive, rest = os.path.splitdrive(resolved)
+    if not drive:
+        return resolved.replace("\\", "/")
+    return f"/mnt/{drive.rstrip(':').lower()}{rest.replace(chr(92), '/')}"
+
+
+def _wsl_interpreter(backend: Backend) -> WslInterpreter | None:
+    """``.wsl-distro``, when this is a native-Windows process and it exists."""
+    if os.name != "nt":
+        return None
+    marker = backend.wsl_marker
+    if not marker.is_file():
+        return None
+    distro = marker.read_text(encoding="utf-8").strip()
+    if not distro:
+        return None
+    return WslInterpreter(distro=distro, backend_dir_wsl=_win_to_wsl_path(backend.dir))
+
+
+def resolve_interpreter(backend: Backend) -> Path | WslInterpreter:
     """The interpreter that runs this backend's inner half, or :class:`MissingBackend`.
 
     The override may name the binary or its prefix. The ``.env`` link is
     always a prefix; a link with no ``bin/python`` under it is an install
-    that did not finish, and says so.
+    that did not finish, and says so. A WSL2 install (see
+    :class:`WslInterpreter`) is checked before the native ``.env`` link,
+    since that link is unreadable from native Windows anyway.
     """
     override = os.environ.get(override_var(backend.name))
     if override:
@@ -88,6 +146,9 @@ def resolve_interpreter(backend: Backend) -> Path:
             backend=backend.name,
             hint=f"unset it, or point it at the env: {backend.install_hint()}",
         )
+    wsl = _wsl_interpreter(backend)
+    if wsl is not None:
+        return wsl
     link = backend.env_link
     if link.is_symlink() and not link.exists():
         raise MissingBackend(
@@ -111,18 +172,37 @@ def resolve_interpreter(backend: Backend) -> Path:
     )
 
 
-def prefix_of(backend: Backend, interpreter: Path | None = None) -> Path:
+def prefix_of(backend: Backend, interpreter: Path | WslInterpreter | None = None) -> Path | PurePosixPath:
     """The env prefix (``${PREFIX}`` in ``[env]``): the directory above ``bin/``."""
     interpreter = interpreter or resolve_interpreter(backend)
+    if isinstance(interpreter, WslInterpreter):
+        return PurePosixPath(f"{interpreter.backend_dir_wsl}/.env")
     resolved = interpreter.resolve()
     if resolved.parent.name == "bin":
         return resolved.parent.parent
     return resolved.parent
 
 
-def _expansion_mapping(backend: Backend, interpreter: Path) -> dict[str, str]:
-    """What ``${...}`` in an ``[env]`` value may name: the placeholders, plus the ambient environment."""
+def _expansion_mapping(backend: Backend, interpreter: Path | WslInterpreter) -> dict[str, str]:
+    """What ``${...}`` in an ``[env]`` value may name: the placeholders, plus the ambient environment.
+
+    For a :class:`WslInterpreter`, every placeholder is the WSL-side symlink
+    itself (``.env``, ``.checkout``, ...) rather than its resolved target —
+    the distro resolves those; a native Windows process cannot.
+    """
     mapping = dict(os.environ)
+    if isinstance(interpreter, WslInterpreter):
+        base = interpreter.backend_dir_wsl
+        mapping.update(
+            {
+                "PREFIX": f"{base}/.env",
+                "CHECKOUT": f"{base}/.checkout",
+                "BACKEND_DIR": base,
+                "TEXT_ENCODERS": f"{base}/.text-encoders",
+                "CHECKPOINTS": f"{base}/.checkpoints",
+            }
+        )
+        return mapping
     mapping.update(
         {
             "PREFIX": str(prefix_of(backend, interpreter)),
@@ -135,7 +215,7 @@ def _expansion_mapping(backend: Backend, interpreter: Path) -> dict[str, str]:
     return mapping
 
 
-def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, str]:
+def inner_env(backend: Backend, interpreter: Path | WslInterpreter | None = None) -> dict[str, str]:
     """The environment the inner process runs with.
 
     ``os.environ`` with this package prepended to ``PYTHONPATH``, then every
@@ -151,10 +231,16 @@ def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, st
     ``.pth`` hooks.
     """
     env = dict(os.environ)
-    python_path = str(python_dir())
-    existing = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = python_path if not existing else os.pathsep.join([python_path, existing])
     interpreter = interpreter or resolve_interpreter(backend)
+    if isinstance(interpreter, WslInterpreter):
+        # The ambient Windows PYTHONPATH (if any) is semicolon-separated
+        # Windows paths, meaningless to the Linux side — dropped rather than
+        # joined onto the translated toolkit path.
+        env["PYTHONPATH"] = _win_to_wsl_path(python_dir())
+    else:
+        python_path = str(python_dir())
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = python_path if not existing else os.pathsep.join([python_path, existing])
     mapping = _expansion_mapping(backend, interpreter)
     env.setdefault("PYTHONNOUSERSITE", "1")
     env.setdefault("FORGE_BACKEND", backend.name)
@@ -165,7 +251,7 @@ def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, st
     return env
 
 
-def env_shadowing(backend: Backend, interpreter: Path | None = None) -> list[tuple[str, str, str]]:
+def env_shadowing(backend: Backend, interpreter: Path | WslInterpreter | None = None) -> list[tuple[str, str, str]]:
     """``(key, ambient, configured)`` for every plain ``[env]`` entry the shell overrides.
 
     Exactly the cases where :func:`inner_env`'s setdefault lets the ambient
@@ -294,11 +380,56 @@ def stream(
     return RunResult(code=code, tail=list(tail), result=result)
 
 
-def inner_command(backend: Backend, module: str, argv: list[str], interpreter: Path | None = None) -> list[str]:
-    """``<python> -m forge_gen.<module> --inner <argv>``."""
+def external_command(
+    interpreter: Path | WslInterpreter,
+    argv: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    wsl_cwd: str | None = None,
+) -> list[str]:
+    """``<interpreter> argv...``, wrapped through ``wsl.exe -d <distro>`` for a :class:`WslInterpreter`.
+
+    ``wsl.exe`` does not forward the Windows environment into the distro, so
+    ``env`` — when given — is threaded through explicitly as
+    ``env KEY=VALUE ...`` inside it; ``wsl_cwd``, a WSL-side POSIX directory,
+    becomes a ``cd`` wrapped around the same command (``env --chdir`` is not
+    old enough to assume every distro has it).
+    """
+    if isinstance(interpreter, WslInterpreter):
+        python = f"{interpreter.backend_dir_wsl}/.env/bin/python"
+        assignments = [f"{key}={value}" for key, value in (env or {}).items()]
+        inner = [python, *argv]
+        if wsl_cwd:
+            shell = "cd " + shlex.quote(wsl_cwd) + " && exec env " + " ".join(shlex.quote(a) for a in [*assignments, *inner])
+            return ["wsl.exe", "-d", interpreter.distro, "--", "sh", "-c", shell]
+        return ["wsl.exe", "-d", interpreter.distro, "--", "env", *assignments, *inner]
+    return [str(interpreter), *argv]
+
+
+def inner_command(
+    backend: Backend,
+    module: str,
+    argv: list[str],
+    interpreter: Path | WslInterpreter | None = None,
+    *,
+    env: dict[str, str] | None = None,
+) -> list[str]:
+    """``<python> -m forge_gen.<module> --inner <argv>`` via :func:`external_command`.
+
+    The env forwarded into a WSL child is restricted to what the inner
+    process actually needs: ``PYTHONPATH``, ``PYTHONNOUSERSITE``,
+    ``FORGE_BACKEND``, and every key ``backend.toml``'s ``[env]``/``[env.force]``
+    declares — not the rest of the Windows environment.
+    """
     interpreter = interpreter or resolve_interpreter(backend)
     name = module if module.startswith("forge_gen.") else f"forge_gen.{module}"
-    return [str(interpreter), "-m", name, "--inner", *argv]
+    inner_argv = ["-m", name, "--inner", *argv]
+    if isinstance(interpreter, WslInterpreter):
+        wanted = ["PYTHONPATH", "PYTHONNOUSERSITE", "FORGE_BACKEND", *backend.env, *backend.env_force]
+        restricted = {key: env[key] for key in dict.fromkeys(wanted) if env and key in env}
+        wsl_cwd = f"{interpreter.backend_dir_wsl}/.checkout" if backend.cwd == "checkout" else None
+        return external_command(interpreter, inner_argv, env=restricted, wsl_cwd=wsl_cwd)
+    return external_command(interpreter, inner_argv)
 
 
 def run_inner(backend: Backend, module: str, argv: list[str], *, timeout: float | None = None) -> int:
@@ -316,6 +447,12 @@ def run_inner_result(
     """As :func:`run_inner`, returning the tail (and the held JSON line) as well."""
     interpreter = resolve_interpreter(backend)
     env = inner_env(backend, interpreter)
+    if isinstance(interpreter, WslInterpreter):
+        # Everything the inner process needs is threaded through the
+        # command line itself (see inner_command); inner_cwd's existence
+        # check is native-only and unreliable against a WSL-written symlink.
+        command = inner_command(backend, module, argv, interpreter, env=env)
+        return stream(command, env=None, cwd=None, hold_json=hold_json, timeout=timeout)
     cwd = inner_cwd(backend)
     command = inner_command(backend, module, argv, interpreter)
     return stream(command, env=env, cwd=cwd, hold_json=hold_json, timeout=timeout)

@@ -29,7 +29,7 @@ default:
 # `cargo test -p forge_library` never pays it. forge_capture rides along so
 # `smoke` finds its example already compiled.
 _build:
-    cargo build -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge -p forge_capture
+    cargo build -q --manifest-path "{{justfile_directory()}}/Cargo.toml" -p forge -p forge_capture
 
 # ------------------------------------------------------------------ setup --
 
@@ -82,6 +82,66 @@ setup backend="all" *flags:
         bash backends/{{backend}}/install.sh {{flags}}
     fi
 
+# Windows only, for a backend whose CUDA extensions need a Linux host
+# toolchain (trellis2's nvdiffrast/CuMesh/FlexGEMM/o-voxel — MSVC is not a
+# drop-in for the gcc `nvcc` expects there). Runs the *same* unmodified
+# install.sh inside a WSL2 distro — nothing about install.sh is WSL-aware,
+# it just runs on real Linux — and by default puts the env under the
+# distro's own filesystem (~/.cache/asset-forge/backends), never under
+# /mnt/<drive>/..., because a conda env or venv on the DrvFs-mounted
+# Windows drive is both slow and where symlinks are unreliable; set
+# FORGE_BACKENDS_HOME yourself first to override that. `just doctor` and
+# `forge gen` on the Windows side find it afterwards through
+# backends/<name>/.wsl-distro, which install.sh writes automatically
+# whenever it detects it is running inside WSL2 ($WSL_DISTRO_NAME) — see
+# python/forge_gen/launcher.py's WslInterpreter.
+#
+# Install a backend inside WSL2: `just setup-wsl trellis2 --yes` (Ubuntu; `just setup-wsl trellis2 Debian --yes` for another distro)
+setup-wsl backend distro="Ubuntu" *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v wsl.exe >/dev/null 2>&1 || { echo "wsl.exe is not on PATH — install WSL2 first (\`wsl --install\`, in an elevated PowerShell)" >&2; exit 2; }
+    [ -f "backends/{{backend}}/install.sh" ] || { echo "no backends/{{backend}}/install.sh — known: $(ls backends/*/install.sh | xargs -n1 dirname | xargs -n1 basename | tr '\n' ' ')" >&2; exit 2; }
+    win_dir="{{justfile_directory()}}"
+    drive="$(printf '%s' "$win_dir" | cut -c1 | tr 'A-Z' 'a-z')"
+    rest="$(printf '%s' "$win_dir" | cut -c3- | tr '\134' '/')"
+    wsl_dir="/mnt/$drive$rest"
+    # A single quoted -c string chained through just -> bash -> wsl.exe -> bash
+    # is fragile — a variable can leak through un-escaped depending on which
+    # shell layer runs the recipe, and it is genuinely hard to audit. A real
+    # script file removes the hazard: only one thing crosses the boundary,
+    # its /mnt/... path, and bash reads the rest as its own source, no
+    # re-quoting anywhere. Under target/ (already gitignored, already on the
+    # drive $wsl_dir names) rather than a system mktemp path, whose drive
+    # this recipe has no way to translate.
+    mkdir -p target
+    script="target/setup-wsl-$$.sh"
+    trap 'rm -f "$script"' EXIT
+    cat > "$script" <<SETUP_WSL_SCRIPT
+    set -euo pipefail
+    cd '$wsl_dir'
+    # bash run non-interactively (as this script is) skips Ubuntu's default
+    # .bashrc: its interactive guard, near the top, returns before a
+    # \`conda init bash\` block appended later in that file ever runs, so conda
+    # stays off PATH even after a normal conda install. Found directly instead:
+    # every common conda/miniconda install root, tried in order.
+    for c in "\$HOME/miniconda3" "\$HOME/anaconda3" "\$HOME/miniforge3" /opt/conda; do
+        if [ -x "\$c/bin/conda" ]; then
+            export PATH="\$c/bin:\$PATH"
+            break
+        fi
+    done
+    bash backends/{{backend}}/install.sh {{flags}}
+    SETUP_WSL_SCRIPT
+    script_wsl="$wsl_dir/target/$(basename "$script")"
+    echo "setup-wsl: running backends/{{backend}}/install.sh inside WSL2 ({{distro}})" >&2
+    # MSYS_NO_PATHCONV: Git Bash auto-converts a POSIX-looking argument
+    # (/mnt/h/...) into a Windows path before handing it to any non-MSYS
+    # exe — wsl.exe included — which mangles it into nonsense
+    # ("C:/Program Files/Git/mnt/h/..."). This is the one call that needs
+    # the real /mnt/... form untouched.
+    MSYS_NO_PATHCONV=1 wsl.exe -d "{{distro}}" -- bash "$script_wsl"
+
 # A release build of the CLI onto PATH (~/.cargo/bin), for shells that are
 # not sitting in this checkout — `forge init` in your game is the usual
 # reason. The recipes themselves never need it: they build and run
@@ -89,7 +149,7 @@ setup backend="all" *flags:
 #
 # Put a global `forge` on PATH: `just install`
 install:
-    cargo install --path {{justfile_directory()}}/crates/forge --locked
+    cargo install --path "{{justfile_directory()}}/crates/forge" --locked
 
 # ok | partial | missing | broken per backend; exits 1 if any is not ok —
 # partial means the env runs but a weight is not cached, and the first
@@ -99,7 +159,7 @@ install:
 # Every backend, Blender, ffmpeg, the GPU and the rig profile in one table.
 [no-exit-message]
 doctor *flags: _build
-    {{forge}} doctor {{flags}}
+    "{{forge}}" doctor {{flags}}
 
 # Look before you spend: the generators do not share 24 GB, and a second one
 # started blind ends in an OOM, not a queue. Exits 1 when the largest backend
@@ -109,7 +169,7 @@ doctor *flags: _build
 # Who holds the GPU right now.
 [no-exit-message]
 gpu *flags: _build
-    {{forge}} gpu {{flags}}
+    "{{forge}}" gpu {{flags}}
 
 # Not an asset, a law — the one mesh-shaped thing in the library nobody lifts.
 # `forge gen rig-build` (Blender) rebuilds the artifact; this is the data
@@ -122,8 +182,8 @@ gpu *flags: _build
 #
 # Re-export the profile's contract and write its mannequin (rigs/humanoid/).
 rig: _build
-    cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_rig --example export_contract -- {{justfile_directory()}}/rigs/humanoid
-    {{forge}} rig fixture out/fixture/mannequin.glb
+    cargo run -q --manifest-path "{{justfile_directory()}}/Cargo.toml" -p forge_rig --example export_contract -- "{{justfile_directory()}}/rigs/humanoid"
+    "{{forge}}" rig fixture out/fixture/mannequin.glb
 
 # --------------------------------------------------------------- generate --
 
@@ -143,7 +203,7 @@ rig: _build
 # Reference PNG -> textured character mesh via TRELLIS.2, to out/lifts/.
 character name *flags: _build
     mkdir -p out/lifts
-    {{forge}} gen mesh assets-src/refs/characters/{{name}}.png --preset character \
+    "{{forge}}" gen mesh assets-src/refs/characters/{{name}}.png --preset character \
         --out out/lifts/{{name}}.glb --record assets-src/refs/characters/{{name}}.lift.json {{flags}}
 
 # The prop register: 1024³, 6 000 vertices, 1024² texture, seed 42; the same
@@ -152,7 +212,7 @@ character name *flags: _build
 # Reference PNG -> textured prop mesh via TRELLIS.2, to out/lifts/: `just prop barrel`
 prop name *flags: _build
     mkdir -p out/lifts
-    {{forge}} gen mesh assets-src/refs/props/{{name}}.png --preset prop \
+    "{{forge}}" gen mesh assets-src/refs/props/{{name}}.png --preset prop \
         --out out/lifts/{{name}}.glb --record assets-src/refs/props/{{name}}.lift.json {{flags}}
 
 # Refuses a mesh that is not near the T-pose; the fix is always the reference
@@ -162,7 +222,7 @@ prop name *flags: _build
 # Lifted glb -> rigged .blend + rig record in headless Blender.
 rig-mesh name *flags: _build
     mkdir -p assets-src/blender
-    {{forge}} gen rig out/lifts/{{name}}.glb --out assets-src/blender/{{name}}.blend \
+    "{{forge}}" gen rig out/lifts/{{name}}.glb --out assets-src/blender/{{name}}.blend \
         --record assets-src/blender/{{name}}.rig.json --name {{name}} {{flags}}
 
 # Metres; floor, ceiling or grip at the origin; matte — then straight into
@@ -174,14 +234,14 @@ prop-import name *flags: _build
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p out/props
-    {{forge}} gen prop out/lifts/{{name}}.glb --out out/props/{{name}}.glb \
+    "{{forge}}" gen prop out/lifts/{{name}}.glb --out out/props/{{name}}.glb \
         --record out/props/{{name}}.prop.json {{flags}}
     lift=assets-src/refs/props/{{name}}.lift.json
     if [ -f "$lift" ]; then
-        {{forge}} promote model out/props/{{name}}.glb {{name}} --lift-record "$lift" --prop-record out/props/{{name}}.prop.json
+        "{{forge}}" promote model out/props/{{name}}.glb {{name}} --lift-record "$lift" --prop-record out/props/{{name}}.prop.json
     else
         echo "no $lift — the model will say reconstructed, not recorded" >&2
-        {{forge}} promote model out/props/{{name}}.glb {{name}} --prop-record out/props/{{name}}.prop.json
+        "{{forge}}" promote model out/props/{{name}}.glb {{name}} --prop-record out/props/{{name}}.prop.json
     fi
 
 # Needs the GPU: ARDY is ~16 GB, so nothing else large may be resident. One
@@ -197,12 +257,12 @@ sweep prompt *flags: _build
     tag=$(printf '%s' "{{prompt}}" | sha256sum | cut -c1-8)
     dir="out/sweeps/${seed}-${tag}"
     mkdir -p "$dir"
-    {{forge}} gen motion sweep --out-dir "$dir" --prompt "{{prompt}}" {{flags}}
+    "{{forge}}" gen motion sweep --out-dir "$dir" --prompt "{{prompt}}" {{flags}}
     # Not `just review`: from a user project this justfile is run as
     # `just --justfile <toolkit>/justfile --working-directory .`, and a bare
     # `just` inside a recipe would look for a justfile in the project and
     # find none. Call the tool directly.
-    {{forge}} gen motion review "$dir"/*.npz --sheet "$dir"/sheet.png --metrics "$dir"/metrics.json
+    "{{forge}}" gen motion review "$dir"/*.npz --sheet "$dir"/sheet.png --metrics "$dir"/metrics.json
     echo "sheet: $dir/sheet.png  metrics: $dir/metrics.json"
 
 # The metrics table (foot contact, drift, frozen joints) and a contact sheet
@@ -211,7 +271,7 @@ sweep prompt *flags: _build
 #
 # Review a sweep: `just review out/sweeps/0-1a2b3c4d`
 review dir *flags: _build
-    {{forge}} gen motion review {{dir}}/*.npz --sheet {{dir}}/sheet.png --metrics {{dir}}/metrics.json {{flags}}
+    "{{forge}}" gen motion review {{dir}}/*.npz --sheet {{dir}}/sheet.png --metrics {{dir}}/metrics.json {{flags}}
     @echo "sheet: {{dir}}/sheet.png  metrics: {{dir}}/metrics.json"
 
 # Describe the sound, not the game event: material, action, environment,
@@ -220,7 +280,7 @@ review dir *flags: _build
 # One sound effect from a prompt, to out/audio/sfx/: `just sfx door_slam "heavy oak door slams shut"`
 sfx name prompt *flags: _build
     mkdir -p out/audio/sfx
-    {{forge}} gen sfx --prompt "{{prompt}}" --out out/audio/sfx/{{name}}.wav \
+    "{{forge}}" gen sfx --prompt "{{prompt}}" --out out/audio/sfx/{{name}}.wav \
         --record out/audio/sfx/{{name}}.json {{flags}}
 
 # The ACE-Step server stays resident (~8 GB) until `--stop-server`, which can
@@ -229,7 +289,7 @@ sfx name prompt *flags: _build
 # One music track from a prompt, to out/audio/music/.
 music name prompt *flags: _build
     mkdir -p out/audio/music
-    {{forge}} gen music --prompt "{{prompt}}" --out out/audio/music/{{name}}.ogg \
+    "{{forge}}" gen music --prompt "{{prompt}}" --out out/audio/music/{{name}}.ogg \
         --record out/audio/music/{{name}}.json {{flags}}
 
 # Describe who speaks — gender, age, pitch, pace, accent, texture, mood —
@@ -241,7 +301,7 @@ music name prompt *flags: _build
 #
 # Design a voice from a description: `just voice warden "Deep, slow, weathered male voice, grave and calm"`
 voice name describe *flags: _build
-    {{forge}} gen voice {{name}} --describe "{{describe}}" {{flags}}
+    "{{forge}}" gen voice {{name}} --describe "{{describe}}" {{flags}}
 
 # A voice is a reference clip (5–15 s of clean speech). `--voice <name>` is
 # one designed by `just voice` (assets-src/voices/<name>/ref.wav, its record
@@ -251,7 +311,7 @@ voice name describe *flags: _build
 # One spoken line, to out/audio/voice/: `just speech kessa_hold "Hold the line." --voice kessa`
 speech name text *flags: _build
     mkdir -p out/audio/voice
-    {{forge}} gen speech --text "{{text}}" --out out/audio/voice/{{name}}.wav \
+    "{{forge}}" gen speech --text "{{text}}" --out out/audio/voice/{{name}}.wav \
         --record out/audio/voice/{{name}}.json {{flags}}
 
 # ------------------------------------------------------------------- look --
@@ -264,7 +324,7 @@ speech name text *flags: _build
 #
 # One contact sheet of a glb from seven angles: `just views out/lifts/vex_runner.glb`
 views target *flags: _build
-    {{forge}} views {{target}} {{flags}}
+    "{{forge}}" views {{target}} {{flags}}
 
 # Opens on forge.toml's stage_body, else the first body, else the fixture
 # mannequin — never an empty stage. `just studio --model models/barrel.glb`;
@@ -272,11 +332,11 @@ views target *flags: _build
 #
 # Open the viewer: library browser, stage, transport, metadata, audio.
 studio *flags: _build
-    {{forge}} studio {{flags}}
+    "{{forge}}" studio {{flags}}
 
 # The same window, opened on the audio library: hear a file, see it, check the mix.
 play *flags: _build
-    {{forge}} studio --audio {{flags}}
+    "{{forge}}" studio --audio {{flags}}
 
 # Eight poses, three-quarter view, to out/sheets/<clip>.png; `--views all`,
 # `--head-row`, `--body <name>` for another body. Exits 1 when the clip
@@ -284,7 +344,7 @@ play *flags: _build
 #
 # Contact sheet for one clip on the stage body: `just sheet walk`
 sheet clip *flags: _build
-    {{forge}} sheet {{clip}} {{flags}}
+    "{{forge}}" sheet {{clip}} {{flags}}
 
 # Every clip the catalog holds, to out/sheets/. A clip that binds to nothing
 # or never moves is named at the end and fails the recipe; an empty library
@@ -300,10 +360,10 @@ sheets *flags: _build
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         count=$((count + 1))
-        if ! {{forge}} sheet "$name" {{flags}} >/dev/null 2>&1; then
+        if ! "{{forge}}" sheet "$name" {{flags}} >/dev/null 2>&1; then
             failed+=("$name")
         fi
-    done < <({{forge}} catalog --kind clip | awk 'NR > 1 && $1 == "clip" { print $2 }')
+    done < <("{{forge}}" catalog --kind clip | awk 'NR > 1 && $1 == "clip" { print $2 }')
     echo "rendered $count clip(s) to out/sheets"
     if [ ${#failed[@]} -gt 0 ]; then
         echo "did not render cleanly: ${failed[*]}" >&2
@@ -323,9 +383,9 @@ body-sheets *flags: _build
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         count=$((count + 1))
-        {{forge}} turntable "$name" --out out/sheets/bodies/$name.png {{flags}} >/dev/null 2>&1 \
+        "{{forge}}" turntable "$name" --out out/sheets/bodies/$name.png {{flags}} >/dev/null 2>&1 \
             || echo "did not render: $name" >&2
-    done < <({{forge}} catalog --kind body | awk 'NR > 1 && $1 == "body" { print $2 }')
+    done < <("{{forge}}" catalog --kind body | awk 'NR > 1 && $1 == "body" { print $2 }')
     echo "wrote $(ls out/sheets/bodies/*.png 2>/dev/null | wc -l) sheets for $count body(s) to out/sheets/bodies"
 
 # No GPU: the names are hashed the way Bevy binds them and compared. Exits 1
@@ -333,7 +393,7 @@ body-sheets *flags: _build
 #
 # Which bones a clip actually drives on the stage body: `just bones walk`
 bones clip *flags: _build
-    {{forge}} bones {{clip}} {{flags}}
+    "{{forge}}" bones {{clip}} {{flags}}
 
 # Every contract bone at its depth, the rest pose, the weights, stature and
 # feet, the reference walk binding 27/27. `--out sheet.png` also renders it
@@ -341,20 +401,20 @@ bones clip *flags: _build
 #
 # Validate a mesh against the rig profile: `just check-mesh out/export/x.glb`
 check-mesh glb *flags: _build
-    {{forge}} rig check {{glb}} {{flags}}
+    "{{forge}}" rig check {{glb}} {{flags}}
 
 # Exits non-zero if the file is silent, clipped or will not decode; the plot
 # lands beside the others in out/audio/.
 #
 # Inspect one audio file: measure it and plot it. `just audio out/audio/x.wav`
 audio file *flags: _build
-    {{forge}} audio inspect {{file}} --out out/audio/$(basename "{{file}}" | sed 's/\.[^.]*$//').png {{flags}}
+    "{{forge}}" audio inspect {{file}} --out out/audio/$(basename "{{file}}" | sed 's/\.[^.]*$//').png {{flags}}
 
 # An empty library passes: a project that ships no sound is not a broken one.
 #
 # Measure every audio asset. Exits non-zero if any is silent or clipped.
 audio-list *flags: _build
-    {{forge}} audio list {{flags}}
+    "{{forge}}" audio list {{flags}}
 
 # Plot every audio asset into out/audio/. Exits non-zero naming any defective one.
 audio-plots dir="out/audio": _build
@@ -364,7 +424,7 @@ audio-plots dir="out/audio": _build
     failed=()
     while IFS= read -r f; do
         name=$(basename "$f"); name="${name%.*}"
-        if ! {{forge}} audio inspect "$f" --out {{dir}}/$name.png >/dev/null 2>&1; then
+        if ! "{{forge}}" audio inspect "$f" --out {{dir}}/$name.png >/dev/null 2>&1; then
             failed+=("$name")
         fi
     done < <(find assets/audio -type f \( -name '*.wav' -o -name '*.ogg' -o -name '*.mp3' -o -name '*.flac' \) | sort)
@@ -376,7 +436,7 @@ audio-plots dir="out/audio": _build
 
 # What the library holds: `just catalog --kind sfx --filter door`
 catalog *flags: _build
-    {{forge}} catalog {{flags}}
+    "{{forge}}" catalog {{flags}}
 
 # ------------------------------------------------------------------- ship --
 
@@ -392,10 +452,10 @@ catalog *flags: _build
 # Export, validate and file one rigged body: `just promote-mesh vex_runner`
 promote-mesh name *flags: _build
     mkdir -p out/export
-    {{forge}} gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
+    "{{forge}}" gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
         --record out/export/{{name}}.export.json
-    {{forge}} rig check out/export/{{name}}.glb
-    {{forge}} promote body out/export/{{name}}.glb {{name}} \
+    "{{forge}}" rig check out/export/{{name}}.glb
+    "{{forge}}" promote body out/export/{{name}}.glb {{name}} \
         --blend assets-src/blender/{{name}}.blend \
         --lift-record assets-src/refs/characters/{{name}}.lift.json \
         --rig-record assets-src/blender/{{name}}.rig.json \
@@ -407,7 +467,7 @@ promote-mesh name *flags: _build
 #
 # Bake one take into a clip with a recipe and file it.
 promote-clip name take *flags: _build
-    {{forge}} promote clip {{take}} {{name}} {{flags}}
+    "{{forge}}" promote clip {{take}} {{name}} {{flags}}
 
 # The record is the file's stem + .json, which is where `just sfx|music|speech`
 # put it; a `--record` among the flags names another, and no record at all
@@ -420,32 +480,32 @@ promote-audio kind name file *flags: _build
     set -euo pipefail
     record="{{file}}"; record="${record%.*}.json"
     case " {{flags}} " in
-        *" --record "*|*" --record="*) {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}} ;;
+        *" --record "*|*" --record="*) "{{forge}}" promote audio {{kind}} {{file}} {{name}} {{flags}} ;;
         *) if [ -f "$record" ]; then
-               {{forge}} promote audio {{kind}} {{file}} {{name}} --record "$record" {{flags}}
+               "{{forge}}" promote audio {{kind}} {{file}} {{name}} --record "$record" {{flags}}
            else
                echo "no record at $record — the sound will say unknown provenance" >&2
-               {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}}
+               "{{forge}}" promote audio {{kind}} {{file}} {{name}} {{flags}}
            fi ;;
     esac
 
 # Project the library into assets/library.json. Run it after any hand edit.
 manifest: _build
-    {{forge}} manifest
+    "{{forge}}" manifest
 
 # A body has no recipe to re-derive from — it is the file that was rigged
 # and approved — and is skipped by name, with the re-ship spelled out.
 #
 # Re-bake every shipped clip from its own record. Native, no Blender.
 rebake *flags: _build
-    {{forge}} rebake {{flags}}
+    "{{forge}}" rebake {{flags}}
 
 # Idempotent, and honest: values that were only ever defaults are nulled,
 # never carried forward. `--dry-run` reports without writing.
 #
 # Bring every sidecar up to the current schema.
 migrate *flags: _build
-    {{forge}} migrate {{flags}}
+    "{{forge}}" migrate {{flags}}
 
 # ----------------------------------------------------------------- verify --
 
@@ -457,10 +517,10 @@ migrate *flags: _build
 # stay on the working directory on purpose — they judge *your* library.
 
 fmt:
-    cargo fmt --all --manifest-path {{justfile_directory()}}/Cargo.toml
+    cargo fmt --all --manifest-path "{{justfile_directory()}}/Cargo.toml"
 
 fmt-check:
-    cargo fmt --all --manifest-path {{justfile_directory()}}/Cargo.toml -- --check
+    cargo fmt --all --manifest-path "{{justfile_directory()}}/Cargo.toml" -- --check
 
 # Two lines: clippy over the workspace, then the rustdoc build, both with
 # warnings as errors — nothing else builds the docs, and an unbracketed
@@ -471,11 +531,11 @@ fmt-check:
 #
 # Clippy and rustdoc over the workspace, warnings as errors.
 check:
-    cargo clippy --workspace --all-targets --manifest-path {{justfile_directory()}}/Cargo.toml -- -D warnings
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --manifest-path {{justfile_directory()}}/Cargo.toml
+    cargo clippy --workspace --all-targets --manifest-path "{{justfile_directory()}}/Cargo.toml" -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --manifest-path "{{justfile_directory()}}/Cargo.toml"
 
 test:
-    cargo test --workspace --manifest-path {{justfile_directory()}}/Cargo.toml
+    cargo test --workspace --manifest-path "{{justfile_directory()}}/Cargo.toml"
 
 # The launcher's own suite — stdlib + pytest, no backend, no GPU, seconds.
 # The Rust side's `python_records` test re-runs the record capture, but
@@ -484,7 +544,7 @@ test:
 #
 # The Python layer's tests: pytest over python/tests.
 pytest:
-    cd {{justfile_directory()}}/python && python3 -m pytest -q
+    cd "{{justfile_directory()}}/python" && python3 -m pytest -q
 
 # Everything else rests on this, so it gets its own recipe. The display is
 # removed from the environment on purpose: if this passes, nothing in the
@@ -492,7 +552,7 @@ pytest:
 #
 # Prove offscreen rendering works with no display server at all.
 smoke:
-    env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_capture --example smoke
+    env -u DISPLAY -u WAYLAND_DISPLAY cargo run -q --manifest-path "{{justfile_directory()}}/Cargo.toml" -p forge_capture --example smoke
 
 # Rebuild every shipped clip from its own record and compare against the glb
 # — by bytes, then by pose on the fixture mannequin to under a millimetre —
@@ -504,7 +564,7 @@ smoke:
 #
 # Every clip rebuilds, by bytes and by pose; every body is what it claims.
 audit *flags: _build
-    {{forge}} audit {{flags}}
+    "{{forge}}" audit {{flags}}
 
 # Every contract bone at its depth, the rest pose, the weights, stature and
 # feet, the reference walk binding 27/27 — `forge rig check` on every glb
@@ -522,7 +582,7 @@ check-bodies *flags: _build
         [ -n "$glb" ] || continue
         bodies=$((bodies + 1))
         echo "== $glb"
-        if ! {{forge}} rig check "$glb" {{flags}}; then
+        if ! "{{forge}}" rig check "$glb" {{flags}}; then
             failed+=("$(basename "$glb")")
         fi
     done < <(find assets/bodies -type f -name '*.glb' 2>/dev/null | sort)
@@ -537,7 +597,7 @@ check-bodies *flags: _build
 
 # Fail if the committed manifest no longer matches a rebuild of the library.
 manifest-check: _build
-    {{forge}} manifest --check
+    "{{forge}}" manifest --check
 
 # The server .mcp.json launches, driven the way a client drives it: a
 # scripted initialize, the initialized notification and tools/list over
@@ -557,7 +617,7 @@ mcp-check: _build
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
         '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-        | timeout 20 {{forge}} mcp 2>/dev/null)
+        | timeout 20 "{{forge}}" mcp 2>/dev/null)
     listed=$(printf '%s\n' "$reply" | python3 -c '
     import json, sys
     names = []
@@ -582,7 +642,7 @@ mcp-check: _build
 #
 # Every engine-free check on the library.
 verify *flags: _build
-    {{forge}} verify {{flags}}
+    "{{forge}}" verify {{flags}}
 
 # The gate to run before committing — the one gate, the same set GitHub
 # Actions runs. Everything in it is a pass/fail question with no judgement

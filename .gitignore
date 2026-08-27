@@ -18,5 +18,6 @@ backends/*/.checkout
 backends/*/.text-encoders
 backends/*/installed.json
 backends/*/.checkpoints
+backends/*/.wsl-distro
 backends.local.toml
 python/.venv

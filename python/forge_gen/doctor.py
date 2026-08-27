@@ -47,6 +47,14 @@ GPU_BUSY_MB = 2048
 #: How long a probe may take. Importing torch cold on a slow disk is seconds; a minute is a hang.
 PROBE_TIMEOUT_S = 60.0
 
+#: A WSL2 probe crosses the DrvFs mount for every import's file stats (the
+#: checkout and toolkit both reached via /mnt/<drive>/...) — measured at
+#: ~18x a native run for the same trellis2 probe (71s vs 4s); the same cost
+#: a real `forge gen` pays. A native readlink to run cwd-heavy work off the
+#: real WSL-side path instead would remove this, but is not done yet — this
+#: timeout is the honest workaround until it is.
+WSL_PROBE_TIMEOUT_S = 180.0
+
 #: How long a host tool may take to say its version.
 TOOL_TIMEOUT_S = 20.0
 
@@ -179,6 +187,14 @@ def _git(checkout: Path, *args: str) -> str | None:
 
 
 def check_checkout(backend: Backend, out: dict) -> None:
+    if os.name == "nt" and backend.wsl_marker.is_file():
+        # `.checkout` is a POSIX symlink to a Linux path, written inside the
+        # distro named in `.wsl-distro` — a native Windows process cannot
+        # reliably tell whether it resolves, so this reports what it knows
+        # (the backend was installed through WSL2) rather than guess at a
+        # git status it cannot safely read from here.
+        out["checks"].append(_check("checkout", True, f"installed via WSL2 ({backend.wsl_marker.read_text(encoding='utf-8').strip()}) — checkout detail not probed from Windows"))
+        return
     checkout = backend.checkout
     if not checkout.exists():
         if backend.cwd == "checkout":
@@ -204,7 +220,7 @@ def check_checkout(backend: Backend, out: dict) -> None:
     out["checks"].append(_check("checkout", True, detail))
 
 
-def check_python(backend: Backend, out: dict) -> Path | None:
+def check_python(backend: Backend, out: dict) -> Path | launcher.WslInterpreter | None:
     try:
         interpreter = launcher.resolve_interpreter(backend)
     except MissingBackend as err:
@@ -212,7 +228,8 @@ def check_python(backend: Backend, out: dict) -> Path | None:
         if err.hint:
             out["hints"].append(err.hint)
         return None
-    done = _run([str(interpreter), "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"], timeout=TOOL_TIMEOUT_S)
+    command = launcher.external_command(interpreter, ["-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"])
+    done = _run(command, timeout=TOOL_TIMEOUT_S)
     if done is None or done[0] != 0:
         out["checks"].append(_check("python", False, f"{interpreter} does not run"))
         return None
@@ -225,7 +242,7 @@ def check_python(backend: Backend, out: dict) -> Path | None:
     return interpreter
 
 
-def check_env_shadowing(backend: Backend, interpreter: Path, out: dict) -> None:
+def check_env_shadowing(backend: Backend, interpreter: Path | launcher.WslInterpreter, out: dict) -> None:
     """A warn row per ambient variable that shadows a plain ``[env]`` value.
 
     The launcher's setdefault lets the shell win over ``backend.toml`` on
@@ -243,19 +260,31 @@ def check_env_shadowing(backend: Backend, interpreter: Path, out: dict) -> None:
         )
 
 
-def run_probe(backend: Backend, interpreter: Path, *, timeout: float) -> tuple[dict | None, str]:
+def run_probe(backend: Backend, interpreter: Path | launcher.WslInterpreter, *, timeout: float) -> tuple[dict | None, str]:
     """Run ``probe.py`` under the env; ``(parsed last JSON line, detail)``."""
     probe = backend.probe
     if not probe.is_file():
         return None, "no probe"
-    try:
-        env = launcher.inner_env(backend, interpreter)
-    except MissingBackend as err:
-        return None, err.message
-    cwd: Path | None = None
-    if backend.cwd == "checkout" and backend.checkout.exists():
-        cwd = backend.checkout.resolve()
-    done = _run([str(interpreter), str(probe)], timeout=timeout, env=env, cwd=cwd or backend.dir)
+    if isinstance(interpreter, launcher.WslInterpreter):
+        try:
+            env = launcher.inner_env(backend, interpreter)
+        except MissingBackend as err:
+            return None, err.message
+        wanted = ["PYTHONPATH", "PYTHONNOUSERSITE", "FORGE_BACKEND", *backend.env, *backend.env_force]
+        restricted = {key: env[key] for key in dict.fromkeys(wanted) if key in env}
+        wsl_cwd = f"{interpreter.backend_dir_wsl}/.checkout" if backend.cwd == "checkout" else f"{interpreter.backend_dir_wsl}"
+        probe_wsl = f"{interpreter.backend_dir_wsl}/probe.py"
+        command = launcher.external_command(interpreter, [probe_wsl], env=restricted, wsl_cwd=wsl_cwd)
+        done = _run(command, timeout=max(timeout, WSL_PROBE_TIMEOUT_S))
+    else:
+        try:
+            env = launcher.inner_env(backend, interpreter)
+        except MissingBackend as err:
+            return None, err.message
+        cwd: Path | None = None
+        if backend.cwd == "checkout" and backend.checkout.exists():
+            cwd = backend.checkout.resolve()
+        done = _run([str(interpreter), str(probe)], timeout=timeout, env=env, cwd=cwd or backend.dir)
     if done is None:
         return None, f"probe did not finish within {timeout:.0f} s (or could not start)"
     code, stdout, stderr = done
@@ -273,7 +302,7 @@ def run_probe(backend: Backend, interpreter: Path, *, timeout: float) -> tuple[d
     return parsed, "ran"
 
 
-def check_probe(backend: Backend, interpreter: Path, out: dict, *, timeout: float) -> bool:
+def check_probe(backend: Backend, interpreter: Path | launcher.WslInterpreter, out: dict, *, timeout: float) -> bool:
     """Append the probe check; return whether the probe ran (not whether all was well)."""
     probe, detail = run_probe(backend, interpreter, timeout=timeout)
     if probe is None:
@@ -311,6 +340,15 @@ def check_probe(backend: Backend, interpreter: Path, out: dict, *, timeout: floa
 
 
 def check_models(backend: Backend, out: dict) -> None:
+    if os.name == "nt" and backend.wsl_marker.is_file():
+        # The Hugging Face cache and any .text-encoders/.checkpoints link
+        # live inside the distro; a native path check here would always
+        # read the wrong (Windows-side) cache and report every model
+        # "absent" even when install.sh downloaded it — reporting that
+        # would be a guess dressed up as a measurement.
+        for model in backend.models:
+            out["checks"].append(_check(f"model:{model.id}", True, "installed via WSL2 — presence not probed from Windows"))
+        return
     for model in backend.models:
         present, detail = model_present(backend, model)
         label = f"model:{model.id}"
@@ -424,7 +462,9 @@ def diagnose_backend(name: str, *, root: str | os.PathLike | None = None, probe_
     broken = False
     if interpreter is not None:
         check_env_shadowing(backend, interpreter, out)
-        if backend.cwd == "checkout" and not backend.checkout.exists():
+        # A WSL2 `.checkout` is a Linux-side symlink; only a native check is
+        # skipped here — check_probe below is the real proof either way.
+        if backend.cwd == "checkout" and not isinstance(interpreter, launcher.WslInterpreter) and not backend.checkout.exists():
             broken = True
         if not check_probe(backend, interpreter, out, timeout=probe_timeout):
             broken = True
