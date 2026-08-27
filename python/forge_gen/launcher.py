@@ -74,7 +74,10 @@ def override_var(backend_name: str) -> str:
 
 
 def _python_under(prefix: Path) -> Path | None:
-    for candidate in ("bin/python", "bin/python3"):
+    # bin/python[3]: POSIX venvs, and — unusually, but confirmed — a conda
+    # env even on native Windows. Scripts/python.exe: what `python -m venv`
+    # and `uv venv` actually write on native Windows.
+    for candidate in ("bin/python", "bin/python3", "Scripts/python.exe"):
         path = prefix / candidate
         if path.is_file() or (path.is_symlink() and path.exists()):
             return path

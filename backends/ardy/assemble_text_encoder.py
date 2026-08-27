@@ -140,7 +140,21 @@ def merge(base: Path, mntp_src: Path, merged: Path, *, device: str) -> None:
     # own from_pretrained takes for "config.json and adapter weights in the
     # same directory", followed by merge_and_unload.
     log(f"loading {base.name} through {mntp_src} as LlamaBiModel on {device} (bf16)")
-    model = LlamaBiModel.from_pretrained(str(mntp_src), dtype=torch.bfloat16, device_map=device)
+    try:
+        model = LlamaBiModel.from_pretrained(str(mntp_src), dtype=torch.bfloat16, device_map=device)
+    except OSError:
+        # transformers' own auto-redirect (integrations.peft.maybe_load_adapters)
+        # only points at the base when mntp_src has no config.json of its
+        # own — this adapter repo ships one (it names the architecture
+        # class, not a checkpoint), so it is read as "a complete model with
+        # an embedded adapter" and transformers looks for model.safetensors
+        # right there instead. Loaded explicitly instead of depending on
+        # that file-existence heuristic holding across transformers versions.
+        log(f"{mntp_src} has its own config.json — transformers did not auto-redirect to the base; loading it explicitly")
+        from peft import PeftModel
+
+        model = LlamaBiModel.from_pretrained(str(base), dtype=torch.bfloat16, device_map=device)
+        model = PeftModel.from_pretrained(model, str(mntp_src))
     if not hasattr(model, "peft_config"):
         # Older transformers did not attach on load; do it by hand.
         from peft import PeftModel
