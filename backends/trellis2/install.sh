@@ -44,14 +44,39 @@ parse_common_flags "$@"
 UPSTREAM="https://github.com/microsoft/TRELLIS.2"
 COMMIT="75fbf0183001ed9876c8dbb35de6b68552ee08bd"
 PYVER="3.11"
-CUDA_LABEL="nvidia/label/cuda-12.4.1"   # the label channel: plain cuda-toolkit=12.4 floats components to 13.x
-CUDA_RELEASE="12.4"
-GCC_MAJOR="13"                          # CUDA 12.4's host_config.h refuses gcc > 13
-TORCH_SPEC="torch==2.6.0 torchvision==0.21.0"
-TORCH_INDEX="https://download.pytorch.org/whl/cu124"
+CUDA_LABEL="nvidia/label/cuda-12.8.1"   # the label channel: plain cuda-toolkit=12.4 floats components to 13.x
+CUDA_RELEASE="12.8"
+GCC_MAJOR="13"                          # CUDA 12.4's host_config.h refuses gcc > 13; 12.8's ceiling is the same
+# EXPERIMENTAL 2026-08-27: bumped from the upstream-pinned torch==2.6.0+cu124
+# because stable PyTorch has no sm_120 (RTX 50-series/Blackwell) kernels
+# before 2.7.0+cu128 — cu124 detects the GPU but cannot run a kernel on it.
+# This moves off Microsoft's verified combination; watch for anything
+# torch-2.6-specific in TRELLIS.2's own pipeline code, not just the
+# extensions (which rebuild from source against whatever torch is present).
+TORCH_SPEC="torch==2.7.0 torchvision==0.22.0"
+TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+# What `pip show torch`'s Version ends up as, e.g. "2.7.0+cu128" — derived,
+# not re-typed, so the idempotency check below never drifts from the pins
+# above the way a hand-copied literal did (it used to re-run the whole torch
+# + flash-attn install, flash-attn's --no-build-isolation compile included,
+# on every single re-run once the pins moved past what it still compared
+# against).
+TORCH_VERSION_EXPECT="$(printf '%s' "$TORCH_SPEC" | sed -n 's/^torch==\([0-9.]*\).*/\1/p')+$(printf '%s' "$TORCH_INDEX" | sed -n 's#.*/##p')"
 TRANSFORMERS_SPEC="transformers==4.57.6" # 5.x restructured DINOv3ViTModel; the pipeline indexes model.layer directly
 UTILS3D_SPEC="utils3d @ git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"
 FLASH_ATTN_SPEC="flash-attn==2.7.3"
+# trellis2's sparse sampler has no sdpa fallback (see below); this is what
+# runs when flash-attn's from-source build fails. Pinned to a release whose
+# own PyPI metadata pairs it with $TORCH_SPEC, installed --no-deps from
+# $TORCH_INDEX so it never floats the torch pin as a side effect.
+XFORMERS_SPEC="xformers==0.0.30"
+# The bundled version torch pulls in as its own dependency; PyPI's 3.3.0
+# wheel predates consumer Blackwell (sm_120) in its tensor-core lowering
+# pass specifically (a hard C++ assertion, not a Python-catchable one:
+# "getMMAVersionSafe: computeCapability not supported") — measured on an
+# RTX 5080, fixed by this version upstream. Installed --no-deps for the
+# same reason as xformers above.
+TRITON_SPEC="triton==3.4.0"
 NVDIFFRAST_URL="https://github.com/NVlabs/nvdiffrast.git"
 NVDIFFRAST_TAG="v0.4.0"
 CUMESH_URL="https://github.com/JeffreyXiang/CuMesh.git"
@@ -171,8 +196,24 @@ else
         fi
         log "cuda-toolkit $release present"
     else
-        log "conda install --override-channels -c $CUDA_LABEL cuda-toolkit"
-        "$(conda_bin)" install -y -q -p "$ENV_DIR" --override-channels -c "$CUDA_LABEL" cuda-toolkit
+        log "conda install --override-channels -c $CUDA_LABEL -c defaults cuda-toolkit"
+        # defaults, alongside the label: 12.8.1's cuda-nvml-dev needs
+        # libstdcxx-ng >=11.2.0, which the label channel alone does not
+        # carry (12.4.1's did, or it was already cached) — --override-channels
+        # still keeps out anything from the user's own conda config.
+        "$(conda_bin)" install -y -q -p "$ENV_DIR" --override-channels -c "$CUDA_LABEL" -c defaults cuda-toolkit
+    fi
+    # 12.8.1's package keeps its headers only under targets/x86_64-linux/
+    # include/ (12.4.1's landed them at the top level too, or a prior conda
+    # release did the linking) — every downstream build (nvdiffrast et al.)
+    # expects $CUDA_HOME/include/cuda_runtime.h directly. Symlinked in,
+    # never overwriting a header conda's other packages already placed there.
+    if [ -d "$ENV_DIR/targets/x86_64-linux/include" ] && [ ! -e "$ENV_DIR/include/cuda_runtime.h" ]; then
+        for header in "$ENV_DIR"/targets/x86_64-linux/include/*; do
+            name="$(basename "$header")"
+            [ -e "$ENV_DIR/include/$name" ] || ln -s "$header" "$ENV_DIR/include/$name"
+        done
+        log "linked $(ls "$ENV_DIR/targets/x86_64-linux/include" | wc -l) CUDA headers into $ENV_DIR/include"
     fi
 
     # gcc 13 in the env, exported at build time and at run time (the JIT).
@@ -188,8 +229,8 @@ else
     # a typing_extensions wheel whose metadata name the stock pip
     # mis-normalises, and the sdist fallback cannot see flit_core because
     # --index-url replaced PyPI.
-    if have_mod torch && [ "$(mod_version torch)" = "2.6.0+cu124" ]; then
-        log "torch 2.6.0+cu124 present"
+    if have_mod torch && [ "$(mod_version torch)" = "$TORCH_VERSION_EXPECT" ]; then
+        log "torch $TORCH_VERSION_EXPECT present"
     else
         log "pip: pip, typing-extensions, then $TORCH_SPEC from $TORCH_INDEX"
         pipi -q -U pip
@@ -215,14 +256,93 @@ else
             wheel==0.47.0 setuptools==83.0.0 huggingface_hub==0.36.2 "$UTILS3D_SPEC"
     fi
 
-    # flash-attn: --no-build-isolation (its metadata imports torch). Absent,
-    # the launcher runs with ATTN_BACKEND=sdpa — slower, correct.
+    # flash-attn: --no-build-isolation (its metadata imports torch). have_mod
+    # actually imports it, so it catches a stale build too (a torch bump
+    # leaves the old flash_attn_2_cuda.so ABI-broken, "undefined symbol",
+    # even though `pip show` still calls it 2.7.3 present) — but pip's own
+    # version check does not know that, and would silently no-op a
+    # reinstall of the exact same pinned version, so a broken import is
+    # uninstalled first to force a real rebuild.
+    #
+    # sdpa is not a fallback here — trellis2/modules/sparse/config.py's own
+    # ATTN whitelist is only xformers/flash_attn/flash_attn_3; the sparse
+    # diffusion sampler has no sdpa path at all. xformers is the fallback,
+    # pinned to a version its own PyPI metadata pairs with $TORCH_SPEC and
+    # installed --no-deps: an unconstrained `pip install xformers` pulls in
+    # whatever torch it wants as a dependency, silently floating the pinned
+    # version everything else here was built against.
     if have_mod flash_attn; then
         log "flash-attn $(mod_version flash_attn) present"
     else
+        if "$ENV_DIR/bin/python" -m pip show flash-attn >/dev/null 2>&1; then
+            log "flash-attn is installed but broken (stale build against a prior torch) — uninstalling before rebuild"
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y flash-attn
+        fi
         log "pip: $FLASH_ATTN_SPEC --no-build-isolation (minutes; a failure here is a warning)"
-        if ! pipi -q "$FLASH_ATTN_SPEC" --no-build-isolation; then
-            warn "flash-attn did not install; the lift will run with ATTN_BACKEND=sdpa (slower, correct)"
+        pipi -q "$FLASH_ATTN_SPEC" --no-build-isolation || true
+        # pip reports success even when the built extension is ABI-broken
+        # (it does not run an import check) — have_mod is what actually
+        # proves it, same as the check this whole branch started from.
+        if ! have_mod flash_attn; then
+            warn "flash-attn did not build a working import"
+            # Left half-installed, it poisons xformers too:
+            # xformers/ops/fmha/flash.py imports flash_attn itself at module
+            # load, unconditionally. Gone entirely, that import fails cleanly
+            # (ModuleNotFoundError, which xformers' own optional-backend
+            # guard expects) instead of hitting the same broken .so again.
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y flash-attn 2>/dev/null || true
+        fi
+    fi
+    # xformers_runs — not have_mod, and not just xformers.ops importing:
+    # a prebuilt wheel for a GPU generation newer than its own kernels
+    # cover (Blackwell/sm_120 against a Hopper-only build, measured)
+    # imports fine and only fails "no kernel image is available" at the
+    # first real launch. This is the only check that actually proves it.
+    xformers_runs() {
+        PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -c '
+import torch, xformers.ops as xops
+q = torch.randn(1, 8, 16, 64, device="cuda", dtype=torch.float16)
+xops.memory_efficient_attention(q, q, q)
+torch.cuda.synchronize()
+' >/dev/null 2>&1
+    }
+
+    if xformers_runs; then
+        log "xformers $(mod_version xformers) present and runs on this GPU"
+    elif have_mod flash_attn; then
+        log "flash-attn is present; xformers not needed"
+    else
+        if "$ENV_DIR/bin/python" -m pip show xformers >/dev/null 2>&1; then
+            log "xformers is installed but does not run on this GPU — uninstalling before reinstall"
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y xformers
+        fi
+        log "pip: $XFORMERS_SPEC --no-deps --index-url $TORCH_INDEX (flash-attn's fallback — trellis2's sparse sampler has no sdpa path)"
+        pipi -q "$XFORMERS_SPEC" --no-deps --index-url "$TORCH_INDEX" || true
+        if xformers_runs; then
+            log "xformers $(mod_version xformers) present and runs on this GPU"
+        else
+            # The prebuilt wheel's own kernels do not cover this GPU's
+            # compute capability (a fresh GPU generation ahead of what
+            # PyPI has published wheels for is the case this was written
+            # for) — built from source instead, for exactly the
+            # capability this GPU reports, not a guess.
+            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y xformers 2>/dev/null || true
+            arch="$(PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -c 'import torch; c = torch.cuda.get_device_capability(); print(f"{c[0]}.{c[1]}")' 2>/dev/null || true)"
+            if [ -z "$arch" ]; then
+                warn "no CUDA device visible to determine TORCH_CUDA_ARCH_LIST — skipping the source build; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
+            else
+                xf_src="$SRC_DIR/xformers"
+                if [ ! -d "$xf_src/.git" ]; then
+                    log "cloning xformers ${XFORMERS_SPEC#*==} (recursive — pulls cutlass and flash-attention's own source, a large checkout)"
+                    git clone -q --recursive -b "v${XFORMERS_SPEC#*==}" https://github.com/facebookresearch/xformers.git "$xf_src"
+                fi
+                log "building xformers from source for TORCH_CUDA_ARCH_LIST=$arch (minutes; needs a real compiler and disk — a failure here is a warning)"
+                if ! (cd "$xf_src" && TORCH_CUDA_ARCH_LIST="$arch" MAX_JOBS="${MAX_JOBS:-8}" CUDA_HOME="$ENV_DIR" CC="$ENV_DIR/bin/x86_64-conda-linux-gnu-gcc" CXX="$ENV_DIR/bin/x86_64-conda-linux-gnu-g++" CUDAHOSTCXX="$ENV_DIR/bin/x86_64-conda-linux-gnu-g++" PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip install --no-build-isolation -q .); then
+                    warn "xformers did not build from source either; \`forge gen mesh\` will refuse to run without flash-attn or xformers"
+                elif ! xformers_runs; then
+                    warn "xformers built from source but still does not run a kernel on this GPU"
+                fi
+            fi
         fi
     fi
 
@@ -275,6 +395,54 @@ else
     else
         log "building o-voxel from $CHECKOUT/o-voxel"
         pipi -q "$CHECKOUT/o-voxel" --no-build-isolation
+    fi
+fi
+
+# --------------------------------------------------------------- triton --
+# Checked last, after every other pip install above (not right after torch,
+# where it was first written): FlexGEMM's own pyproject.toml declares an
+# unpinned "triton>=3.2.0", and something in this env's dependency
+# resolution — traced to FlexGEMM's install specifically, not confirmed
+# beyond that — was silently re-landing torch's bundled 3.3.0 over a
+# correctly-upgraded 3.4.0 checked earlier in the script. This is the
+# single point nothing installed above can still undo: real tl.dot call,
+# not an import, since every FlexGEMM kernel (this backend's whole sparse
+# conv path) is Triton, and a version that predates this GPU's tensor-core
+# generation imports fine, only crashing the first time a kernel needs it.
+cat > "$SRC_DIR/_triton_dot_probe.py" <<'PYEOF'
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _dot_probe(a_ptr, b_ptr, c_ptr, BLOCK: tl.constexpr):
+    offs = tl.arange(0, BLOCK)
+    a = tl.load(a_ptr + offs[:, None] * BLOCK + offs[None, :])
+    b = tl.load(b_ptr + offs[:, None] * BLOCK + offs[None, :])
+    acc = tl.zeros((BLOCK, BLOCK), dtype=tl.float32)
+    acc = tl.dot(a, b, acc)
+    tl.store(c_ptr + offs[:, None] * BLOCK + offs[None, :], acc)
+
+BLOCK = 32
+a = torch.randn(BLOCK, BLOCK, device="cuda", dtype=torch.float16)
+b = torch.randn(BLOCK, BLOCK, device="cuda", dtype=torch.float16)
+c = torch.empty(BLOCK, BLOCK, device="cuda", dtype=torch.float32)
+_dot_probe[(1,)](a, b, c, BLOCK=BLOCK)
+torch.cuda.synchronize()
+PYEOF
+triton_dot_works() {
+    PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" "$SRC_DIR/_triton_dot_probe.py" >/dev/null 2>&1
+}
+if triton_dot_works; then
+    log "triton $(mod_version triton) runs tl.dot on this GPU"
+else
+    log "triton $(mod_version triton) does not run tl.dot on this GPU — installing $TRITON_SPEC"
+    PYTHONNOUSERSITE=1 "$ENV_DIR/bin/python" -m pip uninstall -q -y triton 2>/dev/null || true
+    pipi -q "$TRITON_SPEC" --no-deps
+    if triton_dot_works; then
+        log "triton $(mod_version triton) runs tl.dot on this GPU"
+    else
+        warn "triton still does not run tl.dot on this GPU; FlexGEMM's sparse conv kernels will fail at generation time"
     fi
 fi
 

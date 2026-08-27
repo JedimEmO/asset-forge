@@ -122,12 +122,25 @@ clone_pinned() {
 
 # -------------------------------------------------------------------- envs --
 
+# _venv_python DIR — the interpreter under a venv/conda prefix, whichever
+# layout it actually has: bin/python[3] (POSIX venvs, and — unusually, but
+# confirmed — a conda env even on native Windows), or Scripts/python.exe
+# (what `python -m venv`/`uv venv` write on native Windows). Empty output
+# when none of the three is there.
+_venv_python() {
+    local dest="$1"
+    for candidate in bin/python bin/python3 Scripts/python.exe; do
+        [ -x "$dest/$candidate" ] && { echo "$dest/$candidate"; return 0; }
+    done
+    return 1
+}
+
 # make_venv DEST PYVER — a venv at DEST with python PYVER (e.g. 3.12), via uv
 # when it is on PATH (it fetches the interpreter if the host lacks it), else
 # python<PYVER> -m venv. Idempotent.
 make_venv() {
-    local dest="$1" pyver="$2"
-    if [ -x "$dest/bin/python" ]; then
+    local dest="$1" pyver="$2" python
+    if python="$(_venv_python "$dest")"; then
         log "venv exists: $dest"
         return 0
     fi
@@ -138,18 +151,20 @@ make_venv() {
         need_cmd "python$pyver" "install uv (https://astral.sh/uv) or a python$pyver"
         log "python$pyver -m venv $dest"
         "python$pyver" -m venv "$dest"
-        "$dest/bin/python" -m pip install -q --upgrade pip
+        python="$(_venv_python "$dest")" || die "$dest has no interpreter right after python$pyver -m venv made it"
+        "$python" -m pip install -q --upgrade pip
     fi
 }
 
 # pip_install PREFIX ARGS... — pip into an env, through uv when present
 # (faster, same resolver semantics for pinned wheels), with user site off.
 pip_install() {
-    local prefix="$1"; shift
+    local prefix="$1" python; shift
+    python="$(_venv_python "$prefix")" || die "$prefix has no interpreter — not a venv/conda prefix"
     if command -v uv >/dev/null 2>&1; then
-        PYTHONNOUSERSITE=1 uv pip install -q --python "$prefix/bin/python" "$@"
+        PYTHONNOUSERSITE=1 uv pip install -q --python "$python" "$@"
     else
-        PYTHONNOUSERSITE=1 "$prefix/bin/python" -m pip install -q "$@"
+        PYTHONNOUSERSITE=1 "$python" -m pip install -q "$@"
     fi
 }
 
@@ -157,13 +172,27 @@ pip_install() {
 
 # _link TARGET LINK — a symlink, replaced if it points elsewhere.
 _link() {
-    local target="$1" link="$2"
+    local target="$1" link="$2" resolved
     target="$(cd "$target" && pwd -P)" || die "not a directory: $1"
     if [ -L "$link" ]; then
         [ "$(readlink -f "$link")" = "$target" ] && return 0
         rm -f "$link"
+    elif [ -d "$link" ]; then
+        # On this Windows/Git-Bash combination, `ln -s` on a directory
+        # creates an NTFS junction, not a true symlink, whether or not
+        # Developer Mode is on — `-L` does not recognize it (nor does
+        # Python's os.path.islink), inconsistently even across otherwise
+        # identical runs. `cd`/`pwd -P` still follows a junction like any
+        # real directory link, so that is the actual "does this already
+        # point at the right place" check here; if it does not (including
+        # a plain leftover directory that was never linked to anything),
+        # this path is never meant to hold independent content — it is
+        # relinked, not preserved.
+        resolved="$(cd "$link" && pwd -P)" || resolved=""
+        [ "$resolved" = "$target" ] && return 0
+        rm -rf "$link"
     elif [ -e "$link" ]; then
-        die "$link exists and is not a symlink — remove it by hand"
+        die "$link exists and is not a directory or a symlink — remove it by hand"
     fi
     ln -s "$target" "$link"
     log "$(basename "$link") -> $target"
@@ -171,7 +200,7 @@ _link() {
 
 # link_env DIR — the interpreter prefix the launcher execs (<backend>/.env).
 link_env() {
-    [ -x "$1/bin/python" ] || [ -x "$1/bin/python3" ] || die "$1 has no bin/python — not an interpreter prefix"
+    _venv_python "$1" >/dev/null || die "$1 has no bin/python or Scripts/python.exe — not an interpreter prefix"
     _link "$1" "$BACKEND_DIR/.env"
 }
 
@@ -184,8 +213,20 @@ link_extra() { _link "$2" "$BACKEND_DIR/.$1"; }
 
 # env_python — the interpreter behind .env.
 env_python() {
-    local link="$BACKEND_DIR/.env"
-    if [ -x "$link/bin/python" ]; then echo "$link/bin/python"; else echo "$link/bin/python3"; fi
+    _venv_python "$BACKEND_DIR/.env"
+}
+
+# _wsl_marker — write <backend>/.wsl-distro (just the distro name) whenever
+# this install is running inside WSL2 ($WSL_DISTRO_NAME, which WSL sets in
+# every session). A native-Windows `forge` uses its presence to route the
+# interpreter through `wsl.exe -d <distro>`, which resolves the .env/.checkout
+# symlinks above itself from inside the distro — they are POSIX symlinks to a
+# Linux path and a Windows process cannot read them directly. Nothing else
+# about link_env/link_checkout changes, and on real Linux/macOS
+# $WSL_DISTRO_NAME is never set, so this is a no-op there.
+_wsl_marker() {
+    [ -n "${WSL_DISTRO_NAME:-}" ] || return 0
+    printf '%s\n' "$WSL_DISTRO_NAME" > "$BACKEND_DIR/.wsl-distro"
 }
 
 # ----------------------------------------------------------------- receipt --
@@ -217,6 +258,7 @@ write_installed_json() {
 }
 EOF
     log "wrote installed.json (python $pyver, torch ${torch//\"/}, adopted=$adopted)"
+    _wsl_marker
 }
 
 # ---------------------------------------------------------------- hf token --

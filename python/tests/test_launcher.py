@@ -122,6 +122,87 @@ def test_run_inner_checked_holds_the_json_line_and_relays_refusals(installed_tre
     assert any("something went wrong" in line for line in caught.value.log_tail)
 
 
+# --------------------------------------------------------------------- wsl --
+
+
+def test_win_to_wsl_path_maps_the_default_drive_mount():
+    from pathlib import Path
+
+    assert launcher._win_to_wsl_path(Path("H:/src/asset-forge")) == "/mnt/h/src/asset-forge"
+
+
+def test_wsl_marker_is_only_consulted_on_native_windows(backends_tree, monkeypatch):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "posix")
+    assert launcher._wsl_interpreter(backend) is None, "a real Linux/macOS host never routes through wsl.exe"
+    with pytest.raises(MissingBackend):
+        launcher.resolve_interpreter(backend)
+
+
+def test_wsl_marker_wins_over_the_unreadable_env_link_on_windows(backends_tree, monkeypatch):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "nt")
+    interpreter = launcher.resolve_interpreter(backend)
+    assert isinstance(interpreter, launcher.WslInterpreter)
+    assert interpreter.distro == "Ubuntu"
+    assert interpreter.backend_dir_wsl == launcher._win_to_wsl_path(backend.dir)
+
+
+def test_wsl_override_still_wins_over_the_marker(backends_tree, monkeypatch, tmp_path):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "nt")
+    other = write_stub_python(tmp_path / "other" / "bin" / "python")
+    monkeypatch.setenv("FORGE_BACKEND_ARDY_PYTHON", str(other))
+    assert launcher.resolve_interpreter(backend) == other
+
+
+def test_inner_command_wraps_wsl_in_wsl_exe_with_a_restricted_env(backends_tree, monkeypatch):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "nt")
+    interpreter = launcher.resolve_interpreter(backend)
+    env = {"PYTHONPATH": "/mnt/h/src/asset-forge/python", "PYTHONNOUSERSITE": "1", "FORGE_BACKEND": "ardy", "SOME_WINDOWS_ONLY_VAR": "nope"}
+    command = launcher.inner_command(backend, "motion.session", ["--prompt", "walk"], interpreter, env=env)
+    assert command[:3] == ["wsl.exe", "-d", "Ubuntu"]
+    assert "SOME_WINDOWS_ONLY_VAR=nope" not in command, "only the inner process's own keys are forwarded"
+    joined = " ".join(command)
+    assert "PYTHONPATH=/mnt/h/src/asset-forge/python" in joined
+    assert f"{interpreter.backend_dir_wsl}/.checkout" in joined, "cwd = checkout is folded into the wrapped shell"
+    assert f"{interpreter.backend_dir_wsl}/.env/bin/python" in joined
+    assert "-m forge_gen.motion.session --inner --prompt walk" in joined
+
+
+def test_translate_argv_paths_maps_windows_absolute_paths_only():
+    argv = [
+        r"H:\src\asset-forge\assets-src\refs\props\barrel2.png",
+        "--preset",
+        "prop",
+        "--out",
+        r"H:\src\asset-forge\out\lifts\barrel2.glb",
+        "relative/path.json",
+    ]
+    translated = launcher._translate_argv_paths(argv)
+    assert translated[0] == "/mnt/h/src/asset-forge/assets-src/refs/props/barrel2.png"
+    assert translated[1:3] == ["--preset", "prop"]
+    assert translated[4] == "/mnt/h/src/asset-forge/out/lifts/barrel2.glb"
+    assert translated[5] == "relative/path.json", "a relative path is not Windows-absolute and passes through"
+
+
+def test_inner_command_translates_windows_paths_in_argv_for_wsl(backends_tree, monkeypatch):
+    backend = backends.load_backend("ardy")
+    backend.wsl_marker.write_text("Ubuntu\n", encoding="utf-8")
+    monkeypatch.setattr(os, "name", "nt")
+    interpreter = launcher.resolve_interpreter(backend)
+    argv = ["--image", r"H:\src\asset-forge\assets-src\refs\props\barrel2.png"]
+    command = launcher.inner_command(backend, "mesh", argv, interpreter, env={})
+    joined = " ".join(command)
+    assert "H:\\src" not in joined, "a Windows path in argv must not reach wsl.exe verbatim"
+    assert "/mnt/h/src/asset-forge/assets-src/refs/props/barrel2.png" in joined
+
+
 def test_run_inner_without_checkout_is_missing(installed_tree):
     backend = backends.load_backend("ardy")
     os.remove(backend.checkout)

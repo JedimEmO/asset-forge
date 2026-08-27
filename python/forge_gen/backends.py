@@ -43,6 +43,7 @@ CHECKPOINTS_LINK = ".checkpoints"
 
 #: The receipt ``install.sh`` writes.
 INSTALLED_FILE = "installed.json"
+WSL_MARKER = ".wsl-distro"
 
 #: Where a model's weights live, by ``store``.
 STORES = ("hf", "checkpoints_dir", "text_encoders_dir")
@@ -132,6 +133,19 @@ class Backend:
     def checkpoints(self) -> Path:
         """The ``.checkpoints`` symlink (ACE-Step)."""
         return self.dir / CHECKPOINTS_LINK
+
+    @property
+    def wsl_marker(self) -> Path:
+        """The distro name ``install.sh`` wrote when it ran inside WSL2.
+
+        Its ``.env``/``.checkout`` symlinks point at a Linux path a native
+        Windows process cannot resolve; a native ``forge`` reads this instead
+        to route the interpreter through ``wsl.exe``, which resolves those
+        same symlinks itself from inside the distro. Absent on a real
+        Linux/macOS install, and on a Windows install of a backend that
+        needs no compiled CUDA extension.
+        """
+        return self.dir / WSL_MARKER
 
     @property
     def is_tool(self) -> bool:

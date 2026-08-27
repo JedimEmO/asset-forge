@@ -31,6 +31,11 @@ UPSTREAM="https://github.com/nv-tlabs/ardy"
 COMMIT="693f74d13b3d04a0a22ce127ee79c929dd89756b"
 PYVER="3.12"
 MODEL_ID="nvidia/ARDY-Core-RP-20FPS-Horizon40"
+# Same pin trellis2 uses (verified on an RTX 5080/Blackwell): the clone's own
+# ">=2.4.0a0" is satisfied by anything recent, so there is no real
+# constraint pulling this toward a different version.
+ARDY_TORCH_SPEC="torch==2.7.0 torchvision==0.22.0"
+ARDY_TORCH_INDEX="https://download.pytorch.org/whl/cu128"
 
 CHECKOUT="${ADOPT_CHECKOUT:-$PREFIX/checkout}"
 ENV_DIR="${ADOPT_ENV:-$PREFIX/env}"
@@ -62,13 +67,35 @@ else
     # `-e` so ardy/assets (skeleton definitions) resolve from the clone, as
     # upstream's own scripts expect; the clone pins transformers==5.8.1 and
     # numpy<2 itself. matplotlib is ours: the review sheets.
-    log "pip install -e $CHECKOUT + matplotlib (torch comes from PyPI's CUDA wheel)"
+    log "pip install -e $CHECKOUT + matplotlib"
     pip_install "$ENV_DIR" -e "$CHECKOUT" "matplotlib>=3.8"
 fi
 
 link_env "$ENV_DIR"
 link_checkout "$CHECKOUT"
 python="$(env_python)"
+
+# torch — the clone's own pyproject.toml pins a bare "torch>=2.4.0a0",
+# written for an NGC container that already has a CUDA-matched torch
+# preinstalled (the comment there says so); outside one, pip grabs PyPI's
+# default CPU-only wheel to satisfy that same constraint, silently, and
+# nothing said so until a sweep just ran forever. Checked with a real CUDA
+# call, not an import: CPU torch imports fine.
+torch_has_cuda() {
+    PYTHONNOUSERSITE=1 "$python" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1
+}
+if torch_has_cuda; then
+    log "torch $(PYTHONNOUSERSITE=1 "$python" -c 'import torch; print(torch.__version__)') has CUDA"
+else
+    log "torch has no CUDA (the clone's own pin let pip grab a CPU wheel) — installing $ARDY_TORCH_SPEC from $ARDY_TORCH_INDEX"
+    # shellcheck disable=SC2086
+    pip_install "$ENV_DIR" $ARDY_TORCH_SPEC --index-url "$ARDY_TORCH_INDEX"
+    if torch_has_cuda; then
+        log "torch $(PYTHONNOUSERSITE=1 "$python" -c 'import torch; print(torch.__version__)') has CUDA"
+    else
+        warn "torch still has no CUDA; \`forge gen motion sweep\` will run on CPU (very slow, not refused)"
+    fi
+fi
 
 # ------------------------------------------------------------------ models --
 
