@@ -1,0 +1,555 @@
+//! The card: one exclusive `flock(2)`, a projection of who holds it, and
+//! the ladder that gets it back from the `ComfyUI` host.
+//!
+//! # Why a lock and not a pidfile
+//!
+//! `out/serve/card.lock` is held with `flock(LOCK_EX)` for exactly as long
+//! as the job runs. **The kernel releases it when the holder dies** — SIGKILL,
+//! the OOM killer, a laptop lid — so a crashed generate cannot leave the
+//! card claimed by a process that is not there. A pidfile can only ever be
+//! *checked*, and every check is a race plus a story about a stale file;
+//! `music.py`'s resident ACE-Step server shipped exactly that bug, where a
+//! stale pid eventually named a stranger.
+//!
+//! **The lock is the truth and `card.json` is a projection** — the same
+//! relation sidecars and the manifest already have. The sidecar is written
+//! after the lock is taken and overwritten by the next acquirer, so a stale
+//! one is harmless.
+//!
+//! The lease is taken by the daemon's worker **and** by
+//! `commands/generate.rs` when no daemon is up. That is the whole answer to
+//! "two doors race for the card": the door that is up takes the one lock. A
+//! worker being singular is not the card lock — it holds nothing against a
+//! second terminal.
+//!
+//! # What Rust knows about `ComfyUI`
+//!
+//! Exactly two endpoints, `GET /system_stats` and `POST /free`, because the
+//! card must answer with no Python alive — after a crash, before the first
+//! job, and inside `forge gpu`. The graph is Python's: nothing here posts a
+//! prompt, reads a history or fetches a view.
+
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use fs4::fs_std::FileExt as _;
+use serde::{Deserialize, Serialize};
+
+use crate::ServeError;
+use crate::store::write_atomic;
+
+/// How long `forge gpu --json` is believed before it is asked again.
+const CARD_CACHE: Duration = Duration::from_secs(2);
+
+/// How close to the free memory before a job counts as "the card came
+/// back". The resident floor creeps — 1.09 to 1.53 GB over seven model
+/// swaps, measured — and that must not trip the ladder.
+const BACK_WITHIN_GB: f64 = 0.5;
+
+/// How long the ladder polls `/system_stats` before it restarts the unit.
+const FREE_POLL_S: u64 = 15;
+
+/// How often it polls.
+const FREE_POLL_EVERY: Duration = Duration::from_millis(500);
+
+/// `out/serve/card.json`, the projection.
+#[must_use]
+pub fn card_json_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("card.json")
+}
+
+/// `out/serve/card.lock`, the truth.
+#[must_use]
+fn card_lock_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("card.lock")
+}
+
+/// Who holds the card, for humans and for `forge gpu`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CardState {
+    /// A job id, `cli:<pid>`, or `foreign` when the host would not give the
+    /// card back and the lease is being withheld.
+    pub holder: String,
+    /// The process holding it, when there is one.
+    pub pid: Option<u32>,
+    /// When it was taken.
+    pub since: String,
+    /// The backend's `vram_gb` **budget** — never a measurement.
+    pub need_gb: Option<f64>,
+    /// What is running: `moss_sfx sfx`.
+    pub what: Option<String>,
+    /// Why the card is withheld, when it is.
+    pub note: Option<String>,
+}
+
+impl CardState {
+    /// Read the projection, when there is one that parses.
+    #[must_use]
+    pub fn read(state_dir: &Path) -> Option<Self> {
+        let bytes = std::fs::read(card_json_path(state_dir)).ok()?;
+        serde_json::from_slice(&bytes).ok()
+    }
+
+    /// Whether the card is being withheld from card jobs, and why.
+    ///
+    /// The withholding lives in its own file rather than in `card.json`,
+    /// because `card.json` is overwritten by whoever holds the lease next
+    /// and a withholding must outlive an ordinary job that ran in between.
+    /// `card.json` still *says* `foreign` whenever nothing else holds it —
+    /// that is the projection doing its job.
+    #[must_use]
+    pub fn withheld(state_dir: &Path) -> Option<String> {
+        std::fs::read_to_string(withheld_path(state_dir))
+            .ok()
+            .map(|note| note.trim().to_owned())
+            .filter(|note| !note.is_empty())
+    }
+
+    /// Write the projection.
+    fn write(&self, state_dir: &Path) -> Result<(), ServeError> {
+        let text = serde_json::to_string_pretty(self)
+            .map_err(|e| ServeError::Io(format!("card.json: {e}")))?;
+        write_atomic(&card_json_path(state_dir), text.as_bytes())
+    }
+}
+
+/// Withhold the card: no card job runs until something proves it is free.
+///
+/// This is step 5 of the ladder, and it is deliberate. A daemon that hands
+/// out a card it cannot prove is free produces an OOM three jobs later with
+/// nothing naming the cause.
+///
+/// # Errors
+///
+/// [`ServeError::Io`] when the projection cannot be written.
+pub fn withhold(state_dir: &Path, note: &str) -> Result<(), ServeError> {
+    write_atomic(&withheld_path(state_dir), note.as_bytes())?;
+    foreign_state(note).write(state_dir)
+}
+
+/// Clear a withholding — what `forge gpu --free` does once the card is back.
+pub fn release_withhold(state_dir: &Path) {
+    let _ = std::fs::remove_file(withheld_path(state_dir));
+    if CardState::read(state_dir).is_some_and(|state| state.holder == "foreign") {
+        let _ = std::fs::remove_file(card_json_path(state_dir));
+    }
+}
+
+/// `out/serve/card.withheld` — the note that says no card job may start.
+fn withheld_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("card.withheld")
+}
+
+/// The projection of a withheld card.
+fn foreign_state(note: &str) -> CardState {
+    CardState {
+        holder: String::from("foreign"),
+        pid: None,
+        since: forge_library::clock::now_iso(),
+        need_gb: None,
+        what: None,
+        note: Some(note.to_owned()),
+    }
+}
+
+/// An exclusive hold on the card, released by dropping it — or by dying.
+#[derive(Debug)]
+pub struct CardLease {
+    file: std::fs::File,
+    state_dir: PathBuf,
+    taken: Instant,
+}
+
+impl CardLease {
+    /// Take the card if it is free right now, else `None`.
+    ///
+    /// # Errors
+    ///
+    /// [`ServeError::Io`] when the lock file cannot be opened.
+    pub fn try_acquire(
+        state_dir: &Path,
+        holder: &str,
+        need_gb: Option<f64>,
+        what: Option<&str>,
+    ) -> Result<Option<Self>, ServeError> {
+        let path = card_lock_path(state_dir);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| ServeError::io(parent, &e))?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|e| ServeError::io(&path, &e))?;
+        if !file.try_lock_exclusive().unwrap_or(false) {
+            return Ok(None);
+        }
+        let lease = Self {
+            file,
+            state_dir: state_dir.to_path_buf(),
+            taken: Instant::now(),
+        };
+        // After the lock, never before: the projection describes a hold that
+        // already exists.
+        CardState {
+            holder: holder.to_owned(),
+            pid: Some(std::process::id()),
+            since: forge_library::clock::now_iso(),
+            need_gb,
+            what: what.map(str::to_owned),
+            note: None,
+        }
+        .write(state_dir)?;
+        Ok(Some(lease))
+    }
+
+    /// Take the card, waiting up to `max` for whoever has it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::try_acquire`]; `Ok(None)` when `max` ran out.
+    pub fn acquire(
+        state_dir: &Path,
+        holder: &str,
+        need_gb: Option<f64>,
+        what: Option<&str>,
+        max: Duration,
+    ) -> Result<Option<Self>, ServeError> {
+        let deadline = Instant::now() + max;
+        loop {
+            if let Some(lease) = Self::try_acquire(state_dir, holder, need_gb, what)? {
+                return Ok(Some(lease));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// Seconds the lease has been held.
+    #[must_use]
+    pub fn held_s(&self) -> f64 {
+        self.taken.elapsed().as_secs_f64()
+    }
+}
+
+impl Drop for CardLease {
+    fn drop(&mut self) {
+        // The projection goes with the hold — unless something withheld the
+        // card on purpose, in which case that note is what it says next.
+        match CardState::withheld(&self.state_dir) {
+            Some(note) => {
+                let _ = foreign_state(&note).write(&self.state_dir);
+            }
+            None => {
+                let _ = std::fs::remove_file(card_json_path(&self.state_dir));
+            }
+        }
+        let _ = fs4::fs_std::FileExt::unlock(&self.file);
+    }
+}
+
+/// One process on the card, as `forge gpu --json` labels it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardApp {
+    /// Its pid.
+    pub pid: u32,
+    /// The command `nvidia-smi` reports.
+    pub name: String,
+    /// What it holds, in GB.
+    pub gb: f64,
+    /// The backend whose env it ran from, when that can be told.
+    pub backend: Option<String>,
+}
+
+/// The card as the existing reader sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardView {
+    /// The card's name.
+    pub name: String,
+    /// Its total memory in GB.
+    pub total_gb: f64,
+    /// What is free in GB.
+    pub free_gb: f64,
+    /// Who is holding it.
+    pub apps: Vec<CardApp>,
+    /// The whole object, for `/v1/status`.
+    pub raw: serde_json::Value,
+}
+
+impl CardView {
+    /// The foreign process holding the most memory — who a blocked job
+    /// waits on. `Some((pid, name, gb))`.
+    #[must_use]
+    pub fn largest_foreign(&self) -> Option<(u32, String, f64)> {
+        self.apps
+            .iter()
+            .max_by(|a, b| a.gb.partial_cmp(&b.gb).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|app| {
+                (
+                    app.pid,
+                    app.backend.clone().unwrap_or_else(|| app.name.clone()),
+                    app.gb,
+                )
+            })
+    }
+}
+
+/// `forge gpu --json`, cached for two seconds.
+///
+/// **There is no second `nvidia-smi` reader here.** `forge gpu` already
+/// labels each holding process with the backend whose env it ran from, and
+/// a second reader of that fact would be a second story about it.
+#[derive(Debug)]
+pub struct CardReader {
+    forge: PathBuf,
+    project: PathBuf,
+    cached: Mutex<Option<(Instant, Option<CardView>)>>,
+}
+
+impl CardReader {
+    /// A reader that re-invokes this binary.
+    #[must_use]
+    pub fn new(forge: PathBuf, project: PathBuf) -> Self {
+        Self {
+            forge,
+            project,
+            cached: Mutex::new(None),
+        }
+    }
+
+    /// The card, or `None` when there is no `nvidia-smi` to ask — which is
+    /// a runner, and a runner blocks nothing.
+    #[must_use]
+    pub fn read(&self) -> Option<CardView> {
+        if let Ok(guard) = self.cached.lock()
+            && let Some((at, view)) = guard.as_ref()
+            && at.elapsed() < CARD_CACHE
+        {
+            return view.clone();
+        }
+        let view = self.read_uncached();
+        if let Ok(mut guard) = self.cached.lock() {
+            *guard = Some((Instant::now(), view.clone()));
+        }
+        view
+    }
+
+    /// Ask the binary, without the cache.
+    fn read_uncached(&self) -> Option<CardView> {
+        let output = std::process::Command::new(&self.forge)
+            .arg("--project")
+            .arg(&self.project)
+            .arg("gpu")
+            .arg("--json")
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let line = text
+            .lines()
+            .rev()
+            .find(|line| line.trim().starts_with('{'))?;
+        let raw: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let mb = |key: &str| raw.get(key).and_then(serde_json::Value::as_f64);
+        let apps = raw
+            .get("apps")
+            .and_then(serde_json::Value::as_array)
+            .map(|apps| {
+                apps.iter()
+                    .filter_map(|app| {
+                        Some(CardApp {
+                            pid: u32::try_from(app.get("pid")?.as_u64()?).ok()?,
+                            name: app.get("name")?.as_str()?.to_owned(),
+                            gb: app.get("used_mb")?.as_f64()? / 1024.0,
+                            backend: app
+                                .get("backend")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_owned),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(CardView {
+            name: raw
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_owned(),
+            total_gb: mb("total_mb").unwrap_or(0.0) / 1024.0,
+            free_gb: mb("free_mb").unwrap_or(0.0) / 1024.0,
+            apps,
+            raw,
+        })
+    }
+}
+
+/// What the release ladder observed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardRelease {
+    /// Free VRAM after the ladder, when it could be read.
+    pub after_gb: Option<f64>,
+    /// Whether the unit was restarted. Loud on purpose.
+    pub restarted: bool,
+    /// Whether the card came back within [`BACK_WITHIN_GB`].
+    pub returned: bool,
+    /// What to say in the log and, when it did not come back, in
+    /// `card.json`.
+    pub note: Option<String>,
+}
+
+/// Free VRAM in GB as `ComfyUI` reports it.
+///
+/// Believe `/system_stats` for *free* and `nvidia-smi` for *peak*: the host
+/// reports what torch has allocated now, which is nowhere near the peak of
+/// a run.
+#[must_use]
+pub fn comfy_free_gb(base_url: &str) -> Option<f64> {
+    let response = crate::wire::get(
+        &format!("{}/system_stats", base_url.trim_end_matches('/')),
+        None,
+        Duration::from_secs(5),
+    )
+    .ok()?;
+    let value = response.json()?;
+    let device = value.get("devices")?.as_array()?.first()?;
+    let free = device.get("vram_free")?.as_f64()?;
+    Some(free / 1_073_741_824.0)
+}
+
+/// The ladder of `designs/serve.md` §5, run after a comfy child exits.
+///
+/// `POST /free` → poll → `systemctl --user restart <unit>` → poll →
+/// **withhold**. Steps 4 and 5 are a safety net: `hosting.md` records
+/// `/free` giving the card back on both spike runs, so a restart here is a
+/// line worth reading and never routine.
+pub fn release_comfy(
+    base_url: &str,
+    unit: Option<&str>,
+    before_gb: Option<f64>,
+    mut say: impl FnMut(&str),
+) -> CardRelease {
+    let base = base_url.trim_end_matches('/');
+    let back = |free: Option<f64>| match (free, before_gb) {
+        (Some(now), Some(before)) => now + BACK_WITHIN_GB >= before,
+        // Nothing to compare against is not evidence the card is held.
+        _ => true,
+    };
+    let _ = crate::wire::post(
+        &format!("{base}/free"),
+        None,
+        "{\"unload_models\": true, \"free_memory\": true}",
+        Duration::from_secs(10),
+    );
+    let mut free = poll_free(base, before_gb, FREE_POLL_S);
+    if back(free) {
+        return CardRelease {
+            after_gb: free,
+            restarted: false,
+            returned: true,
+            note: None,
+        };
+    }
+
+    let unit = unit.unwrap_or("forge-comfy.service");
+    say(&format!(
+        "the card did not come back after /free ({} GB free against {} GB before) — restarting \
+         {unit} once",
+        free.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+        before_gb.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+    ));
+    let restarted = std::process::Command::new("systemctl")
+        .arg("--user")
+        .arg("restart")
+        .arg(unit)
+        .status()
+        .is_ok();
+    free = poll_free(base, before_gb, FREE_POLL_S * 2);
+    if back(free) {
+        say("the card came back after the restart");
+        return CardRelease {
+            after_gb: free,
+            restarted,
+            returned: true,
+            note: None,
+        };
+    }
+    let note = format!(
+        "the ComfyUI host still holds the card after /free and a restart of {unit} ({} GB free \
+         against {} GB before this job). no card job will start until something proves it is \
+         free: `forge gpu --free`, or `systemctl --user status {unit}`.",
+        free.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+        before_gb.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+    );
+    say(&note);
+    CardRelease {
+        after_gb: free,
+        restarted,
+        returned: false,
+        note: Some(note),
+    }
+}
+
+/// Poll `/system_stats` until the card is back or the seconds run out.
+fn poll_free(base: &str, before_gb: Option<f64>, seconds: u64) -> Option<f64> {
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let mut last = comfy_free_gb(base);
+    loop {
+        if let (Some(now), Some(before)) = (last, before_gb)
+            && now + BACK_WITHIN_GB >= before
+        {
+            return last;
+        }
+        if Instant::now() >= deadline {
+            return last;
+        }
+        std::thread::sleep(FREE_POLL_EVERY);
+        last = comfy_free_gb(base);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_lease_is_exclusive_in_one_process_and_the_projection_follows_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path();
+        let first = CardLease::try_acquire(state, "j-one", Some(8.0), Some("moss_sfx sfx"))
+            .expect("acquire")
+            .expect("free");
+        let projection = CardState::read(state).expect("card.json");
+        assert_eq!(projection.holder, "j-one");
+        assert_eq!(projection.need_gb, Some(8.0));
+        drop(first);
+        assert!(
+            CardState::read(state).is_none(),
+            "the projection goes with the hold"
+        );
+        let second = CardLease::try_acquire(state, "j-two", None, None)
+            .expect("acquire")
+            .expect("free again");
+        drop(second);
+    }
+
+    #[test]
+    fn a_withheld_card_stays_withheld_until_it_is_cleared() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state = dir.path();
+        withhold(state, "the host did not give it back").expect("withhold");
+        assert!(CardState::withheld(state).is_some());
+        // A lease taken and dropped does not quietly clear a withholding.
+        let lease = CardLease::try_acquire(state, "j-three", None, None)
+            .expect("acquire")
+            .expect("free");
+        drop(lease);
+        assert!(CardState::withheld(state).is_some());
+        release_withhold(state);
+        assert!(CardState::withheld(state).is_none());
+    }
+}

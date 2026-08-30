@@ -12,10 +12,10 @@
 //!
 //! # What a caller holds
 //!
-//! One thing: an [`Arc<dyn Queue>`](Queue). `LocalQueue` owns a worker and
-//! the state directory in this process; `RemoteQueue` is an HTTP client of
+//! One thing: an [`Arc<dyn Queue>`](Queue). [`LocalQueue`] owns a worker and
+//! the state directory in this process; [`RemoteQueue`] is an HTTP client of
 //! a `forge serve` daemon. The CLI and `forge_mcp` never learn which they
-//! have — discovery decides, and a machine with no daemon runs the
+//! have — [`discovery::find`] decides, and a machine with no daemon runs the
 //! identical code path with a queue of one.
 //!
 //! # What it never does
@@ -42,15 +42,36 @@
 //! artefact it describes *together* rather than leave one orphaned story
 //! about the other.
 
+mod backend_facts;
+mod card;
+mod client;
+pub mod daemon;
+pub mod discovery;
+mod executor;
+pub mod http;
 mod job;
+mod logs;
+mod queue;
+mod runs;
+mod store;
+mod wire;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+pub use card::{
+    CardLease, CardReader, CardRelease, CardState, card_json_path, comfy_free_gb, release_comfy,
+    release_withhold, withhold,
+};
+pub use client::RemoteQueue;
+pub use executor::GenOutcome;
 pub use job::{
     CardFacts, ExecutorKind, JOB_SCHEMA, Job, JobFilter, JobId, JobSpec, JobState, LogChunk,
     QueueCounts, Run, RunFilter, Status, StatusJob,
 };
+pub use queue::{LocalQueue, LocalQueueOptions};
+pub use store::{Daemon, JobStore};
 
 /// The environment variable that forces an in-process queue.
 ///
@@ -203,4 +224,13 @@ pub trait Queue: Send + Sync {
     ///
     /// [`ServeError::NoSuchJob`] or [`ServeError::Io`].
     fn wait(&self, id: &JobId, max: Duration) -> Result<Job, ServeError>;
+}
+
+/// A queue for this project: the daemon's if one is up, else one of our own.
+///
+/// # Errors
+///
+/// [`ServeError::Io`] when the state directory cannot be made.
+pub fn queue_for(project: &forge_library::Project) -> Result<Arc<dyn Queue>, ServeError> {
+    discovery::queue_for(project)
 }

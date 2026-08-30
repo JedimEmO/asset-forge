@@ -2954,11 +2954,12 @@ dependencies = [
  "axum",
  "forge_library",
  "fs4",
- "libc",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "tower",
 ]
 

@@ -358,6 +358,16 @@ pub struct Job {
     pub card: Option<CardFacts>,
     /// The child's `comfy` block, copied verbatim from its JSON last line.
     pub comfy: Option<Value>,
+    /// The child's JSON last line, whole.
+    ///
+    /// Every field above that a generator supplied — `record`, `outputs`,
+    /// `message`, `hint`, `comfy` — is a projection of this object, and it
+    /// is kept because `forge gen --json` and the MCP frames must print the
+    /// generator's own words, not a summary of them: a `seed`, an
+    /// `elapsed_s` or a `fake` that only the child knows would otherwise be
+    /// lost the moment a daemon stood between the child and the caller.
+    #[serde(default)]
+    pub payload: Option<Value>,
 }
 
 impl Job {
@@ -395,6 +405,7 @@ impl Job {
             hint: None,
             card: None,
             comfy: None,
+            payload: None,
         }
     }
 

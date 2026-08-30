@@ -24,9 +24,13 @@ tower = { workspace = true }
 # The card lease is an exclusive flock(2): the kernel drops it when the
 # holder dies, which no pidfile can promise.
 fs4 = { workspace = true }
-# Kill a process group by pid, and read a pid's start time: the two things
-# the card lock and the restart reconciliation need from the kernel.
-libc = { workspace = true }
+# Signal a process group without an unsafe block — this crate denies unsafe
+# code, and a signal to the wrong group is the one mistake here that cannot
+# be taken back.
+rustix = { workspace = true }
+# Three scalars out of a backend.toml (executor, host, [server]) until
+# forge_library::backends carries them; see src/backend_facts.rs.
+toml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

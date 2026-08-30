@@ -65,9 +65,9 @@ tower = "0.5"
 # The card lease is an exclusive flock(2). The kernel drops it when the
 # holder dies, which is the one promise a pidfile cannot make.
 fs4 = { version = "0.13", features = ["sync"] }
-# Two calls the standard library does not expose: killpg, and waitpid's
-# non-blocking form for a child another thread owns.
-libc = "0.2"
+# Signalling a process group, without an unsafe block in a workspace that
+# denies them.
+rustix = { version = "1", features = ["process"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
