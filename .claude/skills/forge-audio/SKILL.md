@@ -1,13 +1,17 @@
 ---
 name: forge-audio
-description: Make and ship a sound — an effect through MOSS-SoundEffect, a track through the resident ACE-Step server, a spoken line through MOSS-TTS in a voice designed by forge-voice — rendered to out/, judged from its plot and numbers, then filed with its record. Use when the user wants a sound effect, music or a voice line, or says a shipped sound is clipped, late, quiet or truncated.
+description: Make and ship a sound — an effect through MOSS-SoundEffect, a track through ACE-Step, a spoken line through MOSS-TTS in a voice designed by forge-voice, all three inside the ComfyUI host — rendered to out/, judged from its plot and numbers, then filed with its record. Use when the user wants a sound effect, music or a voice line, or says a shipped sound is clipped, late, quiet or truncated.
 ---
 
 # Audio: prompt → `out/audio/<kind>/` → plot → `assets/audio/<kind>/`
 
-Three backends, one shape: a `just` recipe renders a file and its record
-into `out/audio/<kind>/`, `just audio` measures and draws it, `just
-promote-audio` files it. Nothing a generator writes lands under `assets/`;
+Three backends, one shape, and each step names its door: **`just sfx` /
+`just music` / `just speech`** (the MCP door is `generate_audio`, which
+returns a job you follow with `wait`) render a file and its record into
+`out/audio/<kind>/`; **`just audio`** (`inspect_audio`) measures and draws
+it; **`just promote-audio`** (`promote_audio`) files it. All three
+generators run inside the ComfyUI host now — ACE-Step native, MOSS through
+TTS-Audio-Suite — so none of them has a venv or a server of its own. Nothing a generator writes lands under `assets/`;
 a sound is looked at before it ships. None of the three is bit-reproducible,
 so a shipped sound claims integrity (sha256) and provenance, never
 regeneration: the record says what was asked and what the backend used, and
@@ -21,18 +25,31 @@ speech lines on the sample's `warden_greeting`, cloned from the designed
 
 - `just doctor` — the row for the backend you need reads `ok`:
 
-  | Recipe | Row | First run, when `partial` |
+  | Recipe | Row | What each word means here |
   |---|---|---|
-  | `just sfx` | `moss_sfx` | downloads `OpenMOSS-Team/MOSS-SoundEffect-v2.0`, ~11 GB on disk (~100 s) |
-  | `just music` | `acestep` | the minimal ~7.3 GB checkpoint set is fetched by `install.sh`; a `partial` here is a missing checkpoint, not a first-run download |
-  | `just speech` | `moss_tts` | downloads `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5`, ~8 GB, on the first `just speech`; the same row covers `just voice` (`forge-voice`) and its ~4 GB `OpenMOSS-Team/MOSS-VoiceGenerator` |
+  | `just sfx` | `moss_sfx` `[comfy]` | `partial`: the weight (`MOSS-SoundEffect-v2.0`, ~11 GB) is not in the host's model folder yet, and the row names it with its GB |
+  | `just music` | `acestep` `[comfy]` | `partial`: the ~7.5 GB checkpoint set is not on disk |
+  | `just speech` | `moss_tts` `[comfy]` | `partial`: `MOSS-TTS-Local-Transformer-v1.5` (~8 GB) is absent; the same row covers `just voice` (`forge-voice`) and its ~4 GB `MOSS-VoiceGenerator` |
 
-  `missing` → `forge-setup`.
+  All three are `comfy` backends, so their rows are judged against the
+  service: `missing` means **nothing is listening at `[hardware]
+  comfy_url`** — `systemctl --user start forge-comfy` — and `broken` means
+  the service answers as another commit than pinned, a node pack is off its
+  pin, or a workflow names a class it does not have. None of those is fixed
+  by downloading anything. `missing` on a first setup → `forge-setup`.
+
+  A row that reads **`off — [make] music = false`** is not a problem: this
+  project did not choose that kind. If the user wants it, that is a
+  `[make]` line in `forge.toml` (or `init_project` with `adopt: true`),
+  then `forge setup`.
 - **The GPU is free enough.** `just gpu`. MOSS-SoundEffect ~6–8 GB,
-  MOSS-TTS (the 4B) ~12 GB, the ACE-Step server ~8–10 GB **and it stays
-  resident** after a track until `--stop-server`. None of them co-resides
-  with a lift (22 GB) or a sweep (16 GB); a studio window on the real
-  adapter holds the card too.
+  MOSS-TTS (the 4B) ~12 GB, ACE-Step ~8 GB — all three budgets, not
+  measurements. What stays on the card is **the ComfyUI unit**: ~0.4 GB of
+  CUDA context while it is up, plus whatever workflow last loaded, until
+  its unload node, `POST /free`, or `systemctl --user stop forge-comfy`.
+  None of them co-resides with the image model (23.3 GB measured) or an
+  ARDY sweep (15.4 GB measured); a studio window on the real adapter holds
+  the card too.
 - For speech: **a voice**. Designed, as a rule — `forge-voice` makes
   `assets-src/voices/<name>/ref.wav` from a description and a seed, with
   its record beside it, and `--voice <name>` finds it by name. A clip you
@@ -48,7 +65,7 @@ speech lines on the sample's `warden_greeting`, cloned from the designed
 
 ```
 just sfx    <name> "<prompt>"  [--seconds 3] [--seed N] [--steps 100] [--cfg 4] [--created-by agent:<you>]
-just music  <name> "<prompt>"  [--duration 30] [--seed N] [--bpm N] [--keyscale "Am"] [--lyrics-file f] [--thinking] [--stop-server]
+just music  <name> "<prompt>"  [--duration 30] [--seed N] [--bpm N] [--keyscale "Am"] [--lyrics-file f] [--thinking]
 just speech <name> "<text>"    --voice <voice-name> | --voice path/to/clip.wav [--language en] [--seed N]
 ```
 
@@ -101,11 +118,11 @@ weights (~11 GB) if absent, then the model load every call;
 `torch.compile` of the DiT is **off** by default (`TORCHDYNAMO_DISABLE=1`
 in `backends/moss_sfx/backend.toml`) because it runs for minutes and dies
 with the process — export `TORCHDYNAMO_DISABLE=0` only for a long
-`--batch-file` session. ACE-Step: the server start (minutes), once; then
-resident at ~8–10 GB until `just music <name> "<prompt>" --stop-server`
-on the last track of the session, or `target/debug/forge gen music
---stop-server` on its own. MOSS-TTS: the weights (~8 GB) if absent, then
-the 4B load every call.
+`--batch-file` session. ACE-Step: the host loads the model on the first
+track of a session and keeps it until the workflow's unload node or
+`POST /free`; `systemctl --user stop forge-comfy` gives the whole card back
+at the end of a session. MOSS-TTS: the weights (~8 GB) if absent, then the
+4B load every call.
 
 ### 2. Judge — `just audio out/audio/<kind>/<name>.<ext>`
 
@@ -210,8 +227,11 @@ forge promote audio sfx out/audio/sfx/<name>.wav <name> \
 | Seen | Consequence | Fix |
 |---|---|---|
 | exit 3 in ~100 ms, `<backend> is not installed — generation through it is off` | nothing ran | `forge-setup` |
+| the doctor row reads `off — [make] sfx = false` | nothing is wrong; this project did not choose that kind, so it was never probed | choose it in `[make]` (or `init_project` with `adopt: true`), then `forge setup` |
+| a comfy row reads `missing` and the generate exits 3 | nothing is listening at `[hardware] comfy_url` | `systemctl --user start forge-comfy`, then `systemctl --user status forge-comfy` |
+| `generate_audio` came back with a job id and no file | correct — a generate returns a job | `wait(job, max_s)`; the result names the file and its record |
 | `FAIL model:… absent` in doctor, then a long first call | the weights are downloading (sfx ~11 GB, tts ~8 GB) | wait once; doctor reads `ok` after |
-| CUDA out of memory | the card was held — by the ACE-Step server, a studio window or a generate you forgot | `just gpu`; `--stop-server`; never two generates at once |
+| CUDA out of memory | the card was held — by whatever the ComfyUI host last loaded, a studio window, or a generate you forgot | `just gpu`; `systemctl --user stop forge-comfy`; never two generates at once |
 | `the ACE-Step server did not answer /health within N s — see …/acestep-server.log` | the server failed to load | read `~/.local/state/asset-forge/acestep-server.log`; the ready timeout is `[server] ready_timeout_s` in `backends/acestep/backend.toml`, and `--timeout S` is the wait for a track, not for the start |
 | `clipped: N consecutive samples …`, exit 1 | the render overshot | re-render: another `--seed`, a lower `--cfg`; never normalise the file by hand — the record would then describe a sound that is not the file |
 | the tail ends at a wall in the plot | `--seconds`/`--duration` shorter than the decay | re-render longer |

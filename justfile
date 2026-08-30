@@ -114,9 +114,10 @@ doctor *flags: _build
     {{forge}} doctor {{flags}}
 
 # Look before you spend: the generators do not share 24 GB, and a second one
-# started blind ends in an OOM, not a queue. Exits 1 when the largest backend
-# (TRELLIS.2 at 1024³, 22 GB) would not fit in what is free, naming who holds
-# the rest — `forge gen music --stop-server` is the usual answer.
+# started blind ends in an OOM, not a queue. Exits 1 when the largest chosen
+# backend would not fit in what is free, naming who holds the rest —
+# `systemctl --user stop forge-comfy` is the usual answer, since the host
+# keeps whatever a workflow last loaded until its unload node or POST /free.
 #
 # Who holds the GPU right now.
 [no-exit-message]
