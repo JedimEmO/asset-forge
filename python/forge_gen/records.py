@@ -1,4 +1,4 @@
-"""Writing generator records — ``forge_record: 1`` — from every generator.
+"""Writing generator records — ``forge_record: 2`` — from every generator.
 
 Every run of a generator leaves one of these beside what it produced: which
 backend at which commit, what it was handed (hashed), every knob it was given
@@ -36,7 +36,15 @@ import os
 from pathlib import Path
 
 #: Schema version this module writes. Mirrors ``forge_library::generator_record::RECORD_SCHEMA``.
-SCHEMA = 1
+SCHEMA = 2
+
+#: The oldest schema this module reads. Mirrors ``RECORD_SCHEMA_MIN``.
+#:
+#: **Both readers accept 1 and 2, and only 2 is ever written.** Nothing
+#: under ``assets/`` or ``assets-src/`` was rewritten when the schema went
+#: to 2: adding four nulls to a shipped sidecar is churn with no new fact
+#: in it, and a v1 record still says everything it said before.
+SCHEMA_MIN = 1
 
 #: The record kinds the Rust reader knows, as ``RecordKind`` spells them.
 KINDS = ("lift", "prop", "rig", "export", "take", "sfx", "music", "speech", "voice")
@@ -58,8 +66,22 @@ KEYS = (
     "note",
 )
 
-#: The ``backend`` block's keys, in order.
-BACKEND_KEYS = ("name", "commit", "python", "torch", "model", "model_revision")
+#: The ``backend`` block's keys, in order. The four ``forge_record: 2``
+#: added are appended after the original six, so the key order stays a
+#: prefix of what it was and a v1 record read by a v2 reader needs no
+#: reordering to become one.
+BACKEND_KEYS = (
+    "name",
+    "commit",
+    "python",
+    "torch",
+    "model",
+    "model_revision",
+    "executor",
+    "comfyui_commit",
+    "workflow_sha256",
+    "packs",
+)
 
 #: How much of a file to hash at a time — big enough that the syscalls vanish,
 #: small enough that a 90-second track is not copied into memory to be hashed.
@@ -140,11 +162,26 @@ def backend_block(
     torch: str | None = None,
     model: str | None = None,
     model_revision: str | None = None,
+    executor: str | None = "env",
+    comfyui_commit: str | None = None,
+    workflow_sha256: str | None = None,
+    packs: dict | None = None,
 ) -> dict:
     """The ``backend`` block with every key present, in the Rust order.
 
     Nulls are written rather than omitted: a record that lists what it does
     not know is one a human can read and see the gaps in.
+
+    The last four are ``forge_record: 2``'s. ``executor`` is written for
+    **every** record, ``env`` ones included — a record that says nothing
+    about its executor is one nobody can group later — and it defaults to
+    ``"env"`` because that is what a generator calling this function from
+    inside its own interpreter is; the comfy path states its own. For an
+    ``env`` run the other three stay ``None``, because an env run genuinely
+    has no workflow and no host. ``workflow_sha256`` hashes the **tracked template
+    file**, never the patched graph: a reader can go and find a tracked
+    file, and nobody can check a hash of bytes that were never written down.
+    ``packs`` is ``{repo: commit}``, an empty object for native nodes.
     """
     return {
         "name": name,
@@ -153,6 +190,10 @@ def backend_block(
         "torch": torch,
         "model": model,
         "model_revision": model_revision,
+        "executor": executor,
+        "comfyui_commit": comfyui_commit,
+        "workflow_sha256": workflow_sha256,
+        "packs": packs,
     }
 
 
@@ -254,7 +295,12 @@ def normalize(rec: dict) -> dict:
     out = {}
     for key in KEYS:
         if key == "backend":
-            out[key] = {name: backend.get(name) for name in BACKEND_KEYS}
+            block = {name: backend.get(name) for name in BACKEND_KEYS}
+            # `packs` is free-form like `params`: the Rust holds it in a
+            # sorted map and re-emits it that way.
+            if block["packs"] is not None:
+                block["packs"] = _sorted(block["packs"])
+            out[key] = block
         elif key == "inputs":
             out[key] = [
                 {
@@ -312,11 +358,19 @@ def write(rec: dict, path: str | os.PathLike) -> Path:
 
 
 def load(path: str | os.PathLike) -> dict:
-    """Read a record back, refusing one of another schema."""
+    """Read a record back, refusing one this build cannot read.
+
+    :data:`SCHEMA_MIN` through :data:`SCHEMA` are accepted — every record
+    shipped under ``assets/`` is a 1 and none of them was rewritten — and
+    only :data:`SCHEMA` is ever written. A 1 read here is a 1: the four keys
+    ``forge_record: 2`` added are absent, which is what ``null`` already
+    means everywhere else in this file.
+    """
     with open(path, encoding="utf-8") as handle:
         rec = json.load(handle)
     if not isinstance(rec, dict) or "forge_record" not in rec:
         raise ValueError(f"{path} is not a generator record: no forge_record field")
-    if rec["forge_record"] != SCHEMA:
-        raise ValueError(f"{path} is forge_record {rec['forge_record']!r}; this build reads {SCHEMA}")
+    schema = rec["forge_record"]
+    if not isinstance(schema, int) or isinstance(schema, bool) or not SCHEMA_MIN <= schema <= SCHEMA:
+        raise ValueError(f"{path} is forge_record {schema!r}; this build reads {SCHEMA_MIN}–{SCHEMA}")
     return rec

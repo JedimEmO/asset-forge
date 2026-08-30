@@ -1,5 +1,5 @@
 {
-  "forge_record": 1,
+  "forge_record": 2,
   "kind": "rig",
   "tool": "blender",
   "created": "2026-08-23",
@@ -10,7 +10,11 @@
     "python": "3.13.2",
     "torch": null,
     "model": null,
-    "model_revision": null
+    "model_revision": null,
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
   },
   "inputs": [
     {
