@@ -27,7 +27,9 @@
 //!    contacts-derived event speaks the footstep vocabulary, every authored
 //!    time agrees with its take time through the recipe, and every audio
 //!    link resolves to a shipped sound;
-//! 5. every reference PNG under `<sources>/refs` has a row in `SOURCES.md`;
+//! 5. every reference PNG under `<sources>/refs` is accounted for: a
+//!    `<name>.ref.json` beside it (a `ref` record whose output hash is that
+//!    PNG) or a row in `SOURCES.md`;
 //! 6. every voice under `<sources>/voices/<name>/ref.*` is accounted for:
 //!    a `voice.json` beside it (a `voice` record whose output hash is the
 //!    file) or a row in `SOURCES.md` (a brought clip), and a voice line's
@@ -58,6 +60,10 @@ const EVENT_MAP_TOLERANCE_S: f32 = 0.025;
 
 /// The generator record beside a designed voice's clip.
 const VOICE_RECORD: &str = "voice.json";
+
+/// The extension `forge ref import` gives the record it writes beside a
+/// reference PNG: `<name>.png` is accounted for by `<name>.ref.json`.
+const REF_RECORD_EXT: &str = "ref.json";
 
 /// What a self-contained `.glb` container holds, read with nothing but the
 /// container format — the questions an outside consumer would ask of the
@@ -665,11 +671,15 @@ pub fn orphans(project: &Project) -> Report {
     report
 }
 
-/// Every reference PNG under `<sources>/refs` has a row in `SOURCES.md`.
+/// Every reference PNG under `<sources>/refs` is accounted for.
 ///
-/// A reference image claims integrity and a ledger row, never regeneration:
-/// the row is where its origin and its licence live, and a PNG without one
-/// is a file nobody can account for.
+/// A reference image claims integrity, never regeneration, and it has two
+/// ways to be accounted for and needs one of them: a `<name>.ref.json`
+/// beside it — the `ref` record `forge ref import` writes, whose output hash
+/// is that PNG and whose `stated_source` is where it came from — or a row in
+/// `SOURCES.md` for a picture that was put there before the door existed. A
+/// PNG with neither is a file nobody can account for, and every lift under
+/// it inherits that.
 #[must_use]
 pub fn refs(project: &Project) -> Report {
     let mut report = Report::default();
@@ -691,11 +701,16 @@ pub fn refs(project: &Project) -> Report {
         let rel = project
             .rel_to_root(&png)
             .unwrap_or_else(|| png.display().to_string());
+        let record_path = png.with_extension(REF_RECORD_EXT);
+        if record_path.is_file() {
+            ref_record_findings(&mut report, &file_name, &rel, &png, &record_path);
+            continue;
+        }
         if ledger.is_empty() {
             report.fail(
                 &file_name,
                 format!(
-                    "{rel} has no row: {} does not exist",
+                    "{rel} has no .{REF_RECORD_EXT} beside it and no row: {} does not exist",
                     project
                         .rel_to_root(&ledger_path)
                         .unwrap_or_else(|| ledger_path.display().to_string())
@@ -715,14 +730,70 @@ pub fn refs(project: &Project) -> Report {
             report.fail(
                 &file_name,
                 format!(
-                    "{rel} has no row in {} — a reference image claims a ledger row (its \
-                     File cell is `{under_refs}`), or it cannot be accounted for",
+                    "{rel} has no .{REF_RECORD_EXT} beside it and no row in {} — a reference \
+                     image is accounted for by the record its door writes (`forge ref import`) \
+                     or by a ledger row whose File cell is `{under_refs}`",
                     crate::project::SOURCES_LEDGER
                 ),
             );
         }
     }
     report
+}
+
+/// The record beside a reference PNG says what it must: it parses, it is a
+/// `ref` import, and its output is this picture.
+///
+/// The hash is the whole point of preferring the record to the row: the door
+/// stores the picture as it was drawn, byte for byte, so a PNG that no longer
+/// hashes to what its record claims has been edited outside every door — and
+/// a lift measured against the old bytes now names a file nobody has.
+fn ref_record_findings(report: &mut Report, name: &str, rel: &str, png: &Path, record_path: &Path) {
+    let record = match GeneratorRecord::load(record_path) {
+        Ok(record) => record,
+        Err(err) => {
+            report.fail(
+                name,
+                format!("the .{REF_RECORD_EXT} beside {rel} does not read: {err}"),
+            );
+            return;
+        }
+    };
+    if record.kind != RecordKind::Ref {
+        report.fail(
+            name,
+            format!(
+                "the .{REF_RECORD_EXT} beside {rel} describes a {} run, not a reference import",
+                record.kind
+            ),
+        );
+        return;
+    }
+    let Some(recorded) = record.output().and_then(|o| o.sha256.clone()) else {
+        report.fail(
+            name,
+            format!(
+                "the .{REF_RECORD_EXT} beside {rel} records no output hash — the picture is \
+                 unprovable"
+            ),
+        );
+        return;
+    };
+    let stem = png
+        .file_stem()
+        .map_or_else(|| name.to_owned(), |s| s.to_string_lossy().into_owned());
+    match hash::sha256_file(png) {
+        Err(err) => report.fail(name, format!("{rel} cannot be hashed: {err}")),
+        Ok(actual) if actual != recorded => report.fail(
+            name,
+            format!(
+                "{rel} is not the picture its .{REF_RECORD_EXT} describes — a reference is \
+                 stored as it was drawn and never edited in place; import the new picture \
+                 through the door (`forge ref import <png> {stem} … --overwrite`)"
+            ),
+        ),
+        Ok(_) => {}
+    }
 }
 
 /// Every voice under `<sources>/voices/<name>/ref.*` is accounted for.
@@ -1163,6 +1234,44 @@ mod tests {
         assert!(!report.ok(), "{report}");
         assert!(report.render().contains("crate.png"), "{report}");
         assert_eq!(report.failures(), 1);
+    }
+
+    #[test]
+    fn a_ref_record_accounts_for_a_png_with_no_row_and_only_for_those_bytes() {
+        let (_dir, project) = temp_project();
+        let props = project.refs_dir().join("props");
+        std::fs::create_dir_all(&props).expect("mkdir");
+        let png = props.join("barrel.png");
+        std::fs::write(&png, b"\x89PNG drawn").expect("png");
+        let report = refs(&project);
+        assert!(!report.ok(), "no record and no ledger: {report}");
+
+        // The record the door writes accounts for the picture on its own —
+        // a project made by `forge init` has no ledger row for it.
+        std::fs::write(
+            props.join("barrel.ref.json"),
+            format!(
+                r#"{{"forge_record": 2, "kind": "ref", "tool": "imported",
+                    "created": "2026-08-31", "created_by": "agent:claude",
+                    "params": {{"kind": "prop", "stated_source": "drawn in Grok"}},
+                    "outputs": [{{"path": "assets-src/refs/props/barrel.png",
+                                  "sha256": "{}"}}]}}"#,
+                hash::sha256_bytes(b"\x89PNG drawn"),
+            ),
+        )
+        .expect("record");
+        assert!(refs(&project).ok(), "{}", refs(&project));
+
+        // And only for the bytes it hashed: a picture edited in place is a
+        // reference nobody can account for, which is the whole reason the
+        // record is preferred to the row.
+        std::fs::write(&png, b"\x89PNG repainted by hand").expect("png");
+        let report = refs(&project);
+        assert!(!report.ok(), "{report}");
+        assert!(
+            report.render().contains("never edited in place"),
+            "{report}"
+        );
     }
 
     /// A `voice` generator record for `assets-src/voices/<name>/ref.wav`,

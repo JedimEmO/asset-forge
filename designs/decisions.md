@@ -1311,3 +1311,65 @@ being measured. And the door's own tests pin the answer to that question
 with a fixture instead of discovering it: an unpinned test would have taken
 one path on this disk and the other on the runner, which is the
 "works here" defect one directory over. 2026-08-31.
+
+**A budget with its pinning run written down is a debt, and this one was paid
+in twenty seconds of card time.** `DEFAULT_GAIN_DB = -3` shipped as a budget
+naming exactly what would settle it: three renders of the busiest arrangement
+at −2, −3 and −4 with `peak_dbfs` read off each. On the first hour the card was
+free they were made — one prompt, one seed, 30 s of ogg — and read −1.5, −2.6
+and −3.5 dBFS with no full-scale samples, against 0.0 dBFS and 1711 of them
+with no node at all. The offset from the nominal gain is a constant ~0.5 dB at
+all three, which is the vorbis encode's overshoot, so the knob is linear over
+this range; −3 is kept because it is the one that lands inside −2 ± 1 dBFS, and
+`assets/audio/music/tavern.ogg` is that render, promoted. **Why the shape
+matters more than the number:** a budget that names its measurement is a
+sentence somebody can act on in twenty seconds, and a budget that only says
+"provisional" is one nobody can close. The two reference thresholds still
+marked budget here (the floor band, the flood-through hole) name theirs the
+same way — a picture with a drawn floor and one with a hole through it — and
+stay budgets until such a picture exists, because inventing one to measure
+against would measure the invention. 2026-08-31.
+
+**A host that is up and holding nothing still holds the card.** The ComfyUI
+unit's idle CUDA context measures **0.4 GB** — 23.9 GB free with it stopped
+against 23.5 GB running — so a 1024³ TRELLIS.2 lift at a 22 GB budget goes
+`systemctl --user stop forge-comfy` first and `start` after, and SkinTokens at
+3.3–4.4 GB does not. **Why no lock catches it:** the card lease serialises
+*jobs*, and the unit's context belongs to a process that has no job — it is
+allocated at start and returned at stop, so every door that asks "is anybody
+holding the card" answers honestly and still leaves the biggest generate
+thinner than it looks. The rule is the one `CLAUDE.md` already states about
+studio windows, with a second tenant named: before the largest generate, stop
+the things that are merely *resident*, not only the things that are running.
+2026-08-31.
+
+**A door that writes into the source tree needs an inverse, and `forge ref
+import` has none.** One import leaves three things behind — the PNG under
+`assets-src/refs/<kind>s/`, its `.ref.json`, and a row in
+`assets-src/SOURCES.md` — and there is no `forge ref remove`. In this
+repository the way back is `rm` twice and `git checkout -- assets-src/SOURCES.md`,
+which works only because the ledger is tracked; in a project made by `forge
+init` and not under git, the only way back is **typing in the one file the door
+exists to keep hands out of**. **Why it is recorded rather than fixed here:**
+the missing verb is small and the rule it has to keep is not — a remove that
+takes a row out of a ledger has to refuse a reference something downstream was
+lifted from, or it becomes the door that orphans a `lift.json`. Until it
+exists, an import of the wrong picture is undone with `--overwrite` and the
+right one, which leaves no orphan and is the move the door already supports.
+2026-08-31.
+
+**Four documents promised a verify rule and no gate ran it, because the door
+wrote both halves.** `CLAUDE.md`, `designs/records.md`, `designs/skin.md` and
+`forge2.md` all said a reference PNG passes `forge verify` on **either** a
+`.ref.json` whose output hash is that PNG **or** a `SOURCES.md` row.
+`verify::refs` only ever read the row: the record half was never built, and
+nobody noticed for a phase, because `forge ref import` writes the record *and*
+the row, so every picture on this disk passes by the half that exists. The
+consequence was not theoretical in the other direction — a PNG edited in place
+after its import passed verify, since the row says nothing about bytes. The
+rule is now built as it was written, mirroring the voice check it was modelled
+on, and the hash is what it buys. **Why the gap survived review:** a gate is
+proved by a case that needs it, and the fixture that needs this one — a record
+with no row — is exactly the case the door cannot produce. When a door writes
+every input to a check, the check has to be tested against a state the door
+never makes, or the suite is agreeing with itself. 2026-08-31.

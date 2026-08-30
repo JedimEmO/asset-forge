@@ -538,7 +538,55 @@ trading one away. And the fit gate's arm-height check passes her at
 3.4 cm against the fitted wrists; only `reach` still trips, measuring her
 span against wrists it just fitted to her — that check goes.
 
-**Phase 2 — rigging (2 weeks).** `backends/skintokens/` in the `env`
+**Phase 2 — rigging. Landed, run on the card and closed 2026-08-31.** The
+skeleton fits the mesh and the weights are the fit, in doors: `forge gen
+prepare` normalises a lift onto a weightless armature and refuses a pose
+against the body's **own** shoulder line (the reach gate is deleted by name,
+and `profile.py` refuses a profile that keeps it); `forge gen skin` runs the
+whole loop behind one command — skin, fit once, build the per-body armature,
+prepare and skin again against it, re-attach by joint order — with no
+`--passes`, because the second fit walks the torso downhill 73.5 mm a time;
+`fitgeom` is the one geometry module the gate and the fit both read, so they
+cannot disagree about where a shoulder is; the root comes off the body's own
+floor and stature, where the weights put `vex_runner`'s 5.8 cm high
+(`motion_scale` 1.0605 measured back to 1.0000); the symmetry gate is two
+measured bands, so the 28.7 % forearm that walks passes. The exporter traded
+its 0.1 mm rest-translation rule for direction within a degree and length
+inside [0.4, 2.5], and `forge rig check` **gained** two findings rather than
+trading one away — `check_rest_directions`, and `check_contact_feet`, which
+CPU-skins the reference clip and measures the planted foot's own lowest
+vertex (its contact-frame rule was corrected by a picture: slow is not
+planted, a swing apex is slow and 8 cm in the air, so the stance is the
+slowest quarter *of the grounded frames*). Sidecar schema 2 gives a body its
+55 rest translations and a `motion_scale` re-derived from the `.glb` being
+promoted; the migration measures the shipped library instead of copying the
+contract into it, `verify` re-derives all of it on every run, the manifest
+carries the scale and `forge bundle` reads it off the body. `blender/rig.py`
+went away with bone heat and both rescue functions; `just rig-mesh` is gone
+and `just promote-mesh` dies by name. The MCP surface opened the mesh doors —
+`generate_mesh`, `prepare_body`, `skin_body`, `export_body`, `promote_body`,
+`promote_model` — and stands at **twenty-six**, with `mcp-session`'s
+character loop a tool call at every step. `ember_knight`, a Grok reference
+through the whole chain, is the first library body carrying its own bone
+lengths, rig check 12 of 12.
+
+**What did not ship in Phase 2, said plainly.** The gate as written was
+"`vex_runner` and one plated body re-skinned": **the `vex_runner` re-skin was
+refused** and the shipped body stands. It ran clean through prepare, skin and
+export and lost `check_contact_feet` at −5.4 cm against the contract's 5.0 cm
+— and the strip says the honest rest of it, that the fitted SkinTokens body
+and the shipped bone-heat body are indistinguishable on `walk` and
+`pistol_shoot`, so there was no visible gain to argue for either. The plated
+body is `ember_knight`, which had nowhere else to come from, and it is what
+proves the doors. `forge rig import` / `import_rig` for a user's own armature
+was **not built** and is Phase 4's or later. And `motion_scale` reaches the
+manifest, the bundle and verify but **not the renderers**: the sheet and the
+studio still pose a clip at 1.0, so a body whose scale is not 1.0 would show
+one thing here and another in a consumer that applies it — no shipped body is,
+both read 1.0, which is why nothing has been wrong yet and why this is a
+promise the design made and the code has not kept.
+
+**Phase 2, as planned —** `backends/skintokens/` in the `env`
 executor with the issue-#8 and SDPA patches under `patches/`. `forge gen
 prepare` (Blender: normalise, fit gate, dust, budget, armature in) →
 `forge gen skin` (skin-only, transfer on, postprocess on) → the export
@@ -552,7 +600,39 @@ grows the character loop. Delete the rescue ladder, `_auto_weights` and
 Gate: `vex_runner` and one plated body re-skinned, `check-bodies` green,
 the walk binding 27 of 27.
 
-**Phase 3 — the reference door (1 week).** `import_reference` (and
+**Phase 3 — the reference door. Landed and closed 2026-08-31.** A PNG gets
+under `assets-src/refs/` one way: `forge ref import`, `just ref-import` and
+MCP `import_reference` are three ways into one door, which submits `forge gen
+ref-import` and composes nothing. It runs `mesh.py`'s **own** keyer at its own
+tolerance and then the refusals, all of it before a GPU minute, and writes
+three files that are its to write and never a hand's — the PNG as it was
+drawn, byte for byte, a `<name>.ref.json`, and the `SOURCES.md` row. Every
+threshold in it was measured against the twenty-one pictures on this disk
+rather than proposed, and three of them moved because of that: retained alpha
+reads 0.123–0.278, so the design's 0.15 floor would have refused two
+references that lifted; `heads` means crown-to-arm-line and refuses below
+3.0 rather than below the design's number; subject fill does not separate and
+ships as a note. `RecordKind::Ref` is in the Rust reader, the four shipped
+references all carry records, and `forge verify` now passes a PNG on **either**
+its `.ref.json` (hashed) or a ledger row — the half of the rule four documents
+promised and no gate ran until this commit. The image-model group left
+`backends/comfy` with the spike's `hosting.md` entries kept as the record of
+why. The gate is met by `ember_knight`: drawn in Grok, imported, lifted,
+prepared, skinned, exported, rig-checked and promoted, with the pre-check
+refusing a deliberately bad picture on the way.
+
+**What did not ship in Phase 3, said plainly.** The sliver check is a printed
+note and not a refusal (below). Two of the door's thresholds — the floor band
+and the flood-through hole — are **budgets**: the good side is measured on
+every picture here and no picture on disk exercises the bad side, and each
+names the picture that would settle it. `forge ref import` has **no inverse**:
+an import leaves three files in two places and the way back in a project not
+under git is typing in the ledger the door exists to keep hands out of
+(`decisions.md`, 2026-08-31). And on a machine without Pillow, numpy and
+OpenCV the door stores the bytes and records every measurement as `null` —
+honest, and nothing about the picture is known.
+
+**Phase 3, as planned —** `import_reference` (and
 `forge ref import`) with the format text above in its description; the
 keyer pre-check and its refusals by name; the sliver check on the
 prepared mesh — **which shipped as a printed note and not a refusal**, the
@@ -570,7 +650,11 @@ the pre-check refusing a deliberately bad picture on the way.
 **Phase 4 — the monitor and the rest (1–2 weeks).** `forge top`; the
 remaining tools (`design_voice`, `list_backends`, `inspect_record`,
 `audit`, `manifest_check`, `generate_clips` as a job with keyframes);
-`mcp-check` re-pinned to thirty-one; the six skills rewritten with log
+`mcp-check` re-pinned — **not to thirty-one**: the table above predates
+`export_bundle` and `export_body`, the surface stands at twenty-six, and what
+it still owes the table is `list_backends`, `inspect_record`, `design_voice`,
+`import_rig`, `audit`, `manifest_check` and `verify`, so the number is one
+Phase 4 states after it counts; the six skills rewritten with log
 lines captured from real runs, each step naming its door. `just studio`
 unchanged. Gate: a stranger's session from the README to a promoted
 character and a promoted clip, from Claude Code alone.
