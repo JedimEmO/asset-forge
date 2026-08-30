@@ -33,6 +33,13 @@ _build:
 
 # ------------------------------------------------------------------ setup --
 
+# The kind-shaped front door is `forge setup [kind…]`: it prints one screen —
+# per chosen kind the backends, their disk, the total and every licence fact
+# in full — before a byte downloads, asks once, records what you accepted in
+# $FORGE_BACKENDS_HOME/licences.json, and skips every backend doctor already
+# calls ok. This recipe is the backend-shaped door under it, for installing
+# or adopting one at a time.
+#
 # `--adopt-env DIR --adopt-checkout DIR` onboard an install that already
 # exists; `--no-models` leaves the weights to the first run; `--yes` accepts
 # every licence prompt without a TTY (nvdiffrast's non-commercial one is
@@ -91,10 +98,15 @@ setup backend="all" *flags:
 install:
     cargo install --path {{justfile_directory()}}/crates/forge --locked
 
-# ok | partial | missing | broken per backend; exits 1 if any is not ok —
-# partial means the env runs but a weight is not cached, and the first
-# generate through it would download for minutes. `--json` for a machine,
-# `--quick` to skip the in-env probes (seconds each).
+# Five words per backend: ok | partial | missing | broken | off. `partial`
+# means the env runs but a weight is not cached, and the first generate
+# through it would download for minutes. `off` is not a probe result — it is
+# `[make]` in forge.toml not having chosen the kind, so the row is never
+# probed (which is what makes this fast on a props-only project), is printed
+# with the line that turned it off, and never votes on the exit code.
+# **Exits 1 only while a CHOSEN backend is not ok**; a project at tier
+# `fake`, or with nothing chosen, reads all-off and exits 0.
+# `--json` for a machine, `--quick` to skip the in-env probes (seconds each).
 #
 # Every backend, Blender, ffmpeg, the GPU and the rig profile in one table.
 [no-exit-message]
@@ -124,6 +136,38 @@ gpu *flags: _build
 rig: _build
     cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_rig --example export_contract -- {{justfile_directory()}}/rigs/humanoid
     {{forge}} rig fixture out/fixture/mannequin.glb
+
+# ------------------------------------------------------------------ serve --
+
+# One process that is the agent's door and the human's monitor: the queue,
+# the card lock, the job table and both executors. The CLI is a client of it
+# when one is up and runs in-process otherwise, so `just sfx` at a terminal
+# and an agent's `generate_audio` go through one queue and cannot race for
+# the card. It writes out/serve/daemon.json — the port and the token a
+# client needs — and serves MCP over streamable HTTP at /mcp.
+#
+# Start the daemon: `just serve` (add --foreground to keep it in this shell).
+serve *flags: _build
+    {{forge}} serve {{flags}}
+
+# The queue drains what is running first; a job in flight is not killed.
+#
+# Stop the daemon.
+stop *flags: _build
+    {{forge}} stop {{flags}}
+
+# Queued, running, done, failed, with what each one made and how long it took.
+#
+# Every job the daemon knows.
+jobs *flags: _build
+    {{forge}} jobs {{flags}}
+
+# The last thing a generate said before it stopped saying anything is
+# usually the answer.
+#
+# One job's log, tailed: `just job-log job_3`
+job-log job *flags: _build
+    {{forge}} jobs log {{job}} {{flags}}
 
 # --------------------------------------------------------------- generate --
 
@@ -223,8 +267,9 @@ sfx name prompt *flags: _build
     {{forge}} gen sfx --prompt "{{prompt}}" --out out/audio/sfx/{{name}}.wav \
         --record out/audio/sfx/{{name}}.json {{flags}}
 
-# The ACE-Step server stays resident (~8 GB) until `--stop-server`, which can
-# ride on the same call: `just music hub_theme "hopeful synthwave" --duration 60 --stop-server`.
+# ACE-Step runs inside the ComfyUI host now, so there is no resident server
+# of its own to stop and no `--stop-server`: the workflow ends in its unload
+# node, and `systemctl --user stop forge-comfy` is what gives the card back.
 #
 # One music track from a prompt, to out/audio/music/.
 music name prompt *flags: _build
@@ -552,7 +597,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="doctor generate_audio generate_clips inspect_audio list_audio list_clips list_models promote_audio promote_clip render_clip_strip render_model"
+    expected="cancel doctor generate_audio generate_clips init_project inspect_audio licences list_audio list_clips list_models list_runs promote_audio promote_clip render_clip_strip render_model setup status wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -577,6 +622,25 @@ mcp-check: _build
     fi
     echo "forge mcp serves $(echo "$expected" | wc -w | tr -d ' ') tools: $expected"
 
+# The agent's whole path, scripted, over BOTH transports — stdio and the
+# daemon's streamable HTTP at /mcp — because "one tool surface, two
+# transports, one queue" is the claim this phase makes and a transport
+# nothing exercises ships ungated. The script: initialize, tools/list
+# against the pinned eighteen, init_project, licences, the setup gate (a
+# gated kind with an empty accept must refuse and name the id), doctor (an
+# `off` row, exit 0), generate_audio (a job id comes back, not the file),
+# wait, inspect_audio, promote_audio, verify — plus the two negative legs
+# that rot silently: wait on an unknown job, and a second promote onto a
+# taken name.
+#
+# It runs against `env!("CARGO_BIN_EXE_forge")`, so the binary under test is
+# this build with no `just` step in front of it. No GPU, no display, no
+# backend, no secret, no network: the project is a tempdir at tier `fake`.
+#
+# The agent's path through the MCP, end to end, on both transports.
+mcp-session:
+    cargo test -p forge --test mcp_session --manifest-path {{justfile_directory()}}/Cargo.toml -- --nocapture
+
 # Sidecars, hashes, the rig profile's drift, the reference ledger — a PNG
 # without a row in assets-src/SOURCES.md fails.
 #
@@ -594,8 +658,9 @@ verify *flags: _build
 # its own record by bytes and by pose, the rig profile held against every
 # shipped body, the committed manifest against a rebuild, the engine-free
 # verify — sidecars, hashes, profile drift, the reference ledger — the MCP
-# handshake and tool surface, and the five generate pipelines end to end
-# on FORGE_FAKE placeholders in a throwaway project, driven through the
+# handshake and tool surface, the agent's whole scripted session over both
+# transports (mcp-session), and the five generate pipelines end to end on
+# FORGE_FAKE placeholders in a throwaway project, driven through the
 # documented `just --justfile … --working-directory …` form.
 #
 # What it deliberately leaves out, and why:
@@ -624,8 +689,8 @@ verify *flags: _build
 # component assertion cannot. check-bodies and audit's posed half need no
 # adapter at all: a headless app with an animation player and no renderer.
 #
-# The pre-commit gate: fmt, clippy+doc, tests, pytest, smoke, audit, check-bodies, manifest-check, verify, mcp-check, ci-fake.
-ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify mcp-check ci-fake
+# The pre-commit gate: fmt, clippy+doc, tests, pytest, smoke, audit, check-bodies, manifest-check, verify, mcp-check, mcp-session, ci-fake.
+ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify mcp-check mcp-session ci-fake
 
 # The generate paths with no GPU, no backend and no Blender: FORGE_FAKE=1
 # makes every `forge gen` write placeholders that pass the same validators

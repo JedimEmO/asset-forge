@@ -270,7 +270,7 @@ impl ForgeServer {
             Ok(kinds) => kinds,
             Err(refusal) => return refusal,
         };
-        let plan = SetupPlan::for_kinds(&kinds, self.config.project.tier());
+        let plan = SetupPlan::for_kinds(&kinds, self.current_project().tier());
         if plan.licences.is_empty() {
             return util::report(format!(
                 "no licence here asks anything of you.\nkinds: {}\n(that is the whole \
@@ -352,8 +352,7 @@ impl ForgeServer {
             Ok(kinds) => kinds,
             Err(refusal) => return refusal,
         };
-        let project = &self.config.project;
-        let plan = SetupPlan::for_kinds(&kinds, project.tier());
+        let plan = SetupPlan::for_kinds(&kinds, self.current_project().tier());
         if plan.kinds.is_empty() && args.backend.is_none() {
             return util::report(plan.screen());
         }
@@ -475,11 +474,24 @@ impl ForgeServer {
     /// The kinds a call is about: the ones named, else the project's own.
     fn kinds_of(&self, named: Option<&[String]>) -> Result<Vec<MakeKind>, CallToolResult> {
         let Some(named) = named else {
-            return Ok(self.config.project.make.chosen());
+            return Ok(self.current_project().make.chosen());
         };
         MakeKinds::parse_list(&named.join(","))
             .map(|make| make.chosen())
             .map_err(|err| util::refuse(err.to_string()))
+    }
+
+    /// The project as it is on disk *now*.
+    ///
+    /// `init_project` with `adopt: true` rewrites `[make]` and
+    /// `[hardware]` inside a live session, and the copy the server read at
+    /// startup is then stale — a `setup` that went on printing the old tier
+    /// would be telling the caller something that stopped being true one
+    /// call ago. A file that has since become unreadable falls back to the
+    /// startup copy rather than refusing: the answer is still mostly right,
+    /// and doctor is the door that says a project is broken.
+    fn current_project(&self) -> Project {
+        Project::load(&self.config.project.root).unwrap_or_else(|_| self.config.project.clone())
     }
 
     /// The toolkit's rig profile directory, when this executable can find

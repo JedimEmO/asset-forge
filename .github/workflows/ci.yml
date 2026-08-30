@@ -19,8 +19,9 @@
 # then the gates on the committed library: check-bodies (the rig profile
 # held against every shipped body), audit (by bytes and by pose, on the
 # fixture mannequin), manifest --check, verify. The test job runs
-# `just mcp-check` (the server handshakes over stdio and lists its tools)
-# and `just ci-fake`: the five generate pipelines on FORGE_FAKE=1
+# `just mcp-check` (the server handshakes over stdio and lists its tools),
+# `just mcp-session` (the agent's whole path, scripted, over both
+# transports) and `just ci-fake`: the five generate pipelines on FORGE_FAKE=1
 # placeholders in a throwaway `forge init` project, every step driven as
 # `just --justfile <toolkit> --working-directory <project> <recipe>` — the
 # integration form the README documents is the one this job exercises —
@@ -112,6 +113,13 @@ jobs:
       # `forge mcp` handshakes over stdio and lists exactly the tools the
       # skills are written against. No GPU: the list is the test.
       - run: just mcp-check
+      # The agent's whole scripted session, over both transports — stdio and
+      # the daemon's streamable HTTP at /mcp — against a tempdir project at
+      # tier `fake`: init_project, licences, the setup gate, doctor's `off`
+      # row, a sound made as a job, waited on, inspected, promoted, verified,
+      # and the two negative legs. No GPU, no display, no backend, no secret,
+      # no network.
+      - run: just mcp-session
       # The five fake pipelines end to end: mesh→prop→model,
       # mesh→rig→export→body, sweep→review→clip, sfx→audio and
       # voice→speech→audio, then catalog, audit, check-bodies,
