@@ -107,6 +107,10 @@ gb = 6.61
 note = "6.61 GB on disk, measured 2026-08-30. The codec both the designer and the cloner encode and decode through; the pack fetches it beside them and no row named it until doctor was pointed at the directory they actually live in"
 
 [[notices]]
+title = "speech does not work at this pin"
+text = "MOSS-TTS 1.7B does not run under the host's transformers 5.16.1, and the pack turns that into silence rather than an error: `MossTTSDelayModel` has no `_get_initial_cache_position` (the pack vendors transformers 4.x's `_sample`, and 5.x removed that helper), the node catches its own AttributeError, returns a silent tensor and lets the graph complete. Measured 2026-08-30 — the record written for that run described 1.000 s of digital zeros. Shimming it reaches a second break, `create_causal_mask() got an unexpected keyword argument 'input_embeds'` (renamed `inputs_embeds`, `cache_position` dropped), and shimming that one produces 12.8 s of babble for a four-word line, which is a model on wrong arithmetic and not a fix; both shims were reverted and the clone is back at fab00263. WHAT LIFTS THIS: a TTS-Audio-Suite pin built against transformers >= 5 (the host cannot go below 5, the image templates need 5.16.1). Until then `forge gen speech` cannot make a line here, and doctor reads this backend `ok` because it probes node classes and weight files, neither of which is affected — that is what this notice is for. `forge gen voice` and MOSS-VoiceGenerator are unaffected and work."
+
+[[notices]]
 title = "the model changed"
 text = "MOSS-TTS-Local-Transformer-v1.5 (what the venv ran) is not one of the variants TTS-Audio-Suite offers at fab00263; speech now runs the pack's 1.7B, OpenMOSS-Team/MOSS-TTS-Local-Transformer. A voice cloned after this move does not match one cloned before it. Re-audition a character's lines before shipping them beside older ones."
 

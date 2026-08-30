@@ -545,14 +545,20 @@ it: a pack pin built against transformers 5, or a `transformers<5` the host
 cannot have while the image templates need 5.16.1. Until then a spoken line
 cannot be made here. 2026-08-30.
 
-**`CharacterVoicesNode.reference_text` is never patched, and it is the
-transcript the cloner asks for.** `speech.api.json` leaves it `""` and its
-`_meta.title` carries no `PATCH:` marker, so a designed voice's audition
-line — which `voice.json` records under `params.text` — never reaches the
-node. `forge gen speech --voice-text` exists and its own help says
-"recorded; moss_tts does not use it", which was true of the venv and is
-false of the host. It is a second, independent defect from the transformers
-one above: fixing either alone does not make a line. 2026-08-30.
+**`CharacterVoicesNode.reference_text` was never patched, and it is the
+transcript the cloner asks for.** `speech.api.json` left it `""` with no
+`PATCH:` marker on its `_meta.title`, so a designed voice's audition line —
+which `voice.json` records under `params.text` — never reached the node,
+while `forge gen speech --voice-text`'s own help said "recorded; moss_tts
+does not use it", which was true of the venv and false of the host. Fixed
+the same day: node 3 carries `PATCH:voice_text=reference_text`,
+`template_inputs` fills it from `--voice-text` else the designed voice's
+`params.text` else `""` (the node's own default, and a supported call), and
+the help and the stderr line say what the host actually offers. It was a
+second, independent defect from the transformers one above, so this fix
+alone still does not make a line: `moss_tts`'s
+`[[notices]] "speech does not work at this pin"` is what says so where
+doctor's `ok` cannot. 2026-08-30.
 
 **ACE-Step 1.5 turbo comes off the host at exactly full scale, and the
 clipping gate is right to refuse it.** Nine renders — five seeds × three

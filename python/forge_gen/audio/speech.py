@@ -50,6 +50,7 @@ be checked without the model resident.
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
@@ -60,7 +61,7 @@ from pathlib import Path
 
 from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
-from forge_gen.audio import ffmpeg_bin, transcode_wav
+from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
 #: The backends that can speak. ``moss_tts`` is the one that exists.
@@ -192,6 +193,25 @@ def voice_record_beside(reference: str | os.PathLike | None) -> Path | None:
     return record if record.is_file() else None
 
 
+def _voice_line(voice_record: Path | None) -> str | None:
+    """What a designed voice's audition clip says, from its own record.
+
+    ``params.text`` is the line `forge gen voice` had the designer speak, so
+    it is the transcript of the very clip the cloner is being handed. A
+    record that will not parse is not a reason to refuse a line: the
+    transcript is an input the node improves on, not one it requires.
+    """
+    if voice_record is None:
+        return None
+    try:
+        with open(voice_record, encoding="utf-8") as handle:
+            recorded = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    text = (recorded.get("params") or {}).get("text")
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def voice_name(reference: str | os.PathLike | None) -> str | None:
     """The voice's name from its clip: the file's stem, or the folder's when the file is ``ref.*``.
 
@@ -305,7 +325,7 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--out", metavar="WAV", help="where the WAV goes (single line)")
     parser.add_argument("--record", metavar="JSON", help="where the record goes (default: <out stem>.json beside it)")
     parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); omit for an uncloned voice")
-    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference (recorded; moss_tts does not use it)")
+    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference clip; the cloner asks for it. Default: the designed voice's own audition line, from voice.json params.text")
     parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "Norwegian", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
     parser.add_argument("--backend", default=DEFAULT_BACKEND, metavar="NAME", help=f"who speaks (default {DEFAULT_BACKEND}; OmniVoice is v1.1)")
     parser.add_argument("--seed", type=int, default=None, metavar="N", help="seed torch's RNG for the sampler (recorded only when given)")
@@ -407,8 +427,6 @@ def plan(args) -> dict:
     voice_record = voice_record_beside(reference)
     if args.voice_text and reference is None:
         raise UsageError("--voice-text describes a --voice clip; there is none")
-    if args.voice_text and backend == "moss_tts":
-        sys.stderr.write("forge-gen: speech: moss_tts takes no transcript of the reference; --voice-text is recorded, not used\n")
     seed = args.seed
     if seed is not None and seed < 0:
         raise InputRejected(f"--seed must be >= 0, got {seed}")
@@ -429,7 +447,13 @@ def plan(args) -> dict:
         "reference": str(reference) if reference else None,
         "voice_record": str(voice_record) if voice_record else None,
         "language": language,
-        "voice_text": args.voice_text or None,
+        # The transcript the cloner's own node asks for. Stated, else the
+        # designed voice's audition line — which `voice.json` records under
+        # `params.text` and which is, by construction, exactly what the
+        # reference clip says. `CharacterVoicesNode.reference_text` was left
+        # `""` and unpatched until 2026-08-30, while the flag's help said
+        # moss_tts did not use it; both were wrong about the host.
+        "voice_text": args.voice_text or _voice_line(voice_record),
         "seed": seed,
         "sampling": dict(SAMPLING),
         "created_by": getattr(args, "created_by", None),
@@ -476,6 +500,10 @@ def template_inputs(spec: dict, job: dict, *, reference_name: str, prefix: str) 
         "text": job["text"],
         "seed": int(spec["seed"]),
         "reference": reference_name,
+        # Never absent: every PATCH point in the template is required, and
+        # "" is what the node's own default is — a reference with no
+        # transcript is a supported call, an unpatched input is not.
+        "voice_text": spec["voice_text"] or "",
         "language": spec["language"] or "Auto",
         "temperature": float(sampling["temperature"]),
         "top_p": float(sampling["top_p"]),
@@ -537,6 +565,11 @@ def run(args) -> dict:
         with tempfile.TemporaryDirectory(prefix="forge-speech-") as scratch:
             saved = comfy.fetch(base, entry, Path(scratch))
             transcode_wav(ffmpeg, saved[0], out)
+        # The gate this verb exists to have: the pack catches its own
+        # AttributeError, returns a silent tensor and lets the graph
+        # complete, so `OK` used to mean "the graph completed" and a record
+        # was written for 1.000 s of digital zeros (2026-08-30).
+        measured = check_pcm(out, what="the line")
         rec = build_record(
             text=job["text"],
             out_path=out,
@@ -552,7 +585,7 @@ def run(args) -> dict:
             **facts,
         )
         records.write(rec, job["record"])
-        _say(f"OK {out}")
+        _say(f"OK {out} (peak {measured['peak_dbfs']}, {measured['duration_s']:.2f} s)")
         rendered.append({"out": str(out), "record": job["record"]})
         blocks.append(
             {
@@ -579,6 +612,7 @@ def run_fake(args) -> dict:
     rendered = []
     for job in spec["jobs"]:
         placeholders.placeholder_wav(job["out"])
+        check_pcm(job["out"], what="the placeholder")
         rec = build_record(
             text=job["text"],
             out_path=job["out"],

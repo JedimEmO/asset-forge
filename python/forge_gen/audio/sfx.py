@@ -41,7 +41,7 @@ from pathlib import Path
 
 from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
-from forge_gen.audio import ffmpeg_bin, transcode_wav
+from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
 #: The backend directory this command runs through.
@@ -373,6 +373,10 @@ def run(args) -> dict:
         with tempfile.TemporaryDirectory(prefix="forge-sfx-") as scratch:
             saved = comfy.fetch(base, entry, Path(scratch))
             transcode_wav(ffmpeg, saved[0], out)
+        # Before the record, never after: `finish` said OK on any file
+        # ffmpeg decoded, and a record is the thing this repository treats
+        # as the truth (decisions.md, 2026-08-30).
+        measured = check_pcm(out, expected_s=job["seconds"], what="the effect")
         rec = build_record(
             prompt=job["prompt"],
             seconds=job["seconds"],
@@ -386,7 +390,7 @@ def run(args) -> dict:
             **facts,
         )
         records.write(rec, job["record"])
-        _say(f"OK {out} (seed {spec['seed']})")
+        _say(f"OK {out} (seed {spec['seed']}, peak {measured['peak_dbfs']})")
         rendered.append({"out": str(out), "record": job["record"]})
         comfy_blocks.append(
             {
@@ -421,6 +425,9 @@ def run_fake(args) -> dict:
     rendered = []
     for job in spec["jobs"]:
         placeholders.placeholder_wav(job["out"], seconds=job["seconds"])
+        # A placeholder goes through the same gate a real render does; that
+        # is what makes `ci-fake` a control for it.
+        check_pcm(job["out"], expected_s=job["seconds"], what="the placeholder")
         rec = build_record(
             prompt=job["prompt"],
             seconds=job["seconds"],

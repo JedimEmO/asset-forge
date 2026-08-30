@@ -152,6 +152,59 @@ def test_music_fake(tmp_path):
     assert rec["backend"]["workflow_sha256"] is None, "nothing loaded a template; null means unknown"
 
 
+def test_a_silent_render_is_refused_and_writes_no_record(tmp_path, monkeypatch):
+    """`finish` used to say OK on any file ffmpeg decoded.
+
+    On 2026-08-30 the TTS-Audio-Suite node caught its own AttributeError,
+    returned a silent tensor and let the graph complete: ComfyUI reported
+    success, `forge gen speech` printed OK, and a `forge_record: 2` was
+    written for 1.000 s of digital zeros. Every number in that record was
+    true and the file was worthless — so the three checks
+    `forge audio inspect` applies now run on the transcoded PCM *before*
+    `records.write`, and a file that fails one leaves no record at all.
+
+    Driven through `run_fake` with the placeholder writer replaced, because
+    that is the one seam where a bad file can be handed to the recording
+    half with no host and no card.
+    """
+    from forge_gen.exit_codes import BackendFailed
+
+    def silence(path, *, seconds=0.5, rate=48000, channels=1):
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(channels)
+            handle.setsampwidth(2)
+            handle.setframerate(rate)
+            handle.writeframes(b"\x00\x00" * int(seconds * rate))
+        return path
+
+    def clipping(path, *, seconds=0.5, rate=48000, channels=1):
+        # The rail itself: CLIP_THRESHOLD is a fraction of 32768, so
+        # int(0.999 * 32767) lands just under it — which is the arithmetic
+        # the Rust side does too, and the reason a stub must use the maximum
+        # rather than a number near it.
+        rail = 32767
+        frames = int(seconds * rate)
+        run = b"".join(rail.to_bytes(2, "little", signed=True) for _ in range(8))
+        body = run + b"\x10\x00" * (frames - 8)
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(channels)
+            handle.setsampwidth(2)
+            handle.setframerate(rate)
+            handle.writeframes(body)
+        return path
+
+    for writer, why in ((silence, "silent"), (clipping, "clipped")):
+        out = tmp_path / f"{why}.wav"
+        record = tmp_path / f"{why}.json"
+        monkeypatch.setattr(placeholders, "placeholder_wav", writer)
+        with pytest.raises(BackendFailed) as refusal:
+            run_fake("sfx", "--prompt", "a door", "--seconds", "1", "--out", str(out), "--record", str(record))
+        assert why in str(refusal.value), refusal.value
+        assert "nothing was recorded" in str(refusal.value)
+        assert out.is_file(), "the file the generator wrote is left where it is, unrepaired"
+        assert not record.exists(), "and no record claims anything about it"
+
+
 def test_the_music_graph_is_built_and_patched_without_a_host(tmp_path, repo_root):
     """The whole of `forge gen music` up to `POST /prompt`, on the tracked template.
 

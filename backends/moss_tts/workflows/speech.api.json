@@ -31,7 +31,7 @@
   "3": {
     "class_type": "CharacterVoicesNode",
     "_meta": {
-      "title": "the reference travels as an uploaded file, decoded in the host's own venv (av, not torchcodec)"
+      "title": "PATCH:voice_text=reference_text \u2014 the transcript the cloner asks for; a designed voice records it under voice.json params.text. The reference itself travels as an uploaded file, decoded in the host's own venv (av, not torchcodec)"
     },
     "inputs": {
       "voice_name": "none",

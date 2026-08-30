@@ -53,7 +53,7 @@ from pathlib import Path
 
 from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
-from forge_gen.audio import ffmpeg_bin, transcode_wav
+from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_wav
 from forge_gen.audio.speech import REFERENCE_GOOD_S, measure_wav
 from forge_gen.exit_codes import InputRejected
 
@@ -338,6 +338,10 @@ def run(args) -> dict:
     with tempfile.TemporaryDirectory(prefix="forge-voice-") as scratch:
         saved = comfy.fetch(base, entry, Path(scratch))
         transcode_wav(ffmpeg, saved[0], out)
+    # A designed voice is the durable source every line is cloned from, so
+    # a silent or clipped audition must not become one: the gate runs
+    # before the record, and a refused audition leaves neither.
+    measured = check_pcm(out, what="the audition")
 
     rec = build_record(
         name=spec["name"],
@@ -355,7 +359,7 @@ def run(args) -> dict:
         workflow=WORKFLOW,
     )
     records.write(rec, spec["record"])
-    _say(f"OK {out} (seed {spec['seed']})")
+    _say(f"OK {out} (seed {spec['seed']}, peak {measured['peak_dbfs']}, {measured['duration_s']:.2f} s)")
     summary = _success(spec, {"out": str(out), "record": spec["record"]})
     summary["comfy"] = {
         "template": f"backends/{BACKEND}/workflows/{WORKFLOW}",
@@ -382,6 +386,7 @@ def run_fake(args) -> dict:
     # designed voice — every line of the character is cloned from it.
     placeholders.refuse_real(spec["out"], spec["record"])
     placeholders.placeholder_wav(spec["out"], seconds=float(sum(REFERENCE_GOOD_S) / 2))
+    check_pcm(spec["out"], what="the placeholder")
     rec = build_record(
         name=spec["name"],
         instruction=spec["instruction"],

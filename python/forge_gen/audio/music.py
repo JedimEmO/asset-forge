@@ -41,7 +41,7 @@ from pathlib import Path
 
 from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
-from forge_gen.audio import ffmpeg_bin, transcode_ogg, transcode_wav
+from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_ogg, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
 #: The backend directory this command runs through.
@@ -430,6 +430,10 @@ def run(args) -> dict:
         saved = comfy.fetch(base, entry, Path(scratch))
         wav = out if request["format"] == "wav" else Path(scratch) / "track.wav"
         transcode_wav(ffmpeg, saved[0], wav)
+        # On the PCM, before the ogg and before the record: nine renders off
+        # this host came back pinned at 0.0 dBFS with runs of 10 to 186
+        # full-scale samples and every one of them printed OK (2026-08-30).
+        check_pcm(wav, expected_s=request["duration_s"], what="the track")
         measured = measure_wav(wav)
         if request["format"] == "ogg":
             transcode_ogg(ffmpeg, wav, out)
@@ -515,6 +519,7 @@ def run_fake(args) -> dict:
         ffmpeg = ffmpeg_bin()
         wav = out.with_name(out.name + ".tmp.wav")
         placeholders.placeholder_wav(wav, seconds=min(request["duration_s"], 2.0))
+        check_pcm(wav, what="the placeholder")
         measured = measure_wav(wav)
         try:
             # The vorbis comment is the placeholder mark: the WAV's RIFF
@@ -524,6 +529,7 @@ def run_fake(args) -> dict:
             wav.unlink(missing_ok=True)
     else:
         placeholders.placeholder_wav(out, seconds=min(request["duration_s"], 2.0))
+        check_pcm(out, what="the placeholder")
         measured = measure_wav(out)
     # What the graph would have been given, minus the graph: nothing is
     # invented, the seeds and the checkpoint stay null.

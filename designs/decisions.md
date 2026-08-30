@@ -551,3 +551,52 @@ property of the machine, and this phase changed which machines have it.
 nothing here — a fake job takes the queue and the lease and writes its row
 like any other (`serve.md` §1.2), which is exactly what that test is about.
 2026-08-30.
+
+**The compile goes, not the allocator.** MOSS-SoundEffect v2's DiT
+`torch.compile`s itself, and the compiled path runs under inductor's cudagraph
+trees, which call `torch._C._cuda_checkPoolLiveAllocations` — unsupported by
+the cudaMallocAsync allocator the ComfyUI host runs with. Two levers close the
+crash: `--disable-cuda-malloc` on the unit, or `TORCHDYNAMO_DISABLE=1` on the
+unit. **Why the second:** the allocator is shared by every workflow the host
+runs, and the image models' 23.3 GB peak on a 24 GB card was measured *with*
+this allocator — changing it would put every reference image back into
+unmeasured territory to save a compile nobody has yet seen finish (it died at
+~60 s, twice). A host-wide knob is changed for the model that needs it only
+when no narrower knob exists, and here one did. The value is the same one
+`backends/moss_sfx` carried as an `[env]` key before the move; what changed is
+that it is now a property of the host and lives in the unit file with its
+reason beside it. 2026-08-30.
+
+**A generator that cannot fail loudly must gate its own output.** The
+TTS-Audio-Suite node caught its own `AttributeError`, logged it with an emoji,
+returned a silent tensor and let the graph complete — so ComfyUI reported
+success, `forge gen speech` printed `OK`, and a `forge_record: 2` was written
+for 1.000 s of digital zeros. Every number in that record was true; the file
+was worthless. `just audio` caught it one step later, which is one step too
+late: the record had already been written, and a record is the thing this
+repository treats as the truth. **The lesson is that `measure_wav` is not a
+gate and `finish` should not say OK on a file the audio inspector would refuse
+— silence, a full-scale run, a truncated tail.** The same check already exists
+in `forge audio inspect`; what was missing is the call, before the record is
+written, in the one place that knows the run happened. **It is there now**:
+`forge_gen.audio.check_pcm` runs on the transcoded PCM in all four verbs —
+the fake path included, which is what makes `ci-fake` a control for it —
+holding a render to `metrics.rs`'s own three numbers (silence under 0.001,
+a run of three samples at 0.999 of full scale, and a length more than a
+quarter short of what was asked for), refusing with exit 5 and the
+measurement in the message, and leaving no record behind. It refuses the
+nine ACE-Step renders from that afternoon and passes every sound in the
+library, which is the pair of facts that says it is the same gate.
+2026-08-30.
+
+**An unrepeatable measurement is worth more than a repaired one.** Two
+transformers-5 shims were written into the TTS-Audio-Suite clone to see how
+far the speech path could get; both worked, and the third result — 12.8 s of
+fluent babble for a four-word line — is what said stop. They were reverted and
+the clone put back at its pin, because a promoted line made through a
+hand-patched checkout would carry a record naming
+`packs {TTS-Audio-Suite: fab00263}` for bytes that pin cannot produce: the
+one-way rule applied to a dependency. What the experiment bought is the
+entry in `hosting.md` naming both API breaks by name, which is the thing a
+future pin bump can be checked against. Investigate in the checkout; ship
+only from the pin. 2026-08-30.
