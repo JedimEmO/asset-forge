@@ -1,98 +1,66 @@
 #!/usr/bin/env bash
-# backends/moss_tts/install.sh — MOSS-TTS (Local-Transformer 4B) in its own venv.
+# Check that the ComfyUI host can run `forge gen speech` and `forge gen voice`.
+# It installs nothing.
 #
-#   bash backends/moss_tts/install.sh [--prefix DIR] [--no-models] [--yes]
-#   bash backends/moss_tts/install.sh --adopt-env ~/src/MOSS-TTS/.venv --adopt-checkout ~/src/MOSS-TTS
+#   bash backends/moss_tts/install.sh
 #
-# One clone, two venvs (designs/hosting.md, MOSS): this backend pins torch
-# 2.9.1+cu128 and transformers 5.0.0 through the repository's [torch-runtime]
-# extra; the sound-effect model in moss_soundeffect_v2/ pins 2.9.0 and
-# 4.57.1, so the two share the clone at $PREFIX/../moss-tts and nothing
-# else. The model code itself arrives with the weights (trust_remote_code);
-# the clone is here for its pins and its commit.
+# There is no environment here to make. Both models run inside the host
+# through the TTS-Audio-Suite pack, which `backends/comfy/install.sh` clones
+# at its pin, and the weights are downloaded by the node itself on its first
+# run into the same HF cache every other backend fills. So this script's whole
+# job is to say whether the host is there, whether the pack is at the pin this
+# backend names, and whether the node class the tracked graphs need is
+# registered — and to name the fix when it is not.
 #
-# Leaves behind: .env -> the venv, .checkout -> the clone root,
-# installed.json. Idempotent. Weights (the 4B TTS, ~8 GB, and the 1.7B
-# MOSS-VoiceGenerator behind `forge gen voice`, ~4 GB; both Apache-2.0) go
-# to the Hugging Face cache unless --no-models; the 8B Delay model is never
-# fetched — it OOMs on 24 GB with the audio tokenizer resident, and the 4B
-# fits.
+# **The speech checkpoint is not the one the venv ran.** The pack offers
+# MOSS-TTS as 1.7B (OpenMOSS-Team/MOSS-TTS-Local-Transformer) or as the 8B
+# Delay checkpoints, and the 8B is the one this repository measured OOM-ing on
+# the 24 GB card. `workflows/speech.api.json` states 1.7B, so a line cloned
+# after this move is a different voice from one cloned before it at the same
+# reference. The voice *designer* is unchanged: the pack's "Voice Design 1.7B"
+# is the same MOSS-VoiceGenerator weights `forge gen voice` already recorded.
+#
+# What this replaced: a python 3.12 venv with transformers 5.0 and a clone of
+# OpenMOSS/MOSS-TTS shared with moss_sfx, plus the soundfile-and-codes dance
+# the cloner needed because torchaudio reaches for torchcodec here. The host
+# decodes the reference in its own venv, which carries PyAV. The old path is
+# in git history at the commit before this one.
+
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_NAME="moss_tts"
 BACKEND_DIR="$here"
+# shellcheck source=../_lib/common.sh
 . "$here/../_lib/common.sh"
 parse_common_flags "$@"
 
-UPSTREAM="https://github.com/OpenMOSS/MOSS-TTS.git"
-COMMIT="58b20a0d5fcc6766658d50967a90a9d890009a46"
-PYVER="3.12"
-MODEL_ID="OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
-VOICE_MODEL_ID="OpenMOSS-Team/MOSS-VoiceGenerator"
-TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+HOST_DIR="$here/../comfy"
+[ -d "$HOST_DIR" ] || die "backends/comfy is not here: moss_tts runs on that host and nothing else"
+[ -e "$HOST_DIR/.env" ] || die "the ComfyUI host is not installed — bash $HOST_DIR/install.sh first (moss_tts has no environment of its own)"
 
-# pip_install_with_torch_index PREFIX ARGS... — as common.sh's pip_install,
-# with the cu128 wheel index beside PyPI. uv's default index strategy takes
-# a package from the first index that lists it at all, and PyPI lists torch
-# without the +cu128 builds; unsafe-best-match lets the local-version pin
-# find its wheel. pip merges indexes by itself.
-pip_install_with_torch_index() {
-    local prefix="$1"; shift
-    if command -v uv >/dev/null 2>&1; then
-        PYTHONNOUSERSITE=1 uv pip install -q --python "$prefix/bin/python" \
-            --index-strategy unsafe-best-match --extra-index-url "$TORCH_INDEX" "$@"
-    else
-        PYTHONNOUSERSITE=1 "$prefix/bin/python" -m pip install -q --extra-index-url "$TORCH_INDEX" "$@"
-    fi
-}
+PACK_DIR_NAME="TTS-Audio-Suite"
+PACK_COMMIT="fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+HOST_PREFIX="$(dirname "$(readlink -f "$HOST_DIR/.env")")"
+DATA="${FORGE_COMFY_DATA:-$HOST_PREFIX/data}"
+PACK="$DATA/custom_nodes/$PACK_DIR_NAME"
 
-# ---------------------------------------------------------------- checkout --
-if [ -n "$ADOPT_CHECKOUT" ]; then
-    CHECKOUT="$ADOPT_CHECKOUT"
-    [ -f "$CHECKOUT/pyproject.toml" ] && [ -d "$CHECKOUT/moss_soundeffect_v2" ] \
-        || die "--adopt-checkout $CHECKOUT does not look like the MOSS-TTS repository root"
-    head="$(git -C "$CHECKOUT" rev-parse --verify HEAD 2>/dev/null || echo '?')"
-    [ "$head" = "$COMMIT" ] || warn "adopted checkout is at ${head:0:12}, pinned is ${COMMIT:0:12} — doctor will say so"
-else
-    CHECKOUT="$(dirname "$PREFIX")/moss-tts"
-    clone_pinned "$UPSTREAM" "$COMMIT" "$CHECKOUT"
+if [ ! -d "$PACK/.git" ]; then
+    die "$PACK_DIR_NAME is not in the host's custom_nodes — bash $HOST_DIR/install.sh clones it at its pin"
 fi
-link_checkout "$CHECKOUT"
-
-# --------------------------------------------------------------------- env --
-if [ -n "$ADOPT_ENV" ]; then
-    link_env "$ADOPT_ENV"
-    ENV_DIR="$(readlink -f "$BACKEND_DIR/.env")"
-    log "adopted env $ENV_DIR; installing nothing into it"
-else
-    ENV_DIR="$PREFIX/venv"
-    make_venv "$ENV_DIR" "$PYVER"
-    # [torch-runtime] is the repository's own runtime stack: torch 2.9.1+cu128,
-    # torchaudio, torchcodec, transformers 5.0.0, accelerate. The root
-    # pyproject installs no modules of its own (py-modules = []); it is the
-    # dependency carrier, and the model code comes with the weights.
-    # soundfile is the writer: torchaudio.save → torchcodec → an ffmpeg that
-    # collides with the system glib.
-    log "pip install -e $CHECKOUT[torch-runtime] (torch 2.9.1+cu128, transformers 5.0.0)"
-    pip_install_with_torch_index "$ENV_DIR" -e "$CHECKOUT[torch-runtime]" soundfile
-    link_env "$ENV_DIR"
+have="$(git -C "$PACK" rev-parse --verify HEAD 2>/dev/null || echo unknown)"
+if [ "$have" != "$PACK_COMMIT" ]; then
+    warn "$PACK_DIR_NAME is at ${have:0:12}, not the pinned ${PACK_COMMIT:0:12} — the tracked graphs were captured against the pin"
 fi
+log "$PACK_DIR_NAME at ${have:0:12} in $DATA/custom_nodes"
 
-# ------------------------------------------------------------------ models --
-if [ "$NO_MODELS" = 1 ]; then
-    log "--no-models: $MODEL_ID is fetched by the first \`forge gen speech\` and $VOICE_MODEL_ID by the first \`forge gen voice\`; doctor says partial until then"
+# The node both tracked graphs configure the model with. A class the host
+# does not have is a doctor line and not a POST /prompt failure in front of
+# a stranger.
+URL="${FORGE_COMFY_URL:-http://127.0.0.1:8188}"
+if curl -fsS --max-time 60 "$URL/object_info/MossTTSEngineNode" 2>/dev/null | grep -q MossTTSEngineNode; then
+    log "the host registers MossTTSEngineNode"
 else
-    for id in "$MODEL_ID" "$VOICE_MODEL_ID"; do
-        log "downloading $id into the Hugging Face cache (Apache-2.0; ~8 GB for the TTS, ~4 GB for the voice designer)"
-        if [ -x "$ENV_DIR/bin/hf" ]; then
-            PYTHONNOUSERSITE=1 "$ENV_DIR/bin/hf" download "$id" >/dev/null
-        else
-            PYTHONNOUSERSITE=1 "$(env_python)" -c "from huggingface_hub import snapshot_download; snapshot_download('$id')" >/dev/null
-        fi
-    done
+    warn "the host does not answer for MossTTSEngineNode at $URL — systemctl --user status forge-comfy, and packs are scanned once at startup"
 fi
-
-# ------------------------------------------------------------------- probe --
-run_probe
-write_installed_json
-log "done — \`forge doctor\` for the table; \`forge gen voice kessa --describe \"...\"\` designs a voice, \`forge gen speech --text \"Stand down.\" --voice kessa --out out/audio/line.wav\` speaks a line in it"
+command -v ffmpeg >/dev/null 2>&1 || warn "ffmpeg is not on PATH: the host saves FLAC and every audio verb transcodes it here (exit 6 without it)"
+log "done — the weights come down on the first render; just doctor says what the host can run"
