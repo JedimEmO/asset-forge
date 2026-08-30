@@ -4,8 +4,16 @@
 # the models the Phase 0 reference spike needs.
 #
 #   bash backends/comfy/install.sh [--prefix DIR] [--no-models] [--yes]
+#   bash backends/comfy/install.sh --models qwen_image   # only that group's weights
 #   bash backends/comfy/install.sh --no-service          # do not touch systemd
 #   bash backends/comfy/install.sh --adopt-env DIR --adopt-checkout DIR
+#
+# --models <all|none|qwen_image|flux>, comma-separated, default all. The
+# venv, the clone, the packs and the unit are the host and are always made;
+# what --models decides is which weights come down. `forge setup` names the
+# group the chosen kinds need — `--models qwen_image` for props and
+# characters, `--models none` for the audio kinds, whose weights are
+# backends/acestep/install.sh's one file and the node pack's own download.
 #
 # Leaves behind, in this directory: .env -> the venv, .checkout -> the
 # pinned clone, installed.json. Everything heavy lives under $PREFIX
@@ -47,13 +55,38 @@ parse_common_flags "$@"
 
 NO_SERVICE=0
 NO_FLUX_CONTROLNET=0
+# Which model groups to fetch. `all` is what a hand-run install means and
+# what this script always did; `forge setup` names the group the chosen
+# kinds actually need, because "one screen before a byte downloads" was a
+# 9.5 GB screen in front of a 73.7 GB download — `forge setup music` pulled
+# the whole image stack, FLUX included, for a backend whose one file is
+# fetched by backends/acestep/install.sh (2026-08-30).
+MODELS="all"
+_next_is_models=0
 for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
+    if [ "$_next_is_models" = 1 ]; then MODELS="$arg"; _next_is_models=0; continue; fi
     case "$arg" in
         --no-service) NO_SERVICE=1 ;;
         --no-flux-controlnet) NO_FLUX_CONTROLNET=1 ;;
-        *) die "unknown flag: $arg (see --help; this backend adds --no-service, --no-flux-controlnet)" ;;
+        --models) _next_is_models=1 ;;
+        --models=*) MODELS="${arg#*=}" ;;
+        *) die "unknown flag: $arg (see --help; this backend adds --no-service, --no-flux-controlnet, --models <all|none|qwen_image|flux>)" ;;
     esac
 done
+[ "$_next_is_models" = 0 ] || die "--models needs a value: all | none | qwen_image | flux (comma-separated)"
+case ",$MODELS," in
+    *,all,*|*,none,*|*,qwen_image,*|*,flux,*) ;;
+    *) die "--models $MODELS: the groups are all, none, qwen_image, flux (comma-separated)" ;;
+esac
+
+# wants GROUP — whether this run fetches that model group.
+wants() {
+    case ",$MODELS," in
+        *,all,*) return 0 ;;
+        *",$1,"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # Pinned in backend.toml; repeated here so the script stands alone.
 UPSTREAM="https://github.com/comfyanonymous/ComfyUI"
@@ -224,8 +257,16 @@ fetch() {  # fetch REPO FILE FOLDER [LOCALNAME]
 
 if [ "$NO_MODELS" = 1 ]; then
     log "--no-models: skipping weights (doctor will say partial until they are there)"
+elif ! wants qwen_image && ! wants flux; then
+    log "--models $MODELS: no image weights (the audio backends fetch their own, or the node pack does on first run)"
 else
-    hf_token_present || warn "no Hugging Face token: black-forest-labs/FLUX.1-schnell is gated \"auto\" and ae.safetensors will 401 — hf auth login --token <tok>"
+    if wants flux; then
+        hf_token_present || warn "no Hugging Face token: black-forest-labs/FLUX.1-schnell is gated \"auto\" and ae.safetensors will 401 — hf auth login --token <tok>"
+    fi
+fi
+
+if [ "$NO_MODELS" != 1 ] && wants qwen_image; then
+    log "--models: qwen_image (33.60 GB fp8 + 13.07 GB Q4_K_M GGUF)"
     # Qwen-Image, the fp8 split form ComfyUI documents (Apache-2.0).
     fetch Comfy-Org/Qwen-Image_ComfyUI split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors diffusion_models
     fetch Comfy-Org/Qwen-Image_ComfyUI split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors text_encoders
@@ -233,20 +274,34 @@ else
     # The pose ControlNet for it: InstantX's Union, repackaged by Comfy-Org
     # into the single file ControlNetLoader takes. Apache-2.0, on-base.
     fetch Comfy-Org/Qwen-Image-InstantX-ControlNets split_files/controlnet/Qwen-Image-InstantX-ControlNet-Union.safetensors controlnet
-    # FLUX.1-schnell. The fp8 form ComfyUI documents for schnell is the
-    # all-in-one checkpoint; there is no fp8 UNET-only file, only a 23.8 GB
-    # bf16 one, which the budget does not have room for.
-    fetch Comfy-Org/flux1-schnell flux1-schnell-fp8.safetensors checkpoints
-    # Its text encoders and VAE as separate files, for the split and GGUF
-    # paths the lean tier will want.
-    fetch comfyanonymous/flux_text_encoders clip_l.safetensors text_encoders
-    fetch comfyanonymous/flux_text_encoders t5xxl_fp8_e4m3fn.safetensors text_encoders
-    fetch black-forest-labs/FLUX.1-schnell ae.safetensors vae
     # The lean tier's Qwen-Image, for the ComfyUI-GGUF pack above: 16.2 GB
     # at 1024 against fp8's 23.3, at the same style, pose and second.
     fetch "$GGUF_WEIGHTS_REPO" qwen-image-Q4_K_M.gguf diffusion_models
+fi
+
+if [ "$NO_MODELS" != 1 ] && wants flux; then
+    # FLUX.1-schnell lost the Phase 0 reference spike (decisions.md,
+    # 2026-08-30: it drew a photograph in 4 of 4 and would not take the
+    # style line), so no kind in the map needs any of this and `forge setup`
+    # never asks for the group. It stays fetchable by hand because
+    # `workflows/reference_flux.api.json` is tracked as the losing side's
+    # evidence, and a tracked template a stranger cannot run is the trap
+    # this repository already paid for once.
+    log "--models: flux (22.72 GB, the Phase 0 spike's losing candidate)"
+    # The fp8 form ComfyUI documents for schnell is the all-in-one
+    # checkpoint; there is no fp8 UNET-only file, only a 23.8 GB bf16 one,
+    # which the budget does not have room for.
+    fetch Comfy-Org/flux1-schnell flux1-schnell-fp8.safetensors checkpoints
+    # Its text encoders and VAE as separate files, for the split and GGUF
+    # paths a FLUX lean form would want.
+    fetch comfyanonymous/flux_text_encoders clip_l.safetensors text_encoders
+    fetch comfyanonymous/flux_text_encoders t5xxl_fp8_e4m3fn.safetensors text_encoders
+    fetch black-forest-labs/FLUX.1-schnell ae.safetensors vae
     # And the one pose ControlNet the FLUX family has that is maintained —
-    # under a licence that is not open source, on a base that is not schnell.
+    # under a licence that is not open source, on a base that is not
+    # schnell. `forge setup` always passes --no-flux-controlnet: a licence
+    # is accepted at a door by name, and this one has no id in the toolkit's
+    # table, so a `--yes` about nvdiffrast must never be able to accept it.
     if [ "$NO_FLUX_CONTROLNET" = 1 ]; then
         log "--no-flux-controlnet: skipping the FLUX pose ControlNet (the FLUX arm of the spike then has no pose conditioning)"
     elif [ -f "$M/controlnet/FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors" ]; then

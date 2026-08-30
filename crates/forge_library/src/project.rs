@@ -755,15 +755,44 @@ pub struct BackendNeed {
     /// Who runs it.
     pub executor: Executor,
     /// Approximate disk, in GB, for the environment, the clone and the
-    /// weights together. See [`Self::disk_note`] for where each number came
-    /// from. None of these is a VRAM figure: a `vram_gb` is a budget and is
-    /// never quoted as a measurement (`designs/decisions.md`, 2026-08-30).
-    pub disk_gb: f64,
-    /// Where the disk number came from, so nobody re-quotes an estimate as
-    /// a measurement.
+    /// tools — **never the weights**, which are [`Self::weights_gb`].
+    /// An estimate, and said to be one.
+    pub env_gb: f64,
+    /// What the weights cost, in GB: the sum of the `gb` figures in
+    /// `backends/<name>/backend.toml`'s `[[models]]`, and held to it by
+    /// `the_disk_bill_is_read_out_of_each_backend_toml`. `0.0` for a
+    /// backend whose weights are counted against another (the `comfy`
+    /// host's image models belong to `qwen_image`) or whose models state no
+    /// size, because `null` means unknown and a guess in a bill is how
+    /// `acestep` came to say 7.5 GB for a 10.03 GB checkpoint.
+    pub weights_gb: f64,
+    /// Where both numbers came from, so nobody re-quotes an estimate as a
+    /// measurement. None of them is a VRAM figure: a `vram_gb` is a budget
+    /// and is never quoted as one (`designs/decisions.md`, 2026-08-30).
     pub disk_note: &'static str,
     /// The licence ids this backend carries, by [`Licence::id`].
     pub licences: &'static [&'static str],
+    /// The licence ids this backend's own `install.sh` stops and asks about
+    /// through `confirm_license`.
+    ///
+    /// **This is what decides whether `forge setup` may pass `--yes`.** It
+    /// used to pass a blanket one to every installer — the door the CLI
+    /// itself refuses from a human — and `backends/comfy/install.sh` then
+    /// accepted the Shakker-Labs `FLUX.1-dev` `ControlNet` under a
+    /// **non-commercial** licence that is not one of the five ids, was
+    /// never on the screen and landed in no receipt (2026-08-30). An
+    /// installer whose prompts are not all covered by the receipt gets no
+    /// `--yes` and asks for itself.
+    pub installer_prompts: &'static [&'static str],
+}
+
+impl BackendNeed {
+    /// What this backend costs on disk in total: the environment plus the
+    /// weights.
+    #[must_use]
+    pub const fn disk_gb(&self) -> f64 {
+        self.env_gb + self.weights_gb
+    }
 }
 
 /// Every backend the six kinds can need, with its executor, its disk and
@@ -773,70 +802,106 @@ pub const BACKEND_NEEDS: [BackendNeed; 9] = [
     BackendNeed {
         name: "trellis2",
         executor: Executor::Env,
-        disk_gb: 20.0,
-        disk_note: "conda env (CUDA 12.4) + TRELLIS.2-4B + DINOv3 — backends/README.md",
+        env_gb: 20.0,
+        weights_gb: 0.0,
+        disk_note: "conda env (CUDA 12.4) + clone + TRELLIS.2-4B and DINOv3 — an estimate \
+                    (backends/README.md); backend.toml states no size for either weight, \
+                    and null means unknown",
         licences: &["nvdiffrast", "dinov3"],
+        installer_prompts: &["nvdiffrast"],
     },
     BackendNeed {
         name: "skintokens",
         executor: Executor::Env,
-        disk_gb: 3.0,
-        disk_note: "venv + clone + ~1.6 GB of weights — backends/README.md",
+        env_gb: 3.0,
+        weights_gb: 0.0,
+        disk_note: "venv + clone + ~1.6 GB of weights — an estimate (backends/README.md); \
+                    backend.toml states no size for the three",
         licences: &["skintokens_encoder"],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: "ardy",
         executor: Executor::Env,
-        disk_gb: 35.0,
-        disk_note: "venv + clone + the assembled Llama-3/LLM2Vec encoder — backends/README.md",
+        env_gb: 35.0,
+        weights_gb: 0.0,
+        disk_note: "venv + clone + the assembled Llama-3/LLM2Vec encoder (~16 GB \
+                    downloaded, ~31 GB written) — an estimate (backends/README.md)",
         licences: &["llama3"],
+        installer_prompts: &["llama3"],
     },
     BackendNeed {
         name: "qwen_image",
         executor: Executor::Comfy,
-        disk_gb: 33.6,
-        disk_note: "Qwen-Image fp8 20.43 + text encoder 9.38 + VAE 0.25 + ControlNet-Union \
-                    3.54 — backends/comfy/backend.toml (lean substitutes the 13.07 GB \
-                    Q4_K_M GGUF for the fp8 model)",
+        env_gb: 0.0,
+        weights_gb: 33.6,
+        disk_note: "Qwen-Image fp8 20.43 + text encoder 9.38 + VAE 0.25 + InstantX \
+                    ControlNet-Union 3.54, read out of backends/comfy/backend.toml \
+                    (lean substitutes the 13.07 GB Q4_K_M GGUF for the fp8 model). It has \
+                    no environment: it is a model group inside the host, fetched with \
+                    `install.sh --models qwen_image`",
         licences: &[],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: "moss_sfx",
         executor: Executor::Comfy,
-        disk_gb: 11.0,
-        disk_note: "MOSS-SoundEffect-v2 weights — backends/README.md",
+        env_gb: 0.0,
+        weights_gb: 10.46,
+        disk_note: "MOSS-SoundEffect-v2.0, read out of backends/moss_sfx/backend.toml and \
+                    measured in the host's models/TTS/ tree; the pack fetches it on the \
+                    node's first run, so no installer downloads it",
         licences: &[],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: "acestep",
         executor: Executor::Comfy,
-        disk_gb: 7.5,
-        disk_note: "the minimal ACE-Step 1.5 model set — backends/README.md",
+        env_gb: 0.0,
+        weights_gb: 10.03,
+        disk_note: "the ACE-Step 1.5 turbo all-in-one checkpoint, read out of \
+                    backends/acestep/backend.toml — one file, and the only thing this \
+                    backend installs. The 7.5 that stood here was an estimate of a model \
+                    set that is not what ships",
         licences: &[],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: "moss_tts",
         executor: Executor::Comfy,
-        disk_gb: 12.0,
-        disk_note: "MOSS-TTS 4B ~8 GB + MOSS-VoiceGenerator ~4 GB — backends/README.md",
+        env_gb: 0.0,
+        weights_gb: 16.28,
+        disk_note: "MOSS-TTS 1.7B 5.72 + MOSS-VoiceGenerator 3.95 + MOSS-Audio-Tokenizer \
+                    6.61, read out of backends/moss_tts/backend.toml and measured in the \
+                    host's models/TTS/ tree; the pack fetches them on first run",
         licences: &[],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: BLENDER_BACKEND,
         executor: Executor::Tool,
-        disk_gb: 0.0,
+        env_gb: 0.0,
+        weights_gb: 0.0,
         disk_note: "a host program: `$BLENDER_BIN` or `blender` on PATH, >= 4.2. \
                     Nothing installs it here and nothing of it ships in an asset",
         licences: &[],
+        installer_prompts: &[],
     },
     BackendNeed {
         name: COMFY_BACKEND,
         executor: Executor::Tool,
-        disk_gb: 2.0,
-        disk_note: "venv + the pinned ComfyUI clone and its one node pack; an estimate, \
-                    not a measurement — the models it hosts are counted against the \
-                    backends that name them",
+        env_gb: 2.0,
+        weights_gb: 0.0,
+        disk_note: "venv + the pinned ComfyUI clone and its two node packs; an estimate, \
+                    not a measurement. **The models it hosts are counted against the \
+                    backends that name them**, and `forge setup` tells its installer which \
+                    group to fetch (`--models qwen_image`, `--models none`) rather than \
+                    letting it pull all 73.67 GB of them",
         licences: &["comfyui_gpl"],
+        // `install.sh --models flux` is the only path that reaches
+        // `confirm_license`, and `forge setup` never passes it — see
+        // `installer_prompts`.
+        installer_prompts: &["flux_dev_controlnet"],
     },
 ];
 
@@ -1437,7 +1502,7 @@ impl SetupPlan {
     /// What the whole thing costs on disk, in GB.
     #[must_use]
     pub fn total_disk_gb(&self) -> f64 {
-        self.backends.iter().map(|need| need.disk_gb).sum()
+        self.backends.iter().map(|need| need.disk_gb()).sum()
     }
 
     /// The licences that must be accepted by name before anything installs.
@@ -1503,7 +1568,7 @@ impl SetupPlan {
                     out,
                     "      {:<12} {:>6.1} GB  [{}]  {}",
                     need.name,
-                    need.disk_gb,
+                    need.disk_gb(),
                     need.executor.as_str(),
                     need.disk_note
                 );
@@ -1526,7 +1591,7 @@ impl SetupPlan {
                     out,
                     "      {:<12} {:>6.1} GB  [{}]  {}",
                     need.name,
-                    need.disk_gb,
+                    need.disk_gb(),
                     need.executor.as_str(),
                     need.disk_note
                 );
@@ -1962,6 +2027,99 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every weights figure on the setup screen is the one its own
+    /// `backend.toml` states.
+    ///
+    /// The table has to exist as a constant — `init`, `licences` and
+    /// `setup` reason about a backend *before* its directory is on the
+    /// machine — so the file cannot be the source at run time. It is the
+    /// source at test time instead, which is what stops the drift that put
+    /// `acestep 7.5 GB` on a screen in front of a 10.03 GB checkpoint
+    /// (2026-08-30).
+    #[test]
+    fn the_disk_bill_is_read_out_of_each_backend_toml() {
+        #[derive(serde::Deserialize)]
+        struct Weights {
+            #[serde(default)]
+            models: Vec<Weight>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Weight {
+            gb: Option<f64>,
+        }
+
+        let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../backends");
+        for need in &BACKEND_NEEDS {
+            let file = tree.join(need.name).join("backend.toml");
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                // No directory here yet (qwen_image is Phase 3's), so the
+                // constant is all there is and it says where it came from.
+                assert!(
+                    !need.disk_note.is_empty(),
+                    "{}: a figure with no file behind it must at least say where it came from",
+                    need.name
+                );
+                continue;
+            };
+            let parsed: Weights = toml::from_str(&text).expect("backend.toml parses");
+            if need.name == COMFY_BACKEND {
+                assert!(
+                    need.weights_gb.abs() < f64::EPSILON,
+                    "the host's own weights are counted against the backends that name them, \
+                     and `forge setup` tells its installer which group to fetch"
+                );
+                continue;
+            }
+            if parsed.models.iter().any(|model| model.gb.is_none()) {
+                assert!(
+                    need.weights_gb.abs() < f64::EPSILON,
+                    "{}: a model that states no size is unknown, and unknown is not a number \
+                     to put on a bill",
+                    need.name
+                );
+                continue;
+            }
+            let stated: f64 = parsed.models.iter().filter_map(|model| model.gb).sum();
+            assert!(
+                (need.weights_gb - stated).abs() < 0.005,
+                "{}: the table says {:.2} GB of weights and backend.toml says {stated:.2}",
+                need.name,
+                need.weights_gb
+            );
+        }
+    }
+
+    /// An installer is handed `--yes` only for licences this machine has
+    /// agreed to by name, so every prompt an installer makes is either
+    /// covered by an id in the table or suppressed by a flag.
+    #[test]
+    fn every_installer_prompt_is_a_licence_id_or_a_declined_group() {
+        for need in &BACKEND_NEEDS {
+            for id in need.installer_prompts {
+                if *id == "flux_dev_controlnet" {
+                    // Deliberately not in LICENCES: no kind in the map needs
+                    // the FLUX pose ControlNet, `forge setup` always passes
+                    // `--no-flux-controlnet`, and an id in the table would
+                    // put a non-commercial licence on the screen of every
+                    // project that makes a sound.
+                    assert_eq!(need.name, COMFY_BACKEND);
+                    assert!(licence(id).is_none());
+                    continue;
+                }
+                let known = licence(id).unwrap_or_else(|| panic!("{id} is not a licence id"));
+                assert!(
+                    known.needs_accept,
+                    "{id} is prompted for at install time, so it must be one setup demands"
+                );
+                assert!(
+                    need.licences.contains(id),
+                    "{}: {id} is prompted for but not listed among its licences",
+                    need.name
+                );
+            }
+        }
+    }
 
     #[test]
     fn discover_finds_the_toolkit_root_from_a_crate_directory() {

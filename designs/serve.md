@@ -682,7 +682,17 @@ it never hangs on a prompt, which is the trap `hf auth login` taught this
 repo.
 
 **`forge setup [kind…] [--yes <licence>…] [--dry-run]` prints one screen
-before a byte downloads**: per chosen kind the backends, the disk cost
+before a byte downloads** — and the screen is the bill its own installers
+then spend: every weights figure is the sum of the `gb` in that backend's
+`backend.toml` (held to it by a test, because the table has to work before
+a backend directory exists), and the comfy host is told which model group
+to fetch (`--models qwen_image`, `--models none`) rather than pulling all
+73.67 GB of image weights behind a 9.5 GB screen. **`--yes` is never
+blanket, at either end**: an installer is handed one only when every
+licence its own `confirm_license` asks about is on this machine's receipt,
+and `--no-flux-controlnet` is always passed because that licence has no id
+in the table and a `--yes` about nvdiffrast must not be able to accept a
+non-commercial one nobody was shown: per chosen kind the backends, the disk cost
 (weights + env + clone), the total, and every licence fact those carry —
 nvdiffrast's NVIDIA Source Code License (non-commercial) in full, the
 DINOv3 gated login, Llama 3's attribution requirement, the SkinTokens

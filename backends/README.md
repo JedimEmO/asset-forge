@@ -209,12 +209,18 @@ Each installer is idempotent (`set -euo pipefail`, sources
    (the Llama 3 notice prints; `--yes` accepts it without a TTY).
 2. `bash backends/comfy/install.sh` — venv (python 3.12, torch cu130), the
    pinned ComfyUI clone, **two** node packs (`ComfyUI-GGUF` for the lean
-   tier's Q4 reference, `TTS-Audio-Suite` for the three MOSS models), a
-   systemd `--user` unit on `127.0.0.1:8188`, ~74 GB of image weights and
-   ACE-Step's 10.03 GB checkpoint. It asks before fetching the FLUX pose
-   ControlNet, which is **non-commercial**; `--no-flux-controlnet`
-   declines, `--no-service` skips systemd. Every audio kind runs on this
-   host, so it comes before them.
+   tier's Q4 reference, `TTS-Audio-Suite` for the three MOSS models) and a
+   systemd `--user` unit on `127.0.0.1:8188`. **`--models` decides which
+   weights come down**: `all` (the default, 73.67 GB), `qwen_image`
+   (46.67 GB — the fp8 trio, the InstantX ControlNet and the Q4 GGUF),
+   `flux` (22.72 GB, the Phase 0 spike's losing candidate) or `none`. It
+   asks before fetching the FLUX pose ControlNet, which is
+   **non-commercial**; `--no-flux-controlnet` declines, and `forge setup`
+   always passes it, because a licence with no id in the toolkit's table is
+   one no `--yes` may accept for you. `--no-service` skips systemd. Every
+   audio kind runs on this host, so it comes before them — and asks it for
+   `--models none`, since ACE-Step's own 10.03 GB checkpoint is step 3's
+   and the MOSS weights are the node pack's on first run.
 3. `bash backends/moss_sfx/install.sh`, `bash backends/moss_tts/install.sh`
    and `bash backends/acestep/install.sh` — none of which install anything.
    Each checks that the host is there, that its pack is at the pin this
