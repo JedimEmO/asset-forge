@@ -9,6 +9,16 @@
 //! Nothing here knows a generator's flags beyond the three that name a
 //! destination. The queue schedules a command line; it does not compose
 //! one.
+//!
+//! It does, though, say which backend the command line runs on, and that
+//! is not decoration: `backend` is what admission refuses on, what
+//! `card_is_held` sizes the card against and what chooses the comfy
+//! free/restart/withhold ladder. While `spec_for` hard-coded `None`, every
+//! `just sfx` row read `executor: "env", backend: null, need_gb: null` for
+//! a run whose own record said `comfy` — two doors with two behaviours and
+//! a card left held with nothing saying so (2026-08-30). The map is
+//! [`forge_library::project::backend_for_verb`], and the MCP door reads the
+//! same one.
 
 use std::path::Path;
 
@@ -36,6 +46,17 @@ pub fn kind_of(argv: &[String]) -> String {
         ("", _) => String::from("forge_gen.none"),
         (verb, _) => format!("forge_gen.{verb}"),
     }
+}
+
+/// The backend a `forge gen` command line runs on, from the one map.
+///
+/// `None` for a command line that generates nothing — `doctor`, `motion
+/// review` — which is why [`crate::Queue::submit`] refuses only the kinds
+/// that say `generate_` in their name.
+#[must_use]
+pub fn backend_of(argv: &[String]) -> Option<&'static str> {
+    let first = argv.first()?;
+    forge_library::project::backend_for_verb(first, argv.get(1).map(String::as_str))
 }
 
 /// The paths a command line says it will write, relative to the project
@@ -87,17 +108,21 @@ pub fn spec_for(argv: &[String], project_root: &Path, created_by: &str) -> JobSp
         .cloned();
     JobSpec {
         kind: kind_of(argv),
-        backend: None,
+        backend: backend_of(argv).map(str::to_owned),
         argv: argv.to_vec(),
         outputs_claimed: claimed,
         record,
         created_by: created_by.to_owned(),
         // The asking process's own answer, because a daemon's environment
         // is not the caller's: `FORGE_FAKE=1 just sfx …` against a daemon
-        // somebody else started must still write a placeholder.
+        // somebody else started must still write a placeholder. Only a
+        // *set* variable answers: `FORGE_FAKE=0` in a tier-`fake` project
+        // is not permission to reach a real generator, and a gate that an
+        // environment variable can switch off is not a gate.
         fake: std::env::var("FORGE_FAKE")
             .ok()
-            .map(|value| value == "1" || value == "true"),
+            .filter(|value| value == "1" || value == "true")
+            .map(|_| true),
     }
 }
 
@@ -123,6 +148,28 @@ mod tests {
         assert_eq!(kind_of(&argv("export vex")), "rig.export");
         assert_eq!(kind_of(&argv("doctor")), "forge_gen.doctor");
         assert_eq!(kind_of(&[]), "forge_gen.none");
+    }
+
+    #[test]
+    fn a_command_line_names_the_backend_it_will_run_on() {
+        assert_eq!(backend_of(&argv("sfx --prompt x")), Some("moss_sfx"));
+        assert_eq!(backend_of(&argv("music --prompt x")), Some("acestep"));
+        assert_eq!(backend_of(&argv("speech --text hi")), Some("moss_tts"));
+        assert_eq!(backend_of(&argv("voice warden")), Some("moss_tts"));
+        assert_eq!(backend_of(&argv("mesh a.png")), Some("trellis2"));
+        assert_eq!(backend_of(&argv("motion sweep --samples 8")), Some("ardy"));
+        assert_eq!(backend_of(&argv("prop a.glb")), Some("blender"));
+        assert_eq!(
+            backend_of(&argv("motion review a.npz")),
+            None,
+            "a review draws a sheet from takes on disk and must not wait for ARDY's budget"
+        );
+        assert_eq!(backend_of(&argv("doctor --json")), None);
+        assert_eq!(
+            spec_for(&argv("sfx --prompt door"), Path::new("/p"), "cli").backend,
+            Some(String::from("moss_sfx")),
+            "the terminal door names the same backend the MCP door does"
+        );
     }
 
     #[test]

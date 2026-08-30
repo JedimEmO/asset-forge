@@ -31,6 +31,14 @@ impl Executor for ComfyExecutor {
         cancel: &CancelToken,
         on_pid: &mut dyn FnMut(u32),
     ) -> GenOutcome {
+        // A fake job writes a placeholder with the stdlib: it posts no
+        // graph, loads no model and holds no VRAM, so reading the host's
+        // `/system_stats` and calling `POST /free` around it would have
+        // `ci-fake` and `mcp-session` reach into a developer's live host to
+        // unload a model no job of theirs put there.
+        if plan.fake {
+            return env::spawn(plan, launch, log, cancel, on_pid);
+        }
         let url = plan.comfy_url.clone().unwrap_or_default();
         let before = if url.is_empty() {
             None

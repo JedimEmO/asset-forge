@@ -133,13 +133,16 @@ impl AudioKind {
         }
     }
 
-    /// The backend directory this kind needs.
-    const fn backend(self) -> &'static str {
-        match self {
-            Self::Sfx => "moss_sfx",
-            Self::Music => "acestep",
-            Self::Speech => "moss_tts",
-        }
+    /// The backend directory this kind needs, from the one map.
+    ///
+    /// Read out of `forge_library`, never restated here: this door named
+    /// its backend on every job while the terminal door named none, and the
+    /// two behaved differently on the same work (2026-08-30). One map, both
+    /// doors — and the verb it is looked up by is the same word the command
+    /// line uses.
+    fn backend(self) -> &'static str {
+        forge_library::project::backend_for_verb(self.as_str(), None)
+            .expect("every audio kind's verb is in the backend map")
     }
 
     /// The library kind the sound would ship as, for the promote hint.

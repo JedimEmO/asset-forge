@@ -69,8 +69,11 @@ fn status(project: &Project) -> Outcome {
     crate::commands::jobs::print_queue(project)
 }
 
-/// Serve until stopped.
+/// Serve until stopped — in this shell with `--foreground`, else detached.
 fn serve(project: &Project, args: &ServeArgs) -> Outcome {
+    if !args.foreground {
+        return detach(project, args);
+    }
     let store = JobStore::open(&project.root).map_err(|e| Failure::failed(e.to_string()))?;
     // The lock before the listener: a second daemon must not take a port
     // and then find out it is the second.
@@ -78,10 +81,10 @@ fn serve(project: &Project, args: &ServeArgs) -> Outcome {
 
     let queue = LocalQueue::open(
         project,
-        LocalQueueOptions {
-            forge: std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge")),
-            ..LocalQueueOptions::default()
-        },
+        LocalQueueOptions::for_project(
+            project,
+            std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge")),
+        ),
     )
     .map_err(|e| Failure::failed(e.to_string()))?;
 
@@ -90,7 +93,6 @@ fn serve(project: &Project, args: &ServeArgs) -> Outcome {
         .build()
         .map_err(|e| Failure::failed(format!("cannot start the async runtime: {e}")))?;
 
-    let foreground = args.foreground || std::io::IsTerminal::is_terminal(&std::io::stdout());
     let idle_exit = args.idle_exit;
     let serve_mcp = !args.no_mcp;
     let port = args.port;
@@ -138,9 +140,7 @@ fn serve(project: &Project, args: &ServeArgs) -> Outcome {
             project_root.display(),
             if serve_mcp { ", MCP at /mcp" } else { "" }
         );
-        if !foreground {
-            eprintln!("out/serve/daemon.json holds the port and the token (mode 0600)");
-        }
+        eprintln!("out/serve/daemon.json holds the port and the token (mode 0600)");
 
         let idle = idle_watch(Arc::clone(&queue), idle_exit);
         let result = tokio::select! {
@@ -155,10 +155,117 @@ fn serve(project: &Project, args: &ServeArgs) -> Outcome {
                 Ok(())
             }
         };
+        // `stop` cancels the running child and waits for its row before it
+        // returns. A daemon that exited with a generator still alive
+        // dropped `card.lock` while the child held the card, and the next
+        // door took the lease against a running generate.
         queue.stop();
         drop(lock);
         result
     })
+}
+
+/// Start the daemon in its own process group and come back with its port.
+///
+/// `--foreground` is the only in-shell mode. Without it this used to change
+/// one log line and nothing else — the process stayed a child of the shell
+/// in its session and its process group, so `just serve` blocked the
+/// terminal for ever and the real run had to launch it under
+/// `setsid nohup` (2026-08-30). Now the parent re-execs *itself* with
+/// `--foreground`, stdin closed and both streams appended to
+/// `out/serve/daemon.log`, in a process group of its own so the terminal's
+/// ^C and its hangup do not reach it; it then waits for the child to write
+/// `daemon.json` and prints the port.
+fn detach(project: &Project, args: &ServeArgs) -> Outcome {
+    use std::os::unix::process::CommandExt as _;
+
+    let store = JobStore::open(&project.root).map_err(|e| Failure::failed(e.to_string()))?;
+    if let Some(daemon) = discovery::find(project) {
+        return Err(Failure::refused(format!(
+            "a daemon is already serving {} on {} — `forge stop` ends it",
+            project.root.display(),
+            daemon.url()
+        )));
+    }
+    let exe = std::env::current_exe()
+        .map_err(|e| Failure::failed(format!("cannot locate own executable: {e}")))?;
+    let log_path = forge_serve::state_dir(&project.root).join("daemon.log");
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| Failure::failed(format!("cannot open {}: {e}", log_path.display())))?;
+    let mut command = std::process::Command::new(&exe);
+    command
+        .arg("--project")
+        .arg(&project.root)
+        .arg("serve")
+        .arg("--foreground")
+        .arg("--port")
+        .arg(args.port.to_string());
+    if let Some(seconds) = args.idle_exit {
+        command.arg("--idle-exit").arg(seconds.to_string());
+    }
+    if args.no_mcp {
+        command.arg("--no-mcp");
+    }
+    command
+        .stdin(std::process::Stdio::null())
+        .stderr(
+            log.try_clone()
+                .map_err(|e| Failure::failed(format!("cannot share the daemon log: {e}")))?,
+        )
+        .stdout(log)
+        .process_group(0);
+    let mut child = command
+        .spawn()
+        .map_err(|e| Failure::failed(format!("the daemon would not start: {e}")))?;
+
+    // It is up when it says so in its own endpoint file, not when the
+    // spawn returned: a second daemon, a taken port or a bad project all
+    // end in the child exiting, and the log is where it said why.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        if let Some(daemon) = store.daemon()
+            && daemon.pid == child.id()
+        {
+            println!(
+                "forge serve on {} for {}",
+                daemon.url,
+                project.root.display()
+            );
+            println!("log       {}", log_path.display());
+            println!("stop      forge stop   (or `just stop`)");
+            return Ok(());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return Err(Failure::failed(format!(
+                    "the daemon exited {status} before it was up; the last of {} says why:\n{}",
+                    log_path.display(),
+                    tail(&log_path, 12)
+                )));
+            }
+            Ok(None) => {}
+            Err(err) => return Err(Failure::failed(format!("cannot wait on the daemon: {err}"))),
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Failure::failed(format!(
+                "the daemon did not write out/serve/daemon.json within 20 s; it is pid {} and \
+                 {} says what it is doing",
+                child.id(),
+                log_path.display()
+            )));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// The last `lines` lines of a file, for a failure message.
+fn tail(path: &std::path::Path, lines: usize) -> String {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let all: Vec<&str> = text.lines().collect();
+    all[all.len().saturating_sub(lines)..].join("\n")
 }
 
 /// Resolve when the queue has been empty for `seconds`, or never.

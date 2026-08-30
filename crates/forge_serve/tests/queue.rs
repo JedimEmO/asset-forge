@@ -14,7 +14,7 @@ fn two_jobs_for_one_output_path_are_refused() {
     let queue = common::queue(&project, None);
     let spec = |name: &str| JobSpec {
         kind: String::from("generate_audio.sfx"),
-        backend: None,
+        backend: Some(String::from("moss_sfx")),
         argv: vec![
             String::from("sfx"),
             String::from("--prompt"),
@@ -68,7 +68,7 @@ print(json.dumps({{"ok": True, "fake": True, "outputs": [], "no_daemon": os.envi
     let queue = common::queue(&project, Some(&script));
     let spec = |name: &str| JobSpec {
         kind: String::from("generate_audio.sfx"),
-        backend: None,
+        backend: Some(String::from("moss_sfx")),
         argv: vec![
             String::from("sfx"),
             String::from("--name"),
@@ -175,7 +175,10 @@ fn a_missing_backend_is_refused_with_exit_three_before_the_queue() {
             outputs_claimed: Vec::new(),
             record: None,
             created_by: String::from("agent:test"),
-            fake: None,
+            // Stated, never inherited from the environment: a `just ci` run
+            // with FORGE_FAKE exported would otherwise skip the very check
+            // this test is about, because a fake job needs no backend.
+            fake: Some(false),
         })
         .expect("a refusal is a row, not an error");
     assert_eq!(job.state, JobState::Refused);
@@ -183,4 +186,120 @@ fn a_missing_backend_is_refused_with_exit_three_before_the_queue() {
     let message = job.message.unwrap_or_default();
     assert!(message.contains("moss_sfx"), "{message}");
     assert!(job.hint.unwrap_or_default().contains("doctor"));
+}
+
+/// The terminal door plans like the agent's door, because there is one map.
+///
+/// A `just sfx` command line used to reach admission with `backend: null`,
+/// so it planned as `executor: env` with no budget: no exit-3 refusal, no
+/// `blocked` behind a foreign holder, and the comfy free/restart/withhold
+/// ladder never ran for it, while the same work through `generate_audio`
+/// got all three. The row and the card's own projection are where that
+/// shows, so they are what this reads.
+#[test]
+fn a_cli_shaped_sfx_command_plans_as_comfy_with_the_backend_s_budget() {
+    let (dir, project) = common::project();
+    let budget = forge_library::backends::Backends::discover(&project)
+        .get("moss_sfx")
+        .and_then(|backend| backend.vram_gb)
+        .expect("this checkout describes moss_sfx and states its budget");
+    let script = common::stub(
+        dir.path(),
+        "slow.py",
+        r#"
+import json, time
+print("working", flush=True)
+time.sleep(1.5)
+print(json.dumps({"ok": True, "outputs": []}))
+"#,
+    );
+    let queue = common::queue(&project, Some(&script));
+    let argv: Vec<String> = "sfx --prompt a-heavy-iron-door --out out/audio/sfx/door.wav"
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    let spec = forge_serve::JobSpec {
+        // Stated so an exported FORGE_FAKE cannot turn this into the fake
+        // path, which needs no card and no backend.
+        fake: Some(false),
+        ..forge_serve::spec::spec_for(&argv, &project.root, "cli")
+    };
+    assert_eq!(spec.backend.as_deref(), Some("moss_sfx"));
+    let job = queue.submit(spec).expect("admitted");
+    assert_eq!(
+        job.executor,
+        forge_serve::ExecutorKind::Comfy,
+        "moss_sfx is a comfy backend, and the row says so whichever door queued it"
+    );
+    let state = common::until(queue.as_ref(), &job.id, "took the card", 20, |job| {
+        job.state == JobState::Running
+    });
+    assert_eq!(state.state, JobState::Running);
+    let card = forge_serve::CardState::read(&forge_serve::state_dir(&project.root))
+        .expect("a running job's projection");
+    assert_eq!(
+        card.need_gb,
+        Some(budget),
+        "the lease is taken against the backend's budget, never against nothing"
+    );
+    let done = common::finished(queue.as_ref(), &job.id, 30);
+    assert_eq!(done.state, JobState::Done, "{:?}", done.message);
+}
+
+/// A stop never leaves a child alive with the card lock dropped.
+///
+/// The daemon used to set a flag and exit: the generator went on running in
+/// its own process group, `card.lock` was released with the card still
+/// held, and the row was stamped `interrupted` on the next start although
+/// nothing had interrupted it (2026-08-30).
+#[test]
+fn a_stop_with_a_running_job_does_not_release_the_card() {
+    let (dir, project) = common::project();
+    let script = common::stub(
+        dir.path(),
+        "long.py",
+        r#"
+import sys, time
+print("working", flush=True)
+time.sleep(300)
+"#,
+    );
+    let queue = common::queue(&project, Some(&script));
+    let job = queue
+        .submit(forge_serve::JobSpec::new(
+            "generate_audio.sfx",
+            vec![String::from("sfx")],
+            "cli",
+        ))
+        .expect("admitted");
+    let running = common::until(queue.as_ref(), &job.id, "started", 20, |job| {
+        job.state == JobState::Running && job.pid.is_some()
+    });
+    let pid = running.pid.expect("a running job has a pid");
+
+    queue.stop();
+
+    let row = queue.get(&job.id).expect("read").expect("the row");
+    assert!(
+        row.state.is_terminal(),
+        "stop waits for the row it cancelled: {:?}",
+        row.state
+    );
+    assert_eq!(row.state, JobState::Cancelled);
+    assert!(row.exit.is_none(), "a cancelled job has no exit code");
+    // The child is gone before the process that spawned it may exit.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline
+        && std::path::Path::new(&format!("/proc/{pid}")).exists()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "pid {pid} outlived the stop that was supposed to end it"
+    );
+    assert!(
+        forge_serve::CardState::read(&forge_serve::state_dir(&project.root)).is_none(),
+        "the lease went with the job, and the projection with the lease"
+    );
 }

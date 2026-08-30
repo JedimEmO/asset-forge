@@ -147,11 +147,18 @@ rig: _build
 # the card. It writes out/serve/daemon.json — the port and the token a
 # client needs — and serves MCP over streamable HTTP at /mcp.
 #
+# `just serve` starts it in its own process group, waits for it to write
+# out/serve/daemon.json, prints the port and comes back to the shell;
+# `just serve --foreground` is the only mode that stays in this terminal.
+#
 # Start the daemon: `just serve` (add --foreground to keep it in this shell).
 serve *flags: _build
     {{forge}} serve {{flags}}
 
-# The queue drains what is running first; a job in flight is not killed.
+# A job in flight is CANCELLED, not drained: the daemon may not exit with a
+# generator still on the card, because the card lock goes with it and the
+# next door would take the lease against a running generate. The row says
+# `cancelled` with the note, and partial outputs under out/ are left.
 #
 # Stop the daemon.
 stop *flags: _build
@@ -166,9 +173,9 @@ jobs *flags: _build
 # The last thing a generate said before it stopped saying anything is
 # usually the answer.
 #
-# One job's log, tailed: `just job-log job_3`
+# One job's log, tailed: `just job-log j-20260830-141207-3f9a`
 job-log job *flags: _build
-    {{forge}} jobs log {{job}} {{flags}}
+    {{forge}} job log {{job}} {{flags}}
 
 # --------------------------------------------------------------- generate --
 
@@ -753,6 +760,10 @@ ci-fake: _build mcp-check
     jf voice warden "deep, slow, grave" --seed 1
     jf speech warden_greeting "Few come this deep." --voice warden
     jf promote-audio voice warden_greeting out/audio/voice/warden_greeting.wav
+    echo "== the queue's own doors, on the rows those runs wrote"
+    job=$("$forge" jobs --json --limit 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+    jf job-log "$job" > /dev/null
+    jf jobs > /dev/null
     echo "== the gates, on the throwaway project"
     jf catalog
     jf audit

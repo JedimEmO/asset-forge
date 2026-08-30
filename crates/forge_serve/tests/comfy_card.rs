@@ -99,6 +99,55 @@ fn vram_that_does_not_return_restarts_the_unit_then_withholds() {
     assert!(CardState::withheld(dir.path()).is_none());
 }
 
+/// The one the old test could not see: nothing this job left, and 9 GB of
+/// somebody else's model still on the card.
+///
+/// 15 GB free before and 15 GB free after, on a 24 GB card. Judged against
+/// the job's own `before` this is "the card came back" — the two numbers
+/// are the same — and that is exactly what happened on 2026-08-30: an MCP
+/// speech job went 16.44 → 16.38 GB and was released clean with 7.3 GB of
+/// MOSS resident, and `forge gpu --free` printed "the card is back" one
+/// line above "holding pid 693788 8.1 GB". A test that compares a number
+/// against itself passes for the wrong reason, so the ladder is judged
+/// against the card's idle floor.
+#[test]
+fn a_model_an_earlier_job_left_is_seen_and_the_card_is_withheld() {
+    let url = stub_comfy(15.0);
+    let restarts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&restarts);
+    let mut restart = move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    };
+    let release = release_comfy_with(
+        &url,
+        "forge-comfy.service",
+        &mut restart,
+        Some(15.0),
+        1,
+        |_| {},
+    );
+    assert_eq!(
+        restarts.load(Ordering::SeqCst),
+        1,
+        "the ladder tries the one lever that works on the MOSS pack"
+    );
+    assert!(
+        !release.returned,
+        "15 GB free on a 24 GB card is not a card that came back, whatever this job started with"
+    );
+    let floor = release.floor_gb.expect("the stub says how big the card is");
+    assert!(
+        (21.0..23.0).contains(&floor),
+        "the floor is the card less its idle context, not a constant: {floor}"
+    );
+    let note = release.note.expect("a withheld card says why");
+    assert!(
+        note.contains("15.0"),
+        "the note quotes what it measured: {note}"
+    );
+}
+
 /// The happy path: `/free` gives the card back, and nothing is restarted.
 /// This is what both spike runs measured, and it is the one that must not
 /// become noisy.

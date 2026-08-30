@@ -140,7 +140,15 @@ for state to disagree. Admission does two things before a row reaches
 
 1. **Backend resolution** from `forge_library::backends::Backends`. A
    missing backend is `refused` with exit 3 in under a millisecond, so the
-   queue never holds a job that cannot run.
+   queue never holds a job that cannot run. **Every generate names its
+   backend**, from the one map `forge_library::project::backend_for_verb`
+   — `spec_for` derives it from `argv[0]` for the terminal door and the
+   MCP tools read the same function — and a `generate_*` spec that names
+   none is refused before a row exists. A **fake** job is the one
+   exception to the installed check: `run_fake` never imports the backend,
+   never reads a template and never resolves a URL, so tier `fake` works
+   on a machine that has nothing installed, which is the machine it is
+   for.
 2. **The out-path lease.** Every job declares `outputs_claimed`. A submit
    whose path is already claimed by a `queued`, `blocked` or `running` row
    is refused naming that row's id. Two doors asking for
@@ -467,11 +475,28 @@ no-daemon path a stranger's first session takes.
 ## 3. The CLI as a client
 
 `forge serve [--foreground] [--port N] [--idle-exit S] [--no-mcp]
-[--stop] [--status]`. `--foreground` is the default when stdout is a TTY
-(logs to stderr); otherwise it daemonises, writes `daemon.json` and holds
-`daemon.lock`, and a second `forge serve` exits 1 naming the first pid.
-`--idle-exit S` exists because a daemon a stranger starts by accident
-should not outlive the session.
+[--stop] [--status]`. **`--foreground` is the only in-shell mode**: it logs
+to stderr and stays. Without it `forge serve` re-execs itself with
+`--foreground` in a process group of its own, stdin closed and both streams
+appended to `out/serve/daemon.log`, waits for the child to write
+`daemon.json`, prints the port and exits 0 — so `just serve` gives the
+terminal back. The child holds `daemon.lock`, and a second `forge serve`
+exits naming the first pid. `--idle-exit S` exists because a daemon a
+stranger starts by accident should not outlive the session. (The first form
+of this section said `--foreground` was "the default when stdout is a TTY,
+otherwise it daemonises"; nothing detached at all — the flag chose one log
+line — and the real run had to launch the daemon under `setsid nohup`,
+2026-08-30.)
+
+**Stopping is a cancel, not a drain.** `forge stop`, `^C` and SIGTERM all
+cancel what is running — SIGTERM to the recorded pid's process group,
+SIGKILL after the grace — and wait for the worker to write the terminal row
+before the process exits. A daemon that exits with its generator alive
+drops `card.lock` while the card is still held, and the next door takes the
+lease against a running generate; the row is then stamped `interrupted` by
+a later start although nothing interrupted it. For the same reason
+`reconcile` leaves a `running` row alone while its pid is alive, and
+`card_is_held` blocks the next card job behind that pid by name.
 
 `forge_serve::discovery::find(project)`:
 
@@ -505,10 +530,16 @@ again.
 **No `just` recipe is rewritten. That is the acceptance test for this
 section.**
 
-New verbs: `forge jobs`, `forge job <id> [--log] [--follow]`,
-`forge job cancel <id>`, `forge stop`. `forge gpu` learns `--free`, which
-releases the host's models — replacing `forge gen music --stop-server`,
-which is deleted with the resident server.
+New verbs: `forge jobs`, `forge job show|log|cancel <id>` (`--follow` on
+`log`), `forge stop`. **The read verbs open no worker**: `forge jobs`,
+`forge job show|log` and `forge serve --status` reconcile nothing and
+rewrite no row, because a listing that re-queues another session's
+`blocked` row hands the next `forge gen` somebody else's forgotten job to
+run on the card. `forge gpu` learns `--free`, which releases the host's
+models — replacing `forge gen music --stop-server`, which is deleted with
+the resident server — and says "the card is back" only when free VRAM
+meets the card's idle floor, never when it merely equals what this call
+started with.
 
 ---
 
@@ -629,7 +660,12 @@ anything comfy → `+ comfy`.
 Tier changes registers and variants, never features. `lean` selects the
 Q4_K_M GGUF reference template and MOSS-TTS 1.7B; `fake` sets
 `FORGE_FAKE=1` for every job the project runs, as a first-class answer and
-not an environment trick. **Both tiers lift at 1024³** — measured at
+not an environment trick. **The doors build their queue options from the
+project** — `LocalQueueOptions::for_project` — because when each of them
+took `..default()` instead, `tier` was always `"full"` and a `--tier fake`
+project with `FORGE_FAKE` unset ran the real generator; `ci-fake` and
+`mcp-session` could not see it, both exporting `FORGE_FAKE=1`, so
+`cli.rs` has a leg that removes it from the environment on purpose. **Both tiers lift at 1024³** — measured at
 4.7 GB, and 512³ costs the face.
 
 **`forge init` asks three questions once, on a TTY**, phrased as what you
@@ -676,17 +712,31 @@ The licence ids are `nvdiffrast`, `dinov3`, `llama3`,
 ### The comfy VRAM ladder (`forge_serve::card::release_comfy`)
 
 `forge2.md` names "wrapper packs bypass ComfyUI's memory manager" as a
-risk. `hosting.md` records `POST /free` giving the card back on both spike
-runs, so this is a safety net that must be **loud when it fires and never
-routine**:
+risk, and the first real audio run settled it: **`POST /free` does not give
+the card back after TTS-Audio-Suite has loaded a model** (22.85 → 15.07 GB
+free across an sfx job; `systemctl --user restart forge-comfy` returns it
+in 4.4 s), while native ACE-Step needs nothing at all. So this ladder is
+load-bearing for the two MOSS backends and a safety net for the rest —
+loud when it fires, and never silent about what it could not prove:
 
-1. Read `vram_free` before the job → `before`.
-2. After the child exits (the template already ended in its
-   `[comfy] unload_node`), `POST /free {unload_models: true,
-   free_memory: true}`, then poll `/system_stats` every 500 ms for 15 s.
-3. Back within 0.5 GB of `before` → release the lease, record
-   `vram_after_gb`. (The resident floor creeping — 1.09 → 1.53 GB over
-   seven swaps, measured — does not trip this.)
+1. Read `vram_free` and `vram_total` before the job → `before`, and the
+   **floor**: `total − 2.0 GB`, what this card shows with nothing but the
+   host's idle CUDA context on it (measured 0.4–1.53 GB,
+   `designs/hosting.md`).
+2. After the child exits, `POST /free {unload_models: true, free_memory:
+   true}`, then poll `/system_stats` every 500 ms for 15 s. (There is no
+   `unload_node` to end the template with: the pack registers no unload
+   class at this pin, and `/free` does not unload its models — the unit
+   restart of step 4 is the only lever the MOSS pack has, measured
+   2026-08-30.)
+3. Free VRAM within 0.5 GB of **the floor** → release the lease, record
+   `vram_after_gb`. **Not within 0.5 GB of `before`**: `before` is read
+   seconds before the job, so a model an earlier job left resident is
+   inside it and can never be seen — a speech job went 16.44 → 16.38 GB
+   and was released "clean" with 7.3 GB of MOSS on the card, and
+   `forge gpu --free` printed "the card is back" one line above "holding
+   pid 693788 8.1 GB" (2026-08-30). `before` stays on the row, because
+   what a job started with is worth knowing; it is not the question.
 4. Not back → `systemctl --user restart <[server] unit>`, wait for
    `/system_stats` up to `ready_timeout_s`, re-read. Log a warning quoting
    both numbers; the row records `card.restarted: true`.

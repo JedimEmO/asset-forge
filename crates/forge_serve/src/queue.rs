@@ -53,6 +53,13 @@ const WAIT_POLL: Duration = Duration::from_millis(200);
 /// How long a cancel waits for the worker to write the terminal row.
 const CANCEL_GRACE: Duration = Duration::from_secs(12);
 
+/// How long a stop waits for the child it cancelled to be gone.
+///
+/// Two seconds longer than the SIGTERM-to-SIGKILL grace, so the ordinary
+/// path — the generator takes the signal and the worker writes the row —
+/// always finishes inside it.
+const STOP_GRACE: Duration = Duration::from_secs(12);
+
 /// How many log lines a status frame carries for a running job.
 const STATUS_TAIL: usize = 8;
 
@@ -90,6 +97,38 @@ impl Default for LocalQueueOptions {
             comfy_url: None,
             run_worker: true,
             launcher: None,
+        }
+    }
+}
+
+impl LocalQueueOptions {
+    /// The options a **door** opens a queue with: the project's own
+    /// `[hardware]`, and this binary as the card reader.
+    ///
+    /// Every door builds its options here and not by hand. While each one
+    /// filled in `forge` and took `..default()` for the rest, `tier` was
+    /// always `"full"` and `comfy_url` always `None`, so a project whose
+    /// `forge.toml` said `tier = "fake"` ran the *real* generator with
+    /// `FORGE_FAKE` unset — the 2026-08-30 lesson "a gate that can reach a
+    /// real generator is not a gate", reopened by a default (`serve.md` §5:
+    /// fake is a first-class answer, not an environment trick).
+    #[must_use]
+    pub fn for_project(project: &Project, forge: PathBuf) -> Self {
+        Self {
+            forge,
+            tier: project.tier().as_str().to_owned(),
+            comfy_url: Some(project.hardware.comfy_url.clone()),
+            ..Self::default()
+        }
+    }
+
+    /// As [`Self::for_project`], for a door that only reads: no worker, so
+    /// nothing is reconciled, re-queued or launched by a listing.
+    #[must_use]
+    pub fn reader_for_project(project: &Project, forge: PathBuf) -> Self {
+        Self {
+            run_worker: false,
+            ..Self::for_project(project, forge)
         }
     }
 }
@@ -132,13 +171,26 @@ impl LocalQueue {
     /// Open the state directory, reconcile what a previous run left, prune
     /// what is older than a fortnight, and start the worker.
     ///
+    /// **A queue with no worker writes nothing on the way in.** `forge
+    /// jobs`, `forge job show|log` and `forge serve --status` are readers,
+    /// and a listing that reconciles is a listing that rewrites rows: a
+    /// `blocked` row an ended MCP session left behind was turned back into
+    /// `queued` by a plain `forge jobs`, and the next `forge gen` in that
+    /// project then ran a stranger's forgotten job on the card first
+    /// (2026-08-30). Reconciliation belongs to the process that is about to
+    /// run the queue, because only it can finish what it re-queues.
+    ///
     /// # Errors
     ///
     /// [`ServeError::Io`] when the state directory will not open.
     pub fn open(project: &Project, options: LocalQueueOptions) -> Result<Arc<Self>, ServeError> {
         let store = JobStore::open(&project.root)?;
-        let _ = store.prune();
-        let requeue = store.reconcile()?;
+        let requeue = if options.run_worker {
+            let _ = store.prune();
+            store.reconcile()?
+        } else {
+            Vec::new()
+        };
         let queue = Arc::new(Self {
             card: CardReader::new(options.forge.clone(), project.root.clone()),
             project: project.clone(),
@@ -181,10 +233,62 @@ impl LocalQueue {
         &self.card
     }
 
-    /// Ask the worker to finish what it is doing and stop.
+    /// Stop the worker, and **never leave a child alive behind it**.
+    ///
+    /// A daemon that exited with a generator still running dropped
+    /// `card.lock` while that generator held the card, so the next door
+    /// took the lease against a live generate and the row was later stamped
+    /// `interrupted` although its child was never interrupted (2026-08-30).
+    /// So a stop cancels what is running, by recorded pid, exactly as
+    /// [`Queue::cancel`] does — `^C` on a followed job has always meant
+    /// "give the card back" — and waits for the worker to write the
+    /// terminal row and drop the lease before it returns. What it will not
+    /// do is drain: a `forge stop` that blocks for a four-minute render is
+    /// a stop nobody believes, and the row says `cancelled` with the note
+    /// rather than a state nobody can act on.
     pub fn stop(&self) {
+        self.stop_within(STOP_GRACE);
+    }
+
+    /// [`Self::stop`] with the patience stated, for the test that proves it.
+    pub fn stop_within(&self, grace: Duration) {
         self.stopping.store(true, Ordering::SeqCst);
         self.wake.notify_all();
+        let running = {
+            let Ok(inner) = self.inner.lock() else { return };
+            inner
+                .running
+                .as_ref()
+                .map(|current| (current.id.clone(), current.pid, current.cancel.clone()))
+        };
+        let Some((id, pid, cancel)) = running else {
+            return;
+        };
+        cancel.cancel();
+        if let Some(pid) = pid {
+            terminate_group(pid);
+        }
+        let deadline = Instant::now() + grace;
+        while Instant::now() < deadline {
+            if self
+                .store
+                .read(&id)
+                .ok()
+                .flatten()
+                .is_some_and(|row| row.state.is_terminal())
+            {
+                return;
+            }
+            std::thread::sleep(WAIT_POLL);
+        }
+        // Out of patience with a child still there: SIGKILL its group here
+        // rather than in the thread `terminate_group` spawned, because this
+        // process is about to exit and that thread would go with it.
+        if let Some(pid) = pid
+            && crate::store::pid_alive(pid)
+        {
+            crate::executor::kill_group(pid);
+        }
     }
 
     /// The worker: one job at a time, forever.
@@ -241,6 +345,11 @@ impl LocalQueue {
         job.state = JobState::Running;
         job.started = Some(forge_library::clock::now_iso());
         job.blocked_by = None;
+        // What the row says about `fake` is what the job *ran* as, not what
+        // the submitter happened to know: a tier-`fake` project answers
+        // this, and a row that left it null while the child wrote a
+        // placeholder would be a row nobody could group by.
+        job.fake = Some(plan.fake);
         let _ = self.store.write(&job);
 
         let log_path = self.project.root.join(&job.log);
@@ -373,6 +482,22 @@ impl LocalQueue {
         if let Some(note) = CardState::withheld(self.store.dir()) {
             return Some(format!("comfy — {note}"));
         }
+        // A `running` row whose pid is still alive is another door's
+        // generator, left by a daemon or an MCP session that ended without
+        // waiting for it. It is not in this queue's FIFO and its lease died
+        // with its parent, so nothing else here would see it.
+        if let Ok(rows) = self.store.all()
+            && let Some(other) = rows.iter().find(|row| {
+                row.state == JobState::Running && row.pid.is_some_and(crate::store::pid_alive)
+            })
+        {
+            return Some(format!(
+                "{} (pid {}) is still running, left by {} — cancel it or wait for it",
+                other.id,
+                other.pid.unwrap_or(0),
+                other.created_by
+            ));
+        }
         let view = self.card.read()?;
         if view.free_gb >= need {
             return None;
@@ -503,13 +628,22 @@ impl LocalQueue {
             .filter(|url| !url.is_empty())
             .or_else(|| self.options.comfy_url.clone())
             .or_else(|| host_facts.as_ref().and_then(|host| host.url.clone()));
+        let fake = job.fake.unwrap_or_else(|| self.is_fake());
         Plan {
             argv: job.argv.clone(),
             executor: facts.executor,
             // A budget, never a measurement — and `None` when the backend
             // does not declare one, because a made-up number would block a
-            // job for a reason nobody wrote down.
-            need_gb: found.and_then(|b| b.vram_gb),
+            // job for a reason nobody wrote down. A fake job's budget is
+            // `None` too: a placeholder is written by the stdlib and holds
+            // no VRAM, so blocking one behind a real generator's budget
+            // would be a wait for memory it will never ask for. It still
+            // takes the lease and the queue like any other job.
+            need_gb: if fake {
+                None
+            } else {
+                found.and_then(|b| b.vram_gb)
+            },
             comfy_url,
             comfy_unit: host_facts.and_then(|host| host.unit),
             what: format!(
@@ -574,6 +708,18 @@ impl LocalQueue {
 
 impl Queue for LocalQueue {
     fn submit(&self, spec: JobSpec) -> Result<Job, ServeError> {
+        // A generate with no backend is a job with no budget, no admission
+        // refusal and no card ladder — the shape the terminal door shipped
+        // for a fortnight. It is a caller's mistake, not a machine's, so it
+        // is refused before a row exists rather than run as an `env` job
+        // whose record will say `comfy`.
+        if spec.kind.starts_with("generate_") && spec.backend.is_none() {
+            return Err(ServeError::refused(format!(
+                "{} was submitted with no backend — every generate names the backend it runs \
+                 on, from forge_library::project::backend_for_verb. nothing was queued.",
+                spec.kind
+            )));
+        }
         let backends = Backends::discover(&self.project);
         let id = JobId::fresh();
         let log = format!("out/serve/logs/{id}.log");
@@ -608,8 +754,21 @@ impl Queue for LocalQueue {
 
         // A backend nobody installed cannot run, and the queue does not
         // hold a job that cannot run: exit 3, in under a millisecond, in
-        // the backend table's own words.
+        // the backend table's own words. A **fake** job is the exception
+        // and always was: `run_fake` never imports the backend, never reads
+        // a template and never resolves a URL, so refusing one for a
+        // backend it will not touch would take tier `fake` — the answer for
+        // a machine with no card — away from the machines it exists for.
+        //
+        // A stub **launcher** is the other exception, and only this crate's
+        // own tests pass one: when the caller has replaced the generator,
+        // the backend table is not what runs, and holding a stub to it
+        // would make the tests depend on what happens to be installed —
+        // which is the trap `decisions.md` records for 2026-08-30.
+        let fake = spec.fake.unwrap_or_else(|| self.is_fake());
         if let Some(name) = spec.backend.as_deref()
+            && !fake
+            && self.options.launcher.is_none()
             && !backends.is_found(name)
         {
             let mut job = Job::admitted(id, &spec, executor, log, JobState::Refused);

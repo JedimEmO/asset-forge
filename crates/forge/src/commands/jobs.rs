@@ -18,9 +18,18 @@ use crate::outcome::{Failure, Outcome};
 /// How often a `--follow` asks for more of the log.
 const FOLLOW_POLL: Duration = Duration::from_millis(200);
 
-/// The queue for this project: the daemon's if one answers, else ours.
+/// The queue for this project: the daemon's if one answers, else ours —
+/// and **ours never runs a worker**.
+///
+/// Every verb in this file reads the table or cancels one row. None of them
+/// is a reason to reconcile the state directory or to start a worker that
+/// would take the card: `forge jobs` once rewrote a `blocked` row into
+/// `queued` and put it at the head of the FIFO, and the next `forge gen` in
+/// that project ran a stranger's forgotten job on the card first, with
+/// nothing on stdout saying so (2026-08-30). A listing leaves every row
+/// byte-identical.
 pub(crate) fn queue(project: &Project) -> Result<std::sync::Arc<dyn Queue>, Failure> {
-    crate::commands::generate::queue_for(project)
+    crate::commands::generate::read_queue_for(project)
 }
 
 /// `forge jobs`.

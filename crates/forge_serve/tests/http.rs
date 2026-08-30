@@ -89,7 +89,7 @@ print(json.dumps({"ok": True, "outputs": ["out/audio/sfx/door.wav"],
         "/v1/jobs",
         Some(json!({
             "kind": "generate_audio.sfx",
-            "backend": null,
+            "backend": "moss_sfx",
             "argv": ["sfx", "--prompt", "a heavy iron door"],
             "outputs_claimed": ["out/audio/sfx/door.wav"],
             "record": "out/audio/sfx/door.json",
@@ -111,6 +111,7 @@ print(json.dumps({"ok": True, "outputs": ["out/audio/sfx/door.wav"],
         "/v1/jobs",
         Some(json!({
             "kind": "generate_audio.sfx",
+            "backend": "moss_sfx",
             "argv": ["sfx"],
             "outputs_claimed": ["out/audio/sfx/door.wav"],
             "created_by": "human"
@@ -209,6 +210,7 @@ async fn a_running_job_is_cancelled_through_the_door() {
         "/v1/jobs",
         Some(json!({
             "kind": "generate_audio.music",
+            "backend": "acestep",
             "argv": ["music"],
             "outputs_claimed": [],
             "created_by": "human"

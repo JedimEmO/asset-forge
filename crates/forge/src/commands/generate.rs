@@ -100,16 +100,37 @@ pub(crate) fn help(args: &GenArgs) -> Outcome {
 /// The queue for this project: a daemon's if one answers, else one of our
 /// own — and neither this function nor anything above it knows which.
 pub(crate) fn queue_for(project: &Project) -> Result<Arc<dyn Queue>, Failure> {
-    discovery::queue_with(project, options())
+    discovery::queue_with(project, options(project))
         .map_err(|e| Failure::failed(format!("the queue would not open: {e}")))
 }
 
-/// What a queue in this process needs to know.
-fn options() -> LocalQueueOptions {
-    LocalQueueOptions {
-        forge: std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge")),
-        ..LocalQueueOptions::default()
-    }
+/// The queue for a door that only **reads** it: `forge jobs`, `forge job
+/// show|log`, `forge serve --status`.
+///
+/// The difference is one flag and it is the whole point: a reader opens no
+/// worker, so a listing reconciles nothing, re-queues nothing and launches
+/// nothing. `forge jobs` used to rewrite a `blocked` row into `queued` and
+/// leave it at the head of the FIFO for the next `forge gen` to run
+/// (2026-08-30).
+pub(crate) fn read_queue_for(project: &Project) -> Result<Arc<dyn Queue>, Failure> {
+    discovery::queue_with(project, reader_options(project))
+        .map_err(|e| Failure::failed(format!("the queue would not open: {e}")))
+}
+
+/// This executable, which the card reader re-invokes as `forge gpu --json`.
+fn this_binary() -> std::path::PathBuf {
+    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge"))
+}
+
+/// What a queue in this process needs to know — the project's own
+/// `[hardware]`, so tier `fake` is the answer it says it is.
+fn options(project: &Project) -> LocalQueueOptions {
+    LocalQueueOptions::for_project(project, this_binary())
+}
+
+/// The same, for a door that only reads the table.
+fn reader_options(project: &Project) -> LocalQueueOptions {
+    LocalQueueOptions::reader_for_project(project, this_binary())
 }
 
 /// Run one generator command and relay its verdict.

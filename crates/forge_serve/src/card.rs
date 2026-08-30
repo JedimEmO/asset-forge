@@ -42,10 +42,31 @@ use crate::store::write_atomic;
 /// How long `forge gpu --json` is believed before it is asked again.
 const CARD_CACHE: Duration = Duration::from_secs(2);
 
-/// How close to the free memory before a job counts as "the card came
-/// back". The resident floor creeps — 1.09 to 1.53 GB over seven model
-/// swaps, measured — and that must not trip the ladder.
+/// How close to the **floor** counts as "the card came back". The resident
+/// floor creeps — 1.09 to 1.53 GB over seven model swaps, measured — and
+/// that must not trip the ladder.
 const BACK_WITHIN_GB: f64 = 0.5;
+
+/// What the card holds when the host has nothing loaded, in GB.
+///
+/// The number this whole ladder is judged against, so it is the measured
+/// one with headroom: the `ComfyUI` unit idle holds ~0.4 GB of CUDA context,
+/// creeping to ~0.7 GB after several model swaps, and the resident floor
+/// with a desktop up measured 1.09 → 1.53 GB over seven swaps
+/// (`designs/hosting.md`, `ComfyUI`, 2026-08-30). Two gigabytes is above the
+/// largest of those and far below the smallest model the ladder exists for
+/// — MOSS-VoiceGenerator at 5.3 GB.
+///
+/// **Why a floor and not the job's own `before`.** `before` is read seconds
+/// before the job, so a model an *earlier* job left resident is inside it
+/// and can never be seen: an MCP speech job went 16.44 → 16.38 GB free and
+/// was released "clean" with 7.3 GB of MOSS still on the card, and
+/// `forge gpu --free` printed "14.7 GB free before, 14.7 GB after … the
+/// card is back" one line above "holding pid 693788 8.1 GB" (2026-08-30).
+/// A test that compares a number against itself passes for the wrong
+/// reason. `before` is still recorded on the row, because what the job
+/// started with is worth knowing; it is just not the question.
+const IDLE_FLOOR_GB: f64 = 2.0;
 
 /// How long the ladder polls `/system_stats` before it restarts the unit.
 pub const FREE_POLL_S: u64 = 15;
@@ -393,11 +414,16 @@ impl CardReader {
 pub struct CardRelease {
     /// Free VRAM after the ladder, when it could be read.
     pub after_gb: Option<f64>,
+    /// The floor it was judged against: the card with nothing but the
+    /// host's idle context on it. `None` when the host would not say how
+    /// big the card is.
+    pub floor_gb: Option<f64>,
     /// Whether the unit was restarted. Loud on purpose.
     pub restarted: bool,
-    /// Whether the card came back within half a gigabyte of what it started
-    /// with — the tolerance that keeps the creeping resident floor (1.09 to
-    /// 1.53 GB over seven model swaps, measured) from tripping the ladder.
+    /// Whether free VRAM came back to within half a gigabyte of
+    /// [`Self::floor_gb`] — **not** to what this job happened to start
+    /// with, which is a number an earlier job's leftovers are already
+    /// inside of.
     pub returned: bool,
     /// What to say in the log and, when it did not come back, in
     /// `card.json`.
@@ -411,6 +437,16 @@ pub struct CardRelease {
 /// a run.
 #[must_use]
 pub fn comfy_free_gb(base_url: &str) -> Option<f64> {
+    comfy_vram_gb(base_url).map(|(free, _)| free)
+}
+
+/// Free and total VRAM in GB, from one `GET /system_stats`.
+///
+/// The total is what makes a *floor* possible, and a floor is what "the
+/// card is back" has to be a claim about: the card's size is the only
+/// fixed thing in the measurement.
+#[must_use]
+pub fn comfy_vram_gb(base_url: &str) -> Option<(f64, Option<f64>)> {
     let response = crate::wire::get(
         &format!("{}/system_stats", base_url.trim_end_matches('/')),
         None,
@@ -420,7 +456,22 @@ pub fn comfy_free_gb(base_url: &str) -> Option<f64> {
     let value = response.json()?;
     let device = value.get("devices")?.as_array()?.first()?;
     let free = device.get("vram_free")?.as_f64()?;
-    Some(free / 1_073_741_824.0)
+    let total = device.get("vram_total").and_then(serde_json::Value::as_f64);
+    Some((
+        free / 1_073_741_824.0,
+        total.map(|bytes| bytes / 1_073_741_824.0),
+    ))
+}
+
+/// The free VRAM an idle host shows, from the card's own size.
+///
+/// `None` when `/system_stats` did not say how big the card is: a floor
+/// nobody can compute is unknown, never a guess.
+#[must_use]
+pub fn idle_floor_gb(total_gb: Option<f64>) -> Option<f64> {
+    total_gb
+        .filter(|total| *total > IDLE_FLOOR_GB)
+        .map(|total| total - IDLE_FLOOR_GB)
 }
 
 /// The ladder of `designs/serve.md` §5, run after a comfy child exits.
@@ -467,21 +518,38 @@ pub fn release_comfy_with(
     mut say: impl FnMut(&str),
 ) -> CardRelease {
     let base = base_url.trim_end_matches('/');
-    let back = |free: Option<f64>| match (free, before_gb) {
-        (Some(now), Some(before)) => now + BACK_WITHIN_GB >= before,
-        // Nothing to compare against is not evidence the card is held.
-        _ => true,
+    // The floor is read once, from the same endpoint the free number comes
+    // from, and it is a property of the card rather than of this job.
+    let floor = idle_floor_gb(comfy_vram_gb(base).and_then(|(_, total)| total));
+    let back = move |free: Option<f64>| match (free, floor) {
+        (Some(now), Some(floor)) => now + BACK_WITHIN_GB >= floor,
+        // A floor nobody could compute is not evidence either way, so the
+        // ladder falls back to the weaker question it can answer — did this
+        // job give back what it took — and every message says which of the
+        // two numbers it used.
+        (Some(now), None) => before_gb.is_none_or(|before| now + BACK_WITHIN_GB >= before),
+        (None, _) => false,
     };
+    let against = floor.map_or_else(
+        || {
+            format!(
+                "{} GB before this job (no floor: the host did not say how big the card is)",
+                gb(before_gb)
+            )
+        },
+        |floor| format!("a {floor:.1} GB idle floor on this card"),
+    );
     let _ = crate::wire::post(
         &format!("{base}/free"),
         None,
         "{\"unload_models\": true, \"free_memory\": true}",
         Duration::from_secs(10),
     );
-    let mut free = poll_free(base, before_gb, poll_s);
+    let mut free = poll_free(base, &back, poll_s);
     if back(free) {
         return CardRelease {
             after_gb: free,
+            floor_gb: floor,
             restarted: false,
             returned: true,
             note: None,
@@ -489,17 +557,20 @@ pub fn release_comfy_with(
     }
 
     say(&format!(
-        "the card did not come back after /free ({} GB free against {} GB before) — restarting \
+        "the card did not come back after /free ({} GB free against {against}) — restarting \
          {unit} once",
-        free.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
-        before_gb.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+        gb(free),
     ));
     let restarted = restart();
-    free = poll_free(base, before_gb, poll_s * 2);
+    free = poll_free(base, &back, poll_s * 2);
     if back(free) {
-        say("the card came back after the restart");
+        say(&format!(
+            "the card came back after the restart ({} GB free against {against})",
+            gb(free)
+        ));
         return CardRelease {
             after_gb: free,
+            floor_gb: floor,
             restarted,
             returned: true,
             note: None,
@@ -507,28 +578,33 @@ pub fn release_comfy_with(
     }
     let note = format!(
         "the ComfyUI host still holds the card after /free and a restart of {unit} ({} GB free \
-         against {} GB before this job). no card job will start until something proves it is \
-         free: `forge gpu --free`, or `systemctl --user status {unit}`.",
-        free.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
-        before_gb.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
+         against {against}; this job started with {} GB free). no card job will start until \
+         something proves it is free: `forge gpu --free`, or \
+         `systemctl --user status {unit}`.",
+        gb(free),
+        gb(before_gb),
     );
     say(&note);
     CardRelease {
         after_gb: free,
+        floor_gb: floor,
         restarted,
         returned: false,
         note: Some(note),
     }
 }
 
+/// One GB figure for a message, or the word for not having one.
+fn gb(value: Option<f64>) -> String {
+    value.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}"))
+}
+
 /// Poll `/system_stats` until the card is back or the seconds run out.
-fn poll_free(base: &str, before_gb: Option<f64>, seconds: u64) -> Option<f64> {
+fn poll_free(base: &str, back: &dyn Fn(Option<f64>) -> bool, seconds: u64) -> Option<f64> {
     let deadline = Instant::now() + Duration::from_secs(seconds);
     let mut last = comfy_free_gb(base);
     loop {
-        if let (Some(now), Some(before)) = (last, before_gb)
-            && now + BACK_WITHIN_GB >= before
-        {
+        if back(last) {
             return last;
         }
         if Instant::now() >= deadline {

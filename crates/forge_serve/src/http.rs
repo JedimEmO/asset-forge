@@ -334,14 +334,19 @@ async fn backends(State(state): State<Arc<ServeState>>) -> Response {
 }
 
 async fn stop(State(state): State<Arc<ServeState>>) -> Response {
-    state.queue.stop();
+    // `stop` cancels a running child and waits for its row, so it blocks
+    // for as long as that takes — on a blocking thread, because it is a
+    // `waitpid`-shaped wait and this is the axum runtime. Exiting while the
+    // child is alive would drop `card.lock` with the card still held.
+    let queue = Arc::clone(&state.queue);
+    let stopped = tokio::task::spawn_blocking(move || queue.stop()).await;
     // The process exits after the answer is on the wire; a caller that got
     // a connection reset instead of a body would have to guess.
     tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(150)).await;
         std::process::exit(0);
     });
-    axum::Json(json!({"ok": true, "stopping": true})).into_response()
+    axum::Json(json!({"ok": true, "stopping": true, "drained": stopped.is_ok()})).into_response()
 }
 
 #[cfg(test)]

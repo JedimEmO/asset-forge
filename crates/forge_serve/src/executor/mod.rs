@@ -149,6 +149,18 @@ pub(crate) fn terminate_group(pid: u32) {
     });
 }
 
+/// SIGKILL a process group now.
+///
+/// The last step of a stop, for the case the SIGTERM was not taken: the
+/// thread [`terminate_group`] spawns dies with the process that is exiting,
+/// and exiting with a generator still on the card is the one outcome a stop
+/// may not have.
+pub(crate) fn kill_group(pid: u32) {
+    if let Ok(group) = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap_or(0)).ok_or(()) {
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
+}
+
 /// A line that is one JSON object, or nothing — the same rule
 /// `commands/generate.rs` has always applied to a generator's last line.
 pub(crate) fn parse_object(line: &str) -> Option<Value> {

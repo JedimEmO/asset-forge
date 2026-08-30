@@ -927,3 +927,130 @@ fn a_job_id_nobody_has_is_refused_with_the_ids_that_do() {
         "the answer says what still works without one: {out}"
     );
 }
+
+/// Tier `fake` is the answer the project gave, and no environment variable
+/// is needed to make it true.
+///
+/// `serve.md` §5: *fake sets `FORGE_FAKE=1` for every job the project runs,
+/// as a first-class answer and not an environment trick.* It was not:
+/// every door built its queue options with `..default()`, so `tier` was
+/// always `"full"`, and a `--tier fake` project with `FORGE_FAKE` unset ran
+/// the **real** sfx path — against a live host it would have leased the
+/// card on a project whose doctor says every row is `off`. `ci-fake` and
+/// `mcp-session` could not see it because both export `FORGE_FAKE=1`, so
+/// this leg removes it from the environment on purpose.
+///
+/// It also pins the other half of the same defect: the row names the
+/// backend the command line runs on, which is what gives a terminal job the
+/// budget, the admission refusal and the card ladder the agent's door had.
+#[test]
+fn a_tier_fake_project_writes_a_placeholder_with_no_forge_fake_in_the_environment() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("game");
+    let out = ok(
+        dir.path(),
+        &[
+            "init",
+            "--project",
+            to_str(&root),
+            "--name",
+            "game",
+            "--make",
+            "sfx",
+            "--tier",
+            "fake",
+            "--yes",
+        ],
+    );
+    assert!(out.contains("rig profile humanoid installed"), "{out}");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a heavy iron door",
+            "--seconds",
+            "1",
+            "--out",
+            "out/audio/sfx/door.wav",
+            "--record",
+            "out/audio/sfx/door.json",
+        ])
+        .env_remove("FORGE_FAKE")
+        // A host that is not there, so a run that reached the real path
+        // fails loudly instead of quietly succeeding on the developer's own
+        // ComfyUI.
+        .env("FORGE_COMFY_URL", "http://127.0.0.1:9")
+        .current_dir(&root)
+        .output()
+        .expect("run forge");
+    assert_eq!(
+        code(&output),
+        0,
+        "tier fake must not need FORGE_FAKE\n--- stdout\n{}\n--- stderr\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert!(
+        root.join("out/audio/sfx/door.wav").is_file(),
+        "the placeholder is on disk"
+    );
+    let record = std::fs::read_to_string(root.join("out/audio/sfx/door.json")).expect("the record");
+    assert!(
+        record.contains("\"fake\": true"),
+        "the record says it is a placeholder: {record}"
+    );
+    let rows = ok(&root, &["jobs", "--json"]);
+    assert!(
+        rows.contains("\"backend\":\"moss_sfx\""),
+        "the terminal door names the backend the MCP door names: {rows}"
+    );
+    assert!(
+        rows.contains("\"fake\":true"),
+        "and the row says the job was a fake one: {rows}"
+    );
+    drop(dir);
+}
+
+/// `forge job log <id>` is the verb, and it works on a row that exists.
+///
+/// The `just job-log` recipe called `forge jobs log`, which does not parse
+/// — `error: unexpected argument 'log' found` — and nothing in the gate ran
+/// it. This is the verb the recipe now spells, held to a row a real run
+/// wrote.
+#[test]
+fn a_job_s_log_is_read_by_its_own_verb() {
+    let (dir, project) = init_project();
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a door",
+            "--seconds",
+            "1",
+            "--out",
+            "out/audio/sfx/door.wav",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&project)
+        .output()
+        .expect("run forge");
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let rows: serde_json::Value =
+        serde_json::from_str(&ok(&project, &["jobs", "--json"])).expect("rows");
+    let id = rows[0]["id"].as_str().expect("an id").to_owned();
+    let log = ok(&project, &["job", "log", &id]);
+    assert!(
+        log.contains("forge gen sfx"),
+        "the log opens with the command line it ran: {log}"
+    );
+    // A listing is a read: it leaves every row exactly as it found it.
+    let before = std::fs::read(project.join(format!("out/serve/jobs/{id}.json"))).expect("row");
+    let _ = ok(&project, &["jobs"]);
+    let _ = ok(&project, &["job", "show", &id]);
+    let after = std::fs::read(project.join(format!("out/serve/jobs/{id}.json"))).expect("row");
+    assert_eq!(before, after, "a read verb rewrites nothing");
+    drop(dir);
+}

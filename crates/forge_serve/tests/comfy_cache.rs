@@ -70,7 +70,7 @@ fn a_cached_result_says_so() {
     let queue = common::queue(&project, Some(&first_script));
     let spec = |name: &str| JobSpec {
         kind: String::from("generate_audio.sfx"),
-        backend: None,
+        backend: Some(String::from("moss_sfx")),
         argv: vec![
             String::from("sfx"),
             String::from("--name"),

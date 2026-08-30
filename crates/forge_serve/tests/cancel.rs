@@ -34,7 +34,7 @@ time.sleep(300)
     let job = queue
         .submit(JobSpec {
             kind: String::from("generate_audio.music"),
-            backend: None,
+            backend: Some(String::from("acestep")),
             argv: vec![String::from("music")],
             outputs_claimed: vec![String::from("out/audio/music/theme.ogg")],
             record: None,

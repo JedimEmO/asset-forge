@@ -31,6 +31,12 @@ pub fn project() -> (tempfile::TempDir, Project) {
 pub fn options(script: Option<&Path>) -> LocalQueueOptions {
     LocalQueueOptions {
         forge: PathBuf::from("/nonexistent/forge-for-tests"),
+        // Empty on purpose, and not `None`: `None` falls through to the
+        // host backend's own `[server]` block, which on a developer's box
+        // is a ComfyUI that is actually up — a test would then read its
+        // `/system_stats` and POST `/free` to it, unloading a model no test
+        // put there. No test in this crate reaches a real host.
+        comfy_url: Some(String::new()),
         launcher: script.map(|path| vec![String::from("python3"), path.display().to_string()]),
         ..LocalQueueOptions::default()
     }

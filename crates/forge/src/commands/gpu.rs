@@ -160,6 +160,16 @@ pub(crate) fn run(project: &Project, args: &GpuArgs) -> Outcome {
 /// the resident ACE-Step server. Two endpoints and no graph: `POST /free`
 /// then `GET /system_stats`, the same pair the daemon's release ladder
 /// uses, because the card must answer with no Python alive.
+///
+/// **"The card is back" is a claim about the card, not about this call.**
+/// It used to compare free VRAM against a number read one line earlier, so
+/// it printed "14.7 GB free before, 14.7 GB after … the card is back" with
+/// its own next line naming pid 693788 holding 8.1 GB (2026-08-30). The
+/// ladder now judges against the card's idle floor, and this door only
+/// clears a withholding when that floor is met — a withheld lease is the
+/// one safety net `designs/hosting.md` makes load-bearing for the MOSS
+/// pack, and the command its own note tells the user to run must not clear
+/// it on no evidence.
 fn free(project: &Project) {
     let Some(url) = comfy_url(project) else {
         println!("free      no ComfyUI host is configured, so there is nothing to unload");
@@ -175,15 +185,25 @@ fn free(project: &Project) {
         (_, Some(after)) => println!("free      {after:.1} GB free"),
         _ => println!("free      {url} did not answer /system_stats"),
     }
+    if let Some(floor) = release.floor_gb {
+        println!("floor     {floor:.1} GB is what this card shows with nothing loaded");
+    } else {
+        println!(
+            "floor     unknown — /system_stats did not say how big the card is, so this is the \
+             weaker check: did this call give back what it took"
+        );
+    }
     let state = forge_serve::state_dir(&project.root);
     if release.returned {
         // A card that is provably back clears a withholding: this is the
-        // one door that can say so, because it just measured it.
+        // one door that can say so, because it just measured it against the
+        // floor.
         forge_serve::release_withhold(&state);
         println!("free      the card is back; any withheld lease is cleared");
     } else if let Some(note) = release.note {
         let _ = forge_serve::withhold(&state, &note);
         println!("free      {note}");
+        println!("free      the withheld lease stays: nothing here proved the card is free");
     }
 }
 

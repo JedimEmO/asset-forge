@@ -713,6 +713,39 @@ pub const COMFY_BACKEND: &str = "comfy";
 /// in the same way.
 pub const BLENDER_BACKEND: &str = "blender";
 
+/// **The `forge gen <verb>` → backend map, one fact in one place.**
+///
+/// [`MakeKind::backends`] says which backends a *kind* needs; this says
+/// which backend a *command line* runs on, and the two are the same fact
+/// read from opposite ends. It exists because a job that does not name its
+/// backend is a job with no budget, no admission refusal and no card
+/// ladder: the terminal door submitted every `forge gen sfx` with
+/// `backend: null` while the MCP door named `moss_sfx`, so one row said
+/// `executor: "env"` for a run whose own record said `comfy` (2026-08-30).
+/// Both doors read this function now.
+///
+/// The Blender verbs (`prop`, `rig`, `export`, `rig-build`, `prepare`)
+/// name Blender, which is a `tool` backend with no budget: naming it costs
+/// nothing and keeps "every generate names its backend" true without an
+/// exception nobody can see. A verb that is not a generator at all —
+/// `doctor`, `motion review` — is `None`, and the queue does not refuse it.
+/// `motion` is the one verb whose subcommand decides: `sweep` and `keys`
+/// draw motion out of ARDY, `review` draws a contact sheet out of takes
+/// that are already on disk and must not wait for a 16 GB budget.
+#[must_use]
+pub fn backend_for_verb(verb: &str, sub: Option<&str>) -> Option<&'static str> {
+    Some(match (verb, sub) {
+        ("sfx", _) => "moss_sfx",
+        ("music", _) => "acestep",
+        ("speech" | "voice", _) => "moss_tts",
+        ("mesh", _) => "trellis2",
+        ("motion", Some("sweep" | "keys")) => "ardy",
+        ("skin", _) => "skintokens",
+        ("prop" | "rig" | "export" | "rig-build" | "prepare", _) => BLENDER_BACKEND,
+        _ => return None,
+    })
+}
+
 /// One backend a kind can need: which executor runs it, what it costs on
 /// disk, and which licences it carries.
 #[derive(Debug, Clone, Copy, PartialEq)]

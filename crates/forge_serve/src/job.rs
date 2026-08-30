@@ -287,11 +287,16 @@ pub struct JobSpec {
 
 impl JobSpec {
     /// A spec with only the fields a caller always has.
+    ///
+    /// The backend is not one of them: it is derived from `argv` through
+    /// [`crate::spec::backend_of`], the one map both doors read, because a
+    /// generate that does not name its backend is a generate with no
+    /// budget and no card ladder.
     #[must_use]
     pub fn new(kind: impl Into<String>, argv: Vec<String>, created_by: impl Into<String>) -> Self {
         Self {
             kind: kind.into(),
-            backend: None,
+            backend: crate::spec::backend_of(&argv).map(str::to_owned),
             argv,
             outputs_claimed: Vec::new(),
             record: None,

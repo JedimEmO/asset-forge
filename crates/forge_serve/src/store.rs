@@ -212,6 +212,17 @@ impl JobStore {
                     requeue.push(job);
                 }
                 JobState::Running => {
+                    // A pid that is still alive is a generator still on the
+                    // card, and `interrupted` would be a lie about it — the
+                    // row for a job an ended stdio session left running was
+                    // stamped `interrupted` while its child went on
+                    // rendering (2026-08-30). The row is left exactly as it
+                    // is; `card_is_held` sees the live pid and blocks the
+                    // next card job behind it by name, and the row becomes
+                    // `interrupted` on the first pass after it is gone.
+                    if job.pid.is_some_and(pid_alive) {
+                        continue;
+                    }
                     job.finish(JobState::Interrupted, None);
                     job.message = Some(String::from(
                         "the daemon restarted while this job was running; its child was not \
