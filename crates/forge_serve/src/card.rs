@@ -48,7 +48,7 @@ const CARD_CACHE: Duration = Duration::from_secs(2);
 const BACK_WITHIN_GB: f64 = 0.5;
 
 /// How long the ladder polls `/system_stats` before it restarts the unit.
-const FREE_POLL_S: u64 = 15;
+pub const FREE_POLL_S: u64 = 15;
 
 /// How often it polls.
 const FREE_POLL_EVERY: Duration = Duration::from_millis(500);
@@ -431,6 +431,37 @@ pub fn release_comfy(
     base_url: &str,
     unit: Option<&str>,
     before_gb: Option<f64>,
+    say: impl FnMut(&str),
+) -> CardRelease {
+    let unit = unit.unwrap_or(DEFAULT_UNIT).to_owned();
+    let name = unit.clone();
+    let mut restart = move || {
+        std::process::Command::new("systemctl")
+            .arg("--user")
+            .arg("restart")
+            .arg(&unit)
+            .status()
+            .is_ok()
+    };
+    release_comfy_with(base_url, &name, &mut restart, before_gb, FREE_POLL_S, say)
+}
+
+/// The unit the ladder restarts when nothing names another.
+const DEFAULT_UNIT: &str = "forge-comfy.service";
+
+/// The ladder itself, with the restart and the patience handed in.
+///
+/// Production passes `systemctl --user restart <unit>` and
+/// [`FREE_POLL_S`]; the crate's own test passes a closure that counts and
+/// one second, because what has to be proved is "once, and then the lease
+/// is withheld" — not that `systemctl` can be shadowed on `PATH`, and not
+/// that a test runner can wait three quarters of a minute for it.
+pub fn release_comfy_with(
+    base_url: &str,
+    unit: &str,
+    restart: &mut dyn FnMut() -> bool,
+    before_gb: Option<f64>,
+    poll_s: u64,
     mut say: impl FnMut(&str),
 ) -> CardRelease {
     let base = base_url.trim_end_matches('/');
@@ -445,7 +476,7 @@ pub fn release_comfy(
         "{\"unload_models\": true, \"free_memory\": true}",
         Duration::from_secs(10),
     );
-    let mut free = poll_free(base, before_gb, FREE_POLL_S);
+    let mut free = poll_free(base, before_gb, poll_s);
     if back(free) {
         return CardRelease {
             after_gb: free,
@@ -455,20 +486,14 @@ pub fn release_comfy(
         };
     }
 
-    let unit = unit.unwrap_or("forge-comfy.service");
     say(&format!(
         "the card did not come back after /free ({} GB free against {} GB before) — restarting \
          {unit} once",
         free.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
         before_gb.map_or_else(|| String::from("unknown"), |gb| format!("{gb:.1}")),
     ));
-    let restarted = std::process::Command::new("systemctl")
-        .arg("--user")
-        .arg("restart")
-        .arg(unit)
-        .status()
-        .is_ok();
-    free = poll_free(base, before_gb, FREE_POLL_S * 2);
+    let restarted = restart();
+    free = poll_free(base, before_gb, poll_s * 2);
     if back(free) {
         say("the card came back after the restart");
         return CardRelease {

@@ -61,8 +61,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use card::{
-    CardLease, CardReader, CardRelease, CardState, card_json_path, comfy_free_gb, release_comfy,
-    release_withhold, withhold,
+    CardLease, CardReader, CardRelease, CardState, FREE_POLL_S, card_json_path, comfy_free_gb,
+    release_comfy, release_comfy_with, release_withhold, withhold,
 };
 pub use client::RemoteQueue;
 pub use executor::GenOutcome;

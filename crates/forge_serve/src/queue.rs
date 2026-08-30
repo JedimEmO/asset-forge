@@ -72,6 +72,14 @@ pub struct LocalQueueOptions {
     /// Whether to run the worker at all. A test that only exercises
     /// admission sets this to false.
     pub run_worker: bool,
+    /// What to spawn instead of the toolkit's `python/forge_gen`.
+    ///
+    /// The seam this crate's own tests put a stub generator through — one
+    /// that prints a canned last line and exits with a code — so a queue
+    /// test needs neither a backend nor a GPU. `None`, which is what every
+    /// door passes, is `forge_library::backends::Backends::python_launcher`
+    /// and nothing else.
+    pub launcher: Option<Vec<String>>,
 }
 
 impl Default for LocalQueueOptions {
@@ -81,6 +89,7 @@ impl Default for LocalQueueOptions {
             tier: String::from("full"),
             comfy_url: None,
             run_worker: true,
+            launcher: None,
         }
     }
 }
@@ -253,6 +262,13 @@ impl LocalQueue {
                     && running.id == *id
                 {
                     running.pid = Some(pid);
+                }
+                // On the row as well as in memory: a human reading `forge
+                // jobs` while it runs wants the pid `forge gpu` is about to
+                // name, and a cancel from another process has only the row.
+                if let Ok(Some(mut current)) = self.store.read(id) {
+                    current.pid = Some(pid);
+                    let _ = self.store.write(&current);
                 }
             };
             executor.run(&plan, launch, &sink, &cancel, &mut on_pid)
@@ -515,11 +531,20 @@ impl LocalQueue {
 
     /// The launcher for a job's child, when the toolkit can be found.
     fn launch(&self, job: &Job) -> Option<Launch> {
+        let launcher = match self.options.launcher.as_deref() {
+            Some([program, args @ ..]) => {
+                let mut command = std::process::Command::new(program);
+                command.args(args);
+                command.current_dir(&self.project.root);
+                command
+            }
+            _ => Backends::python_launcher(&self.project)?,
+        };
         Some(Launch {
             project_root: self.project.root.clone(),
             rig_profile: self.project.rig_dir(),
             job_id: job.id.to_string(),
-            launcher: Backends::python_launcher(&self.project)?,
+            launcher,
         })
     }
 
