@@ -34,6 +34,7 @@ forge_manifest = { path = "crates/forge_manifest", version = "0.1.0" }
 forge_library = { path = "crates/forge_library", version = "0.1.0" }
 forge_studio = { path = "crates/forge_studio", version = "0.1.0" }
 forge_mcp = { path = "crates/forge_mcp", version = "0.1.0" }
+forge_serve = { path = "crates/forge_serve", version = "0.1.0" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -55,6 +56,18 @@ base64 = "0.22"
 # std's mpsc Receiver is !Sync, so it cannot live in a Bevy Resource; this can.
 crossbeam-channel = "0.5"
 tempfile = "3"
+# The daemon's door: one loopback listener, no TLS, three kinds of route.
+# axum brings hyper with it; the client half of forge_serve is thirty lines
+# of HTTP/1.1 over a TcpStream, because it only ever talks to this server
+# and to ComfyUI's /system_stats and /free on the same machine.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+tower = "0.5"
+# The card lease is an exclusive flock(2). The kernel drops it when the
+# holder dies, which is the one promise a pidfile cannot make.
+fs4 = { version = "0.13", features = ["sync"] }
+# Two calls the standard library does not expose: killpg, and waitpid's
+# non-blocking form for a child another thread owns.
+libc = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
