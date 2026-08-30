@@ -154,6 +154,11 @@ pub struct Bone {
     /// Local rotation, which is the rest rotation only while nothing has posed
     /// the rig; see the module docs.
     pub rotation: Quat,
+    /// Local translation — the arrow from the parent to this bone. Its
+    /// **length** belongs to the body and its **direction** does not, which
+    /// is the whole of [`check_rest_directions`]. Read from the same live
+    /// `Transform` as [`Bone::rotation`], under the same rule.
+    pub translation: Vec3,
 }
 
 /// Every named entity under `anim_root`, depth-first, the root included.
@@ -187,6 +192,9 @@ fn walk(world: &World, entity: Entity, depth: usize, parent: Option<&str>, out: 
         rotation: world
             .get::<Transform>(entity)
             .map_or(Quat::IDENTITY, |t| t.rotation),
+        translation: world
+            .get::<Transform>(entity)
+            .map_or(Vec3::ZERO, |t| t.translation),
     });
     for child in children {
         walk(world, child, depth + 1, Some(name.as_str()), out);
@@ -342,6 +350,212 @@ pub fn check_contract_bones(
         out.push(Finding::ok("rest rotations match the contract"));
     }
     root_depth
+}
+
+/// Every bone's local rest translation pointing where the contract says,
+/// with its length unchecked.
+///
+/// **This is the rule that replaced the exporter's 0.1 mm one**, and the
+/// split is the whole of the fitted-skeleton design. A clip carries a
+/// rotation curve per bone and one translation track on the root, so a bone
+/// that is *shorter* plays every clip in the library correctly — the witch's
+/// upper arm at 0.85 of the profile's still rotates about her own shoulder.
+/// A bone that has *turned* does not: the curve was authored against the
+/// frozen direction, and rotating the rest arrow rotates the whole limb
+/// under every frame of every clip, silently.
+///
+/// A bone the contract puts at zero length has no direction to compare and
+/// is not counted — see [`forge_rig::compare_rest_translation`]. Read the
+/// module docs before calling this on a posed rig: like the rest-rotation
+/// check, it reads live transforms.
+pub fn check_rest_directions(contract: &Contract, bones: &[Bone], out: &mut Vec<Finding>) {
+    let tolerance = contract.rest_direction_tolerance_deg;
+    let mut turned = 0;
+    let mut worst: Option<(f32, &str)> = None;
+    let mut compared = 0;
+    for spec in &contract.bones {
+        let found: Vec<&Bone> = bones.iter().filter(|n| n.name == spec.name).collect();
+        // A missing or duplicated bone is `check_contract_bones`'s finding
+        // and reads as one problem there; saying it twice buys nothing.
+        let [bone] = found.as_slice() else { continue };
+        match forge_rig::compare_rest_translation(
+            spec.rest_translation,
+            bone.translation.to_array(),
+        ) {
+            forge_rig::RestComparison::Measured { direction_deg, .. } => {
+                compared += 1;
+                if worst.is_none_or(|(deg, _)| direction_deg > deg) {
+                    worst = Some((direction_deg, spec.name.as_str()));
+                }
+                if direction_deg > tolerance {
+                    out.push(Finding::fail(format!(
+                        "{}'s rest translation points {direction_deg:.1} deg off the contract \
+                         — lengths are per body, directions are not",
+                        spec.name
+                    )));
+                    turned += 1;
+                }
+            }
+            forge_rig::RestComparison::BothZero { .. } => {}
+            forge_rig::RestComparison::OneZero {
+                reference_m,
+                found_m,
+            } => {
+                out.push(Finding::fail(format!(
+                    "{} is {found_m:.4} m from its parent and the contract puts it at \
+                     {reference_m:.4} m — one of the two has no direction at all, so this is \
+                     not a fitted length but a different skeleton",
+                    spec.name
+                )));
+                turned += 1;
+            }
+        }
+    }
+    if turned == 0 {
+        match worst {
+            Some((deg, name)) => out.push(Finding::ok(format!(
+                "rest translation directions match the contract (worst {deg:.2} deg, {name})"
+            ))),
+            None => out.push(Finding::warn(format!(
+                "no bone's rest translation could be compared against the contract — \
+                 {compared} of {} had a direction",
+                contract.bones.len()
+            ))),
+        }
+    }
+}
+
+/// What one foot measured on one frame of the reference clip, posed on this
+/// body and skinned on the CPU.
+///
+/// [`lowest_y`](Self::lowest_y) is **the planted foot's own lowest vertex**:
+/// the lowest of the vertices this foot's bones actually carry, and not the
+/// lowest vertex in the mesh. The 2026-08-30 spike measured the two on the
+/// same body and they disagreed by 8 cm — a trailing hand or a hem sweeps
+/// below a planted heel and answers a different question. This one is the
+/// gate; the whole-clip figure is a note.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FootContact {
+    /// The contract bone the vertices were read off — the heel joint.
+    pub foot: String,
+    /// Seconds into the reference clip.
+    pub time: f32,
+    /// The foot joint's horizontal speed at this frame, m/s. What decides
+    /// whether the foot is planted.
+    pub speed_mps: f32,
+    /// The lowest vertex of this foot's own skin, metres.
+    pub lowest_y: f32,
+}
+
+/// The share of a foot's frames counted as its contact: the quarter it is
+/// slowest on, horizontally.
+///
+/// A **rank**, not a threshold, and both halves of that are load-bearing.
+/// Not an absolute m/s, because a clip is any speed at all — an idle's feet
+/// never reach 0.2 m/s and a sprint's swing foot never drops under it, so
+/// one number in metres calls every frame of the first a contact and none of
+/// the second. And not a fraction of the foot's own peak either: the library
+/// bakes locomotion **in place**, so a planted foot travels backwards at
+/// stride speed while the root stands still, and against a swing foot's peak
+/// that reads as almost every frame — measured on the shipped walk, 296 of
+/// 310. A quarter of the frames is the stance phase of an ordinary gait, and
+/// on a clip whose feet never stop it is still the four frames that come
+/// closest, which is the honest answer to "where is this foot when it is
+/// planted".
+const CONTACT_FRACTION: f32 = 0.25;
+
+/// The planted foot's own lowest vertex, on the contact frames of the
+/// reference clip.
+///
+/// `samples` is `None` when the clip could not be posed at all — no
+/// reference in the library, or a body that binds nothing — which is a
+/// warning and not the mesh's fault. `whole_clip_lowest` is the lowest
+/// vertex anywhere in the clip, kept as a **note**: it is the number the
+/// studio's own sheet reports, it is not this gate, and a reader comparing
+/// them needs to be told they are different questions.
+pub fn check_contact_feet(
+    contract: &Contract,
+    samples: Option<&[FootContact]>,
+    whole_clip_lowest: Option<f32>,
+    out: &mut Vec<Finding>,
+) {
+    if let Some(lowest) = whole_clip_lowest {
+        out.push(Finding::note(format!(
+            "the lowest vertex anywhere in {} is y = {lowest:.3} m — the whole clip, any \
+             vertex, and not this gate",
+            contract.reference_clip
+        )));
+    }
+    let Some(samples) = samples else {
+        out.push(Finding::warn(format!(
+            "the planted foot's own lowest vertex was not measured: {} could not be posed on \
+             this body",
+            contract.reference_clip
+        )));
+        return;
+    };
+    if samples.is_empty() {
+        out.push(Finding::warn(format!(
+            "the planted foot's own lowest vertex was not measured: {} drives no foot on this \
+             body",
+            contract.reference_clip
+        )));
+        return;
+    }
+
+    let mut feet: Vec<&str> = samples.iter().map(|s| s.foot.as_str()).collect();
+    feet.sort_unstable();
+    feet.dedup();
+
+    let tolerance = contract.contact_foot_tolerance_m;
+    let mut contacts = 0;
+    let mut worst: Option<&FootContact> = None;
+    let mut failed = 0;
+    for foot in feet {
+        let mine: Vec<&FootContact> = samples.iter().filter(|s| s.foot == foot).collect();
+        for sample in planted(&mine) {
+            contacts += 1;
+            if worst.is_none_or(|w| sample.lowest_y.abs() > w.lowest_y.abs()) {
+                worst = Some(sample);
+            }
+            if sample.lowest_y.abs() > tolerance {
+                failed += 1;
+            }
+        }
+    }
+    match (failed, worst) {
+        (0, Some(worst)) => out.push(Finding::ok(format!(
+            "the planted foot's own lowest vertex stays within {tolerance:.3} m of the floor \
+             over {contacts} contact frame(s) — worst y = {:.3} m ({} at {:.2} s)",
+            worst.lowest_y, worst.foot, worst.time
+        ))),
+        (_, Some(worst)) => out.push(Finding::fail(format!(
+            "the planted foot's own lowest vertex reaches y = {:.3} m ({} at {:.2} s), and the \
+             contract wants a planted foot within {tolerance:.3} m of the floor — {failed} of \
+             {contacts} contact frame(s) are out",
+            worst.lowest_y, worst.foot, worst.time
+        ))),
+        (_, None) => out.push(Finding::warn(format!(
+            "no contact frame was found in {} — nothing here says where a planted foot sits",
+            contract.reference_clip
+        ))),
+    }
+}
+
+/// The frames one foot is planted on: the [`CONTACT_FRACTION`] of its own
+/// frames it is slowest on, horizontally, and never fewer than one.
+fn planted<'s>(samples: &[&'s FootContact]) -> Vec<&'s FootContact> {
+    let mut by_speed = samples.to_vec();
+    by_speed.sort_by(|a, b| a.speed_mps.total_cmp(&b.speed_mps));
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a frame count is in the hundreds and the result is clamped to at least one"
+    )]
+    let keep = (((by_speed.len() as f32) * CONTACT_FRACTION).round() as usize).max(1);
+    by_speed.truncate(keep);
+    by_speed
 }
 
 /// Largest per-component gap between two quaternions naming the same
@@ -770,6 +984,7 @@ mod tests {
                     .filter(|other| other.parent == Some(index))
                     .count(),
                 rotation: Quat::from_array(spec.rest_rotation),
+                translation: Vec3::from_array(spec.rest_translation),
             })
             .collect()
     }
@@ -920,6 +1135,7 @@ mod tests {
             parent_name: Some(parent.to_owned()),
             named_children: children,
             rotation: Quat::IDENTITY,
+            translation: Vec3::Y * 0.1,
         };
         let bones = vec![
             bone("Hips", 2, "Armature", 1),
@@ -971,6 +1187,7 @@ mod tests {
             parent_name: Some(parent.to_owned()),
             named_children: children,
             rotation: Quat::IDENTITY,
+            translation: Vec3::Y * 0.1,
         };
         let chain = |leaf_children: usize| {
             vec![
@@ -1038,6 +1255,7 @@ mod tests {
                 parent_name: Some(String::from("Armature")),
                 named_children: 0,
                 rotation: Quat::IDENTITY,
+                translation: Vec3::Y * 0.1,
             },
             Bone {
                 name: String::from("Body"),
@@ -1045,6 +1263,7 @@ mod tests {
                 parent_name: Some(String::from("Armature")),
                 named_children: 0,
                 rotation: Quat::IDENTITY,
+                translation: Vec3::Y * 0.1,
             },
         ];
         let mut out = Vec::new();
@@ -1234,5 +1453,134 @@ mod tests {
         assert_eq!(lines[3], (Severity::Fail, "Hips missing"));
         assert_eq!(Severity::Fail.mark(), "FAIL:");
         assert_eq!(Severity::Warn.mark(), "WARN:");
+    }
+
+    /// The whole of the fitted-skeleton trade, in one check: a bone at half
+    /// the contract's length is a body, a bone a degree and a half off the
+    /// contract's direction is a different skeleton.
+    #[test]
+    fn a_shorter_bone_passes_the_direction_rule_and_a_turned_one_does_not() {
+        let contract = contract();
+        let mut bones = conforming(&contract);
+
+        // Halve every limb. Nothing turns, so nothing fails, and the worst
+        // angle is float noise.
+        for bone in &mut bones {
+            bone.translation *= 0.5;
+        }
+        let mut out = Vec::new();
+        check_rest_directions(&contract, &bones, &mut out);
+        assert_eq!(failures(&out).len(), 0, "{:?}", messages(&out));
+        assert_eq!(out.len(), 1, "{:?}", messages(&out));
+        assert!(
+            out[0]
+                .text
+                .starts_with("rest translation directions match the contract (worst "),
+            "{}",
+            out[0].text
+        );
+        assert!(out[0].text.contains("deg, "), "{}", out[0].text);
+
+        // Now turn one, by more than the contract's degree.
+        let mut bones = conforming(&contract);
+        let foot = bones
+            .iter_mut()
+            .find(|bone| bone.name == "LeftFoot")
+            .expect("LeftFoot");
+        foot.translation = Quat::from_rotation_z(1.9_f32.to_radians()) * foot.translation;
+        let mut out = Vec::new();
+        check_rest_directions(&contract, &bones, &mut out);
+        let failed = failures(&out);
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        assert_eq!(
+            failed[0],
+            "LeftFoot's rest translation points 1.9 deg off the contract — lengths are per \
+             body, directions are not"
+        );
+
+        // A degree and a half of turn is inside the humanoid contract's
+        // tolerance of 1.0 only if the tolerance is read from the file, so
+        // tighten it and the same bone fails.
+        let mut loose = contract.clone();
+        loose.rest_direction_tolerance_deg = 5.0;
+        let mut out = Vec::new();
+        check_rest_directions(&loose, &bones, &mut out);
+        assert!(failures(&out).is_empty(), "{:?}", messages(&out));
+    }
+
+    /// One sample per foot, for the contact check's table.
+    fn contact(foot: &str, time: f32, speed_mps: f32, lowest_y: f32) -> FootContact {
+        FootContact {
+            foot: String::from(foot),
+            time,
+            speed_mps,
+            lowest_y,
+        }
+    }
+
+    /// The finding says "the planted foot's own lowest vertex" in so many
+    /// words, and the whole-clip figure rides along as a note — because the
+    /// spike measured the two 8 cm apart on one body, and a reader who
+    /// takes one for the other will chase the wrong thing.
+    #[test]
+    fn the_planted_foot_is_judged_on_its_own_vertices_and_the_whole_clip_is_a_note() {
+        let contract = contract();
+        // A swing frame that dips low is not a contact and must not decide
+        // this: the foot is moving at the clip's peak speed there.
+        let samples = vec![
+            contact("LeftFoot", 0.1, 1.4, -0.08),
+            contact("LeftFoot", 0.2, 0.05, -0.012),
+            contact("RightFoot", 0.1, 0.02, 0.021),
+            contact("RightFoot", 0.2, 1.5, 0.30),
+        ];
+        let mut out = Vec::new();
+        check_contact_feet(&contract, Some(&samples), Some(-0.103), &mut out);
+        assert!(failures(&out).is_empty(), "{:?}", messages(&out));
+        let text = messages(&out).join("\n");
+        assert!(
+            text.contains("the planted foot's own lowest vertex stays within 0.050 m"),
+            "{text}"
+        );
+        assert!(
+            text.contains("RightFoot at 0.10 s"),
+            "the worst is named:\n{text}"
+        );
+        assert!(
+            out.iter()
+                .any(|f| f.is_note() && f.text.contains("the lowest vertex anywhere in walk")),
+            "the whole-clip line is a note:\n{text}"
+        );
+
+        // A planted foot through the floor is the failure, and it is the
+        // planted frame that decides it.
+        let sunk = vec![
+            contact("LeftFoot", 0.1, 1.4, -0.01),
+            contact("LeftFoot", 0.43, 0.02, -0.082),
+        ];
+        let mut out = Vec::new();
+        check_contact_feet(&contract, Some(&sunk), None, &mut out);
+        let failed = failures(&out);
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        assert!(
+            failed[0].starts_with(
+                "the planted foot's own lowest vertex reaches y = -0.082 m (LeftFoot at 0.43 s)"
+            ),
+            "{failed:?}"
+        );
+        assert!(
+            failed[0].contains("within 0.050 m of the floor"),
+            "the tolerance is quoted: {failed:?}"
+        );
+
+        // Nothing to pose is a warning, not a failure of the mesh.
+        let mut out = Vec::new();
+        check_contact_feet(&contract, None, None, &mut out);
+        assert!(failures(&out).is_empty(), "{:?}", messages(&out));
+        assert_eq!(out[0].severity, Severity::Warn, "{:?}", messages(&out));
+        assert!(
+            out[0].text.contains("could not be posed"),
+            "{}",
+            out[0].text
+        );
     }
 }

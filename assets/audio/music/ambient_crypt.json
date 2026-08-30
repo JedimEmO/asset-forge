@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "music",
   "name": "ambient_crypt",
   "prompt": "dark ambient underscore for a ruined stone crypt, a steady low sustained drone at constant level, distant metallic resonances, slow, no drums, no melody, instrumental",
@@ -36,6 +36,7 @@
     "root_motion": null,
     "mesh": null
   },
+  "body": null,
   "events": null,
   "content_hash": "sha256:bfe8aa3ee90cb349d503bcad161ca86dc2a9c7f4c24a83963b937baa7998fc15",
   "note": "a 30 s underscore, not a seamless loop: every 15 s render (four seeds, two prompt wordings) spent its last third near silence, and a loop-worded prompt made that worse; at 30 s the model fills the length and ends with about two seconds of tail"

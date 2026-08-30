@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "model",
   "name": "sword",
   "prompt": "A one-handed straight sword: broad steel blade with a bright painted edge and a cyan energy line down the fuller, short crossguard, leather-wrapped grip, heavy pommel.",
@@ -58,6 +58,7 @@
       ]
     }
   },
+  "body": null,
   "events": null,
   "content_hash": "sha256:13a83a1c9261355b4942c39cbd68c1a5f33a78100620955244a563ef0f8e048e",
   "note": "a held weapon: normalized in the old repository's Blender prop importer with the grip at the origin (--length 1.02 --grip 0.16 --long-axis=-x), so it parents to the hand_r socket; no prop record survives"

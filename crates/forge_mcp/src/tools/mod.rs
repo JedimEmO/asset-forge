@@ -20,19 +20,23 @@ mod doctor;
 mod generate;
 mod jobs;
 mod list;
+mod mesh;
 mod promote;
+mod reference;
 mod render;
 mod setup;
 
 /// Every tool the server offers.
 pub(crate) fn router() -> ToolRouter<ForgeServer> {
     list::router()
+        + mesh::router()
         + render::router()
         + audio::router()
         + doctor::router()
         + generate::router()
         + jobs::router()
         + promote::router()
+        + reference::router()
         + bundle::router()
         + setup::router()
 }

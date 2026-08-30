@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "forge_version": "0.1.0",
   "library_version": "0.1.0",
   "generated": "2026-08-30",
@@ -368,6 +368,7 @@
       "name": "vex_runner",
       "path": "bodies/vex_runner.glb",
       "sha256": "sha256:27f1b0cad645599396a2954651490db0a1bba2a9ee44f6d9b4d34ed4971526f2",
+      "motion_scale": 1.0,
       "tags": [
         "sample"
       ]

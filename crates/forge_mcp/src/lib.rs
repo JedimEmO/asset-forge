@@ -25,12 +25,13 @@
 //! rendered opaquely by the client and teach it nothing.
 //!
 //! **The server never decides what ships without a human.** There is no
-//! review queue: `promote_clip` and `promote_audio` write the library
-//! directly, and so they refuse a name that is already taken unless told
-//! `overwrite` — a replacement is a decision, never an accident. And there
-//! is no promote for a mesh at all: a body or a model goes through the
-//! genart skills, where a human looks at the lift, the rig and the views
-//! before anything is filed.
+//! review queue: every `promote_*` writes the library directly, and so each
+//! refuses a name that is already taken unless told `overwrite` — a
+//! replacement is a decision, never an accident. The human is in the loop
+//! through the harness that issues every one of these calls, and what
+//! protects the library is the gates rather than a doorman: the export
+//! gate, `forge rig check` on the reference clip, and the refused taken
+//! name, all of which `promote_body` runs before a byte moves.
 //!
 //! # Layout
 //!
@@ -39,7 +40,9 @@
 //! config.rs    where the project is, and the exe-relative renderer rule
 //! server.rs    the state, the instructions text, the sum of the routers
 //! util.rs      refusals, inline images, supervised subprocesses
-//! tools/       one file per verb: list, render, audio, doctor, generate, promote
+//! build.rs     the reference format, generated from the importer's own text
+//! tools/       one file per verb: list, render, audio, doctor, generate,
+//!              mesh, reference, promote
 //! ```
 
 use std::fmt;
@@ -282,18 +285,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tool_surface_is_the_nineteen_names_mcp_check_pins() {
+    fn the_tool_surface_is_the_twenty_five_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
         // The list is asserted rather than counted so a rename shows up as a
         // diff of names, which is what `just mcp-check` compares against and
         // what `mcp_session.rs` asserts over both transports.
-        let nineteen = [
+        let twenty_five = [
             "cancel",
             "doctor",
             "export_bundle",
             "generate_audio",
             "generate_clips",
+            "generate_mesh",
+            "import_reference",
             "init_project",
             "inspect_audio",
             "licences",
@@ -301,17 +306,24 @@ mod tests {
             "list_clips",
             "list_models",
             "list_runs",
+            "prepare_body",
             "promote_audio",
+            "promote_body",
             "promote_clip",
+            "promote_model",
             "render_clip_strip",
             "render_model",
             "setup",
+            "skin_body",
             "status",
             "wait",
         ];
         let mut names = server.tool_names();
         names.sort();
-        assert_eq!(names, nineteen, "the surface drifted from mcp-check's pin");
+        assert_eq!(
+            names, twenty_five,
+            "the surface drifted from mcp-check's pin"
+        );
     }
 
     #[test]
@@ -328,15 +340,24 @@ mod tests {
             "inspect_audio",
             "generate_clips",
             "generate_audio",
+            "import_reference",
+            "generate_mesh",
+            "prepare_body",
+            "skin_body",
             "promote_clip",
             "promote_audio",
+            "promote_body",
+            "promote_model",
             "doctor",
         ] {
             assert!(text.contains(verb), "instructions do not mention {verb}");
         }
         assert!(text.contains("direct write"), "{text}");
         assert!(text.contains("overwrite"), "{text}");
-        assert!(text.contains("no promote for a body or a model"), "{text}");
+        // The sentence that used to say a mesh had no door here is gone,
+        // and its going is a decision worth pinning: Phase 2 opened the
+        // door and moved the guard from a doorman to the gates.
+        assert!(!text.contains("no promote for a body or a model"), "{text}");
         assert!(text.contains("LOOK BEFORE YOU PROMOTE"), "{text}");
     }
 

@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "model",
   "name": "barrel",
   "prompt": "Keep the exact painted art style, palette treatment and lighting of this image. Show only the wooden barrel from this set, alone, centered, seen from a three-quarter view slightly from above. Isolated single subject, plain flat light-grey background, no ground shadow, no other objects, no text. Hand-painted Warcraft 3 style low-poly game art, flat matte painted texture with lighting painted in, posterized color steps with hard edges, bold saturated palette, no photorealism, no gloss.",
@@ -57,6 +57,7 @@
       ]
     }
   },
+  "body": null,
   "events": null,
   "content_hash": "sha256:2e799e5da996e47de73aa1f6d092a5cf1b1b31abcf96e1c6badd427071f87c00",
   "note": "a floor prop: normalized in the old repository's Blender prop importer with the floor at the origin (--height 0.90); no prop record survives"

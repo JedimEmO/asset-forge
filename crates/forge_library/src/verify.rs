@@ -323,6 +323,9 @@ fn mesh_findings(
             if let Err(detail) = verify_glb(&bytes) {
                 report.fail(name, detail);
             }
+            if record.kind == Kind::Body {
+                body_findings(report, project, name, sidecar, &bytes);
+            }
         }
     }
     if sidecar.generator.is_none() {
@@ -388,6 +391,40 @@ fn mesh_findings(
             }
         }
         Some(_) => {}
+    }
+}
+
+/// What a body's own skeleton has to say for itself: that the file still
+/// carries it.
+///
+/// The record's `body` block is a claim about **these bytes** — every bone's
+/// local rest translation, and the motion scale a consumer multiplies a root
+/// track by — so it is re-derived from the file on every run and held to
+/// three separate rules: the translations to what the record states, each
+/// bone's *direction* to the contract (a fitted skeleton may lengthen a bone
+/// and may not turn one), and the scale to what the file's own root height
+/// gives. A body with no block at all is a warning rather than a failure:
+/// it predates schema 2, and `forge migrate` is the door that measures it.
+fn body_findings(
+    report: &mut Report,
+    project: &Project,
+    name: &str,
+    sidecar: &Sidecar,
+    bytes: &[u8],
+) {
+    let Ok(profile) = project.profile() else {
+        return; // The profile's own findings are `verify::profile`'s job.
+    };
+    let Some(body) = &sidecar.body else {
+        report.warn(
+            name,
+            "no body block — the per-body skeleton is unrecorded; `forge migrate` measures it \
+             off the .glb",
+        );
+        return;
+    };
+    for finding in body.disagreements(&profile.contract, bytes) {
+        report.fail(name, finding);
     }
 }
 

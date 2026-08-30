@@ -26,7 +26,10 @@ use crate::schema::{Actor, Kind};
 use crate::{Catalog, LibraryError, Project, Result, clock, hash, read_bytes, write_atomic};
 
 /// The record schema this build writes and reads.
-pub const BUNDLE_SCHEMA: u64 = 1;
+///
+/// 2 since the fitted skeleton: `motion_scale` is no longer whatever the
+/// caller typed, so the record says where the number came from beside it.
+pub const BUNDLE_SCHEMA: u64 = 2;
 
 /// What to bundle, and for whom.
 #[derive(Debug, Clone)]
@@ -38,9 +41,15 @@ pub struct BundleRequest {
     pub clips: Vec<String>,
     /// Where to write the bundle.
     pub out: PathBuf,
-    /// What to multiply the root travel by — the body's leg ratio against
-    /// the profile's reference legs. 1.0 leaves every byte alone.
-    pub motion_scale: f64,
+    /// What to multiply the root travel by, when the caller states it.
+    ///
+    /// **`None` is not 1.0.** Unstated means "use the body's own", which is
+    /// what its record already measured — a default of 1.0 here would have
+    /// silently walked every fitted body at the profile's stride, and the
+    /// only sign would have been feet sliding in somebody else's engine.
+    /// 1.0 is what a body with no record falls back to, and the record says
+    /// which of the two happened.
+    pub motion_scale: Option<f64>,
     /// Who asked.
     pub created_by: Actor,
 }
@@ -96,6 +105,11 @@ pub struct BundleRecord {
     pub clips: Vec<BundleClip>,
     /// The scale applied to the root travel.
     pub motion_scale: f64,
+    /// Where that number came from, in words: `stated on the command line`,
+    /// the body sidecar that measured it, or the fallback and why. A record
+    /// that gave the number without saying where it came from would leave a
+    /// reader unable to tell a measurement from an identity.
+    pub motion_scale_source: String,
     /// The file that was written.
     pub output: BundleOutput,
 }
@@ -136,10 +150,11 @@ pub struct Bundled {
 /// were named; the merge refuses (a clip driving a bone the body lacks, a
 /// file that is not self-contained); or a file cannot be read or written.
 pub fn write(project: &Project, request: &BundleRequest) -> Result<Bundled> {
-    if !request.motion_scale.is_finite() || request.motion_scale <= 0.0 {
+    if let Some(stated) = request.motion_scale
+        && (!stated.is_finite() || stated <= 0.0)
+    {
         return Err(LibraryError::rejected(format!(
-            "motion scale {} is not a positive number; 1.0 leaves the root travel alone",
-            request.motion_scale
+            "motion scale {stated} is not a positive number; 1.0 leaves the root travel alone"
         )));
     }
     if request.clips.is_empty() {
@@ -170,10 +185,12 @@ pub fn write(project: &Project, request: &BundleRequest) -> Result<Bundled> {
         })
         .collect();
 
+    let (motion_scale, motion_scale_source) = scale_for(project, request, &body);
+
     // The merge is deliberately f32: a clip's values are f32 and the scale
-    // multiplies them there. The record keeps what the caller typed.
+    // multiplies them there. The record keeps the f64 it resolved.
     #[allow(clippy::cast_possible_truncation)]
-    let bundled = forge_motion::bundle::bundle(&body_bytes, &sources, request.motion_scale as f32)
+    let bundled = forge_motion::bundle::bundle(&body_bytes, &sources, motion_scale as f32)
         .map_err(|e| LibraryError::bake(e.to_string()))?;
 
     let out = absolute(&request.out);
@@ -195,7 +212,8 @@ pub fn write(project: &Project, request: &BundleRequest) -> Result<Bundled> {
                 sha256: hash::sha256_bytes(bytes),
             })
             .collect(),
-        motion_scale: request.motion_scale,
+        motion_scale,
+        motion_scale_source,
         output: BundleOutput {
             path: named(project, &out),
             sha256: hash::sha256_bytes(&bundled.bytes),
@@ -210,6 +228,40 @@ pub fn write(project: &Project, request: &BundleRequest) -> Result<Bundled> {
         output: out,
         record_path,
     })
+}
+
+/// The scale this bundle applies, and where the number came from.
+///
+/// Stated wins; unstated reads the body's own record, which is the whole
+/// reason a body records one. A body that is a bare path with no sidecar —
+/// an export under `out/`, say — falls back to 1.0, and the record says so
+/// in those words rather than quietly reading as a measurement.
+fn scale_for(project: &Project, request: &BundleRequest, body: &Input) -> (f64, String) {
+    if let Some(stated) = request.motion_scale {
+        return (stated, String::from("stated by the caller"));
+    }
+    match crate::sidecar::load_beside(&body.path) {
+        Ok(Some(record)) => match record.body {
+            Some(skeleton) => (
+                f64::from(skeleton.motion_scale),
+                format!(
+                    "the body's own record, {}",
+                    named(project, &crate::sidecar::path_for(&body.path))
+                ),
+            ),
+            None => (
+                1.0,
+                format!(
+                    "1.0: {} records no fitted skeleton, so its stride is the profile's",
+                    named(project, &crate::sidecar::path_for(&body.path))
+                ),
+            ),
+        },
+        Ok(None) | Err(_) => (
+            1.0,
+            String::from("1.0: the body has no record beside it, so nothing measured a stride"),
+        ),
+    }
 }
 
 /// `<stem>.bundle.json` beside a bundle.
@@ -306,7 +358,7 @@ mod tests {
                     repo("assets/clips/roll.glb").display().to_string(),
                 ],
                 out: out.clone(),
-                motion_scale: 1.0,
+                motion_scale: Some(1.0),
                 created_by: Actor::parse("agent:test"),
             },
         )
@@ -353,7 +405,7 @@ mod tests {
                 body: repo("assets/bodies/vex_runner.glb").display().to_string(),
                 clips: vec![String::from("moonwalk")],
                 out: dir.path().join("out/bundles/x.glb"),
-                motion_scale: 1.0,
+                motion_scale: Some(1.0),
                 created_by: Actor::Unknown,
             },
         )
@@ -373,7 +425,7 @@ mod tests {
                     body: repo("assets/bodies/vex_runner.glb").display().to_string(),
                     clips: vec![repo("assets/clips/walk.glb").display().to_string()],
                     out: dir.path().join("out/bundles/x.glb"),
-                    motion_scale: scale,
+                    motion_scale: Some(scale),
                     created_by: Actor::Unknown,
                 },
             )

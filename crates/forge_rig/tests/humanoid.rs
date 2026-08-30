@@ -453,6 +453,12 @@ fn re_exporting_the_contract_reproduces_the_committed_bytes() {
     assert!((contract.stature_m.max - 2.2).abs() < 1e-6);
     assert!((contract.foot_tolerance_m - 0.05).abs() < 1e-6);
     assert!((contract.rest_rotation_tolerance - 1e-3).abs() < 1e-9);
+    // The fitted skeleton's four: lengths belong to the body, directions do
+    // not, and the planted foot has a tolerance of its own.
+    assert!((contract.rest_direction_tolerance_deg - 1.0).abs() < 1e-6);
+    assert!((contract.length_ratio_min - 0.4).abs() < 1e-6);
+    assert!((contract.length_ratio_max - 2.5).abs() < 1e-6);
+    assert!((contract.contact_foot_tolerance_m - 0.05).abs() < 1e-6);
     assert_eq!(contract.sources.blend.as_deref(), Some("rig.blend"));
 
     let out = std::env::temp_dir().join(format!(
