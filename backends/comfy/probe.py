@@ -226,10 +226,18 @@ def main() -> int:
             return []
         return [str(v) for v in values] if isinstance(values, list) else []
 
-    wanted = (conf.get("comfy") or {}).get("models") or []
+    # One model list: `[[models]]` with a `comfy:models/<folder>` store. The
+    # `[[comfy.models]]` block this used to read existed because `store` had
+    # no word for a comfy folder; it has one now, and two lists that can
+    # disagree is exactly the shape doctor must not have.
+    wanted = [
+        model
+        for model in (conf.get("models") or [])
+        if str(model.get("store") or "").startswith("comfy:")
+    ]
     absent: list[str] = []
     for model in wanted:
-        folder = str(model.get("folder") or "")
+        folder = str(model["store"]).split("/")[-1]
         name = str(model.get("local") or Path(str(model.get("file") or "")).name)
         if name in listed(folder, model.get("node"), model.get("field")):
             continue

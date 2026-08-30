@@ -31,9 +31,11 @@
 #   - black-forest-labs/FLUX.1-schnell is gated "auto": an HF token is
 #     needed for ae.safetensors even though the licence is Apache-2.0;
 #   - the FLUX pose ControlNet is FLUX.1-dev NON-COMMERCIAL and is asked for;
-#   - one custom node pack, ComfyUI-GGUF, because the lean tier's reference
-#     image is a Q4_K_M GGUF and no native loader reads one. It is cloned
-#     into $PREFIX/data/custom_nodes/ and needs two pips in the venv.
+#   - two custom node packs. ComfyUI-GGUF, because the lean tier's reference
+#     image is a Q4_K_M GGUF and no native loader reads one (two pips in the
+#     venv); and TTS-Audio-Suite, because the three MOSS models come through
+#     it (no pips at all — see below). Both are cloned into
+#     $PREFIX/data/custom_nodes/ before the unit starts.
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,6 +68,9 @@ GGUF_PACK_URL="https://github.com/city96/ComfyUI-GGUF"
 GGUF_PACK_COMMIT="6ea2651e7df66d7585f6ffee804b20e92fb38b8a"   # 2026-01-12
 GGUF_PACK_DIR="ComfyUI-GGUF"
 GGUF_PACK_PIPS=(gguf==0.19.0 protobuf==7.36.0)
+TTS_PACK_URL="https://github.com/diodiogod/TTS-Audio-Suite"
+TTS_PACK_COMMIT="fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
+TTS_PACK_DIR="TTS-Audio-Suite"
 GGUF_WEIGHTS_REPO="city96/Qwen-Image-gguf"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 DEFAULT_PREFIX="$HOME/.cache/asset-forge/backends/comfy"
@@ -123,6 +128,18 @@ log "extra_model_paths.yaml -> $CHECKOUT"
 clone_pinned "$GGUF_PACK_URL" "$GGUF_PACK_COMMIT" "$DATA/custom_nodes/$GGUF_PACK_DIR"
 log "pack pips: ${GGUF_PACK_PIPS[*]}"
 pip_install "$ENV_DIR" "${GGUF_PACK_PIPS[@]}"
+
+# TTS-Audio-Suite: the three MOSS models (SoundEffect v2, TTS, VoiceGenerator)
+# behind moss_sfx and moss_tts. **No pips, on purpose and by measurement.**
+# Its requirements.txt asks for numpy<2.3.0, which would downgrade the host's
+# 2.5.2 under every image template; installing none of it turned out to cost
+# nothing, because the pack registers each node behind its own try/except and
+# all 58 registered on the first restart with the venv untouched (2026-08-30).
+# The Manager's allow_pip_install is False, so adding the clone cannot run the
+# pack's own install.py behind your back. If a later pin needs a pip, that is
+# a decision to weigh against the image templates and to date in hosting.md.
+clone_pinned "$TTS_PACK_URL" "$TTS_PACK_COMMIT" "$DATA/custom_nodes/$TTS_PACK_DIR"
+log "pack pips: none for $TTS_PACK_DIR (its numpy pin would downgrade the host's)"
 
 # ----------------------------------------------------------------- service --
 

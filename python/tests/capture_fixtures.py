@@ -91,6 +91,25 @@ def build(project: Path) -> dict[str, dict]:
     rec["measured"] = {"duration_s": 1.5, "peak_dbfs": -3.1}
     out["sfx"] = rec
 
+    # The same kind through the other executor. `forge_record: 2` says which
+    # ran, for every record; a comfy run adds the host's commit, the hash of
+    # the *tracked template file* and the packs that were installed, and its
+    # `commit` is null because a comfy backend has no checkout of its own.
+    # What was patched into the graph is knobs, and knobs live in params.
+    rec = records.new_record("sfx", "moss_sound_effect", created_by="agent:claude", created=TODAY)
+    rec["backend"] = records.backend_block(
+        "moss_sfx", None, None, None, "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+        executor="comfy",
+        comfyui_commit="169fcf35a2fc163fec31338b816503ddac0d3fcf",
+        workflow_sha256="sha256:9f1c00000000000000000000000000000000000000000000000000000000abcd",
+        packs={"https://github.com/diodiogod/TTS-Audio-Suite": "b7e41a2c"},
+    )
+    records.add_input(rec, "prompt", prompt="a heavy iron door")
+    rec["params"] = {"workflow": "sfx.api.json", "seed": 815273, "duration_s": 3.0, "steps": 100, "cfg": 4.0}
+    records.add_output(rec, _file(project, "out/audio/sfx/door.wav"))
+    rec["measured"] = {"duration_s": 3.0, "sample_rate": 48000, "channels": 1}
+    out["sfx_comfy"] = rec
+
     rec = records.new_record("music", "ace_step", created_by="agent:claude", created=TODAY)
     rec["backend"] = records.backend_block("acestep", "82252c2418de6cb8b3ca99b05592aaf539cc7fb3", "3.12.7", "2.10.0+cu128", "acestep-v15-turbo")
     records.add_input(rec, "prompt", prompt="dark ambient boss theme, low strings, taiko")

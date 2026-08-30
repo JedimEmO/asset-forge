@@ -4,11 +4,17 @@ API-format ComfyUI graphs (`POST /prompt`'s `prompt` object: a flat map of
 node id → `{class_type, inputs, _meta}`). They are *pure graphs* — no forge
 metadata is smuggled into the file, because anything at the top level of the
 object is read by ComfyUI as another node. What a caller may change is
-listed here and marked `PATCH` in each node's `_meta.title`.
+marked **inside the graph**: a node's `_meta.title` carries one
+`PATCH:<key>` token per patchable input (`PATCH:seed`, or
+`pose conditioning; PATCH:strength PATCH:end_percent`), and everything else
+in the title is prose for whoever opens the graph in the UI. There is no
+sidecar manifest of node ids — that would be one fact in two files that
+nothing holds together — and `python/forge_gen/comfy.py::patch_points`
+builds the map by reading the markers. A template missing a key the verb
+requires is a refusal before the GPU, naming the key and the file.
 
-Node ids are stable across all three reference templates so one patcher
-serves them all. `python/forge_gen/spike_reference.py` is that patcher
-today; Phase 1's `comfy` executor takes its shape.
+Node ids happen to be stable across the three reference templates, which is
+convenient for a human diffing them, but nothing reads an id any more.
 
 | id | node | patch |
 |---|---|---|

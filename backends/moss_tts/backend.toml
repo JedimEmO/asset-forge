@@ -1,46 +1,79 @@
-# MOSS-TTS: one spoken line from text, zero-shot voice cloning from a 5–15 s
-# reference clip. The checkpoint is the Local-Transformer 4B (MossTTSLocal,
-# 48 kHz stereo out); the model code arrives with the weights through
-# `trust_remote_code`, so the clone is here for its pins and its commit, not
-# for an import. Shares the clone with moss_sfx ($PREFIX/../moss-tts) and
-# keeps its own venv: torch 2.9.1 and transformers 5.0.0, against the
-# sound-effect model's 2.9.0 / 4.57.1.
+# MOSS-TTS: one spoken line from text, cloned from a 5–15 s reference clip
+# (`forge gen speech`), and MOSS-VoiceGenerator, which designs that clip from
+# a description (`forge gen voice`) so a project never has to bring a voice it
+# does not own.
 #
-# The same env also runs MOSS-VoiceGenerator (1.7B, MossTTSDelay, 24 kHz
-# mono): `forge gen voice` designs a reference clip from a description so a
-# project never has to bring one, and `forge gen speech --voice <name>`
-# clones every line from it.
+# Both run **on the ComfyUI host** through the TTS-Audio-Suite pack (MIT):
+# no clone, no `.env`, no `trust_remote_code` in a venv of ours. Two tracked
+# graphs, `workflows/speech.api.json` and `workflows/voice.api.json`; the
+# weights the pack downloads land in the host's HF cache on first use.
+#
+# **The model the pack offers is not the one the venv ran.** Its MOSS-TTS
+# variants at this pin are `1.7B` (OpenMOSS-Team/MOSS-TTS-Local-Transformer),
+# the 8B Delay checkpoints, and community fine-tunes of those — captured from
+# GET /object_info and the pack's own model_specs.py on 2026-08-30. The 8B
+# Delay model is the one this repository measured OOM-ing on 24 GB with the
+# audio tokenizer loaded (designs/hosting.md, "MOSS-TTS"), so `speech.api.json`
+# states `1.7B`, and a line spoken through it is **a different voice from one
+# spoken through the 4B the venv ran**. Nothing under assets/ is rewritten for
+# that — the shipped lines' records say what made them — but a voice re-cloned
+# after this move will not match one cloned before it, and that is a fact for
+# the record and for the ear, not a detail.
+#
+# The voice designer is unchanged: the pack's "Voice Design 1.7B" is
+# OpenMOSS-Team/MOSS-VoiceGenerator, the same weights `forge gen voice`
+# already recorded.
+
 name = "moss_tts"
 role = "speech"
-upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
-commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
-license = "Apache-2.0"
-env_kind = "venv"
-python = "3.12"
-cuda = "12.8"
-# The 4B in bf16 with the audio tokenizer resident. Not resident after the
-# call. The 1.7B voice generator needs less; the row is the larger of the two.
+executor = "comfy"
+host = "comfy"
+upstream = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # the pack, v5.8.7, 2026-08-28
+license = "Apache-2.0 (MOSS-TTS and MOSS-VoiceGenerator weights); TTS-Audio-Suite: MIT; ComfyUI: GPL-3.0-or-later"
+# A budget, unmeasured on this host. The 1.7B is smaller than the 4B this
+# row carried 12 GB for; nobody has sampled either on the card.
 vram_gb = 12
 entry = "audio.speech"
-cwd = "checkout"
-resident = false
 
-[env]
-PYTHONNOUSERSITE = "1"
+[comfy]
+workflows = ["speech.api.json", "voice.api.json"]
+# Captured from the running host's GET /object_info on 2026-08-30.
+nodes = [
+    "MossTTSEngineNode",
+    "UnifiedTTSTextNode",
+    "UnifiedVoiceDesignerNode",
+    "CharacterVoicesNode",
+    "LoadAudio",
+    "SaveAudio",
+]
+# No `unload_node`: the pack registers no unload class at this pin.
+
+[[comfy.packs]]
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+dir = "TTS-Audio-Suite"
+license = "MIT"
+pips = []
+nodes = ["MossTTSEngineNode", "UnifiedTTSTextNode", "UnifiedVoiceDesignerNode", "CharacterVoicesNode"]
 
 [[models]]
-id = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
+id = "OpenMOSS-Team/MOSS-TTS-Local-Transformer"
 store = "hf"
 license = "Apache-2.0"
-note = "~8 GB; downloaded by install.sh, or by the first `forge gen speech`. MOSS_TTS_MODEL overrides the id."
+note = "the pack's \"1.7B\" variant, two safetensors shards at 24 kHz. NOT MOSS-TTS-Local-Transformer-v1.5, which the venv ran and the pack does not offer; the size is the hub's to state, and nobody here has measured it."
 
 [[models]]
 id = "OpenMOSS-Team/MOSS-VoiceGenerator"
 store = "hf"
 license = "Apache-2.0"
-gated = false
-note = "~4 GB; the 1.7B voice designer behind `forge gen voice`. Downloaded by install.sh, or by the first design. MOSS_VOICE_MODEL overrides the id."
+gb = 4.0
+note = "~4 GB; the pack's \"Voice Design 1.7B\" — the same weights `forge gen voice` recorded before the move"
 
 [[notices]]
-title = "VRAM"
-text = "the 8B Delay model (OpenMOSS-Team/MOSS-TTS-v1.5) OOMs on 24 GB with the audio tokenizer resident; Local-Transformer 4B fits and is what this backend runs"
+title = "the model changed"
+text = "MOSS-TTS-Local-Transformer-v1.5 (what the venv ran) is not one of the variants TTS-Audio-Suite offers at fab00263; speech now runs the pack's 1.7B, OpenMOSS-Team/MOSS-TTS-Local-Transformer. A voice cloned after this move does not match one cloned before it. Re-audition a character's lines before shipping them beside older ones."
+
+[[notices]]
+title = "ffmpeg"
+text = "ComfyUI v0.34.2 has no WAV save node, so `forge gen speech` and `forge gen voice` fetch the FLAC the graph saved and transcode it to 16-bit PCM before anything measures it. ffmpeg is required where the old venv path wrote the WAV itself with soundfile."

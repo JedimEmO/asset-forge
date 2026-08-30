@@ -12,6 +12,9 @@ pin the other new behaviour: ``--fake`` refuses to overwrite anything a
 
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 import wave
 
 import pytest
@@ -145,6 +148,152 @@ def test_music_fake(tmp_path):
     assert_audible_placeholder(out)
     rec = load_and_normalize(rec_path)
     assert rec["kind"] == "music"
+    assert rec["backend"]["executor"] == "comfy", "a fake stands in for the path that would have run"
+    assert rec["backend"]["workflow_sha256"] is None, "nothing loaded a template; null means unknown"
+
+
+def test_the_music_graph_is_built_and_patched_without_a_host(tmp_path, repo_root):
+    """The whole of `forge gen music` up to `POST /prompt`, on the tracked template.
+
+    No ComfyUI, no card: what this proves is that the template the toolkit
+    ships carries every knob the verb states and no knob it does not, which
+    is the refusal that must happen *before* the card is leased.
+    """
+    from forge_gen import backends, comfy
+    from forge_gen.audio import music
+
+    backend = backends.load_backend("acestep", repo_root / "backends")
+    assert backend.executor == "comfy" and backend.host == "comfy"
+    graph, digest = comfy.load_template(backend, music.WORKFLOW)
+    assert digest.startswith("sha256:")
+
+    args = argparse.Namespace(
+        out=str(tmp_path / "theme.ogg"), record=str(tmp_path / "theme.json"),
+        prompt="dark ambient boss theme, low strings, taiko", lyrics_file=None,
+        duration=90.0, seed=815273, bpm=96, keyscale="F minor", timesignature="4",
+        thinking=True, format=None, stop_server=False, timeout=60.0, created_by="human",
+    )
+    request = music.check_inputs(args)
+    inputs = music.template_inputs(request, seed=request["seed"], prefix="forge/j-1/theme")
+    patched = comfy.patch(graph, inputs, "music.api.json")
+
+    # Every stated knob landed on a node, and the two seeds are one seed.
+    assert patched["5"]["inputs"]["tags"] == args.prompt
+    assert patched["5"]["inputs"]["bpm"] == 96 and patched["5"]["inputs"]["keyscale"] == "F minor"
+    assert patched["5"]["inputs"]["seed"] == 815273 and patched["11"]["inputs"]["seed"] == 815273
+    assert patched["5"]["inputs"]["duration"] == 90.0 and patched["10"]["inputs"]["seconds"] == 90.0
+    assert patched["13"]["inputs"]["filename_prefix"] == "forge/j-1/theme"
+    # And the register the template states for itself is untouched.
+    assert patched["11"]["inputs"]["steps"] == 8 and patched["11"]["inputs"]["cfg"] == 1.0
+
+    # A key the model would refuse never reaches the host.
+    args.keyscale = "H sharp minor"
+    with pytest.raises(Exception, match="not one the model takes"):
+        music.check_inputs(args)
+
+
+def test_every_audio_verb_states_exactly_the_knobs_its_template_marks(tmp_path, repo_root):
+    """The contract between a module and its graph, checked on the shipped files.
+
+    A template that marks a knob the verb does not fill would run at
+    whatever it was saved with; a verb that states a knob the template does
+    not mark would have it silently dropped. Both are refusals inside
+    `comfy.patch`, and this is what makes them fail here — in a test with no
+    host and no card — instead of in front of someone with the card leased.
+    """
+    from forge_gen import backends, comfy
+    from forge_gen.audio import music, sfx, speech, voice
+
+    tree = repo_root / "backends"
+    ref = placeholders.placeholder_wav(tmp_path / "voices" / "warden" / "ref.wav", seconds=8.0)
+
+    cases = [
+        ("acestep", music, lambda spec: music.template_inputs(spec, seed=1, prefix="p")),
+        ("moss_sfx", sfx, lambda spec: sfx.template_inputs(spec, spec["jobs"][0], prefix="p")),
+        ("moss_tts", speech, lambda spec: speech.template_inputs(spec, spec["jobs"][0], reference_name="r.wav", prefix="p")),
+        ("moss_tts", voice, lambda spec: voice.template_inputs(spec, prefix="p")),
+    ]
+    specs = {
+        music: music.check_inputs(argparse.Namespace(
+            out=str(tmp_path / "t.wav"), record=str(tmp_path / "t.json"), prompt="taiko",
+            lyrics_file=None, duration=30.0, seed=1, bpm=None, keyscale=None,
+            timesignature=None, thinking=True, format=None, stop_server=False)),
+        sfx: sfx.plan(argparse.Namespace(
+            prompt="a door", out=str(tmp_path / "d.wav"), record=None, seconds=1.0, seed=1,
+            steps=100, cfg=4.0, batch_file=None, out_dir=None, model=None)),
+        speech: speech.plan(argparse.Namespace(
+            text="Stand down.", out=str(tmp_path / "l.wav"), record=None, voice=str(ref),
+            voice_text=None, language="en", backend="moss_tts", seed=1, lines_file=None,
+            out_dir=None, model=None)),
+        voice: voice.plan(argparse.Namespace(
+            name="warden", describe="deep, slow, grave", line=None, seed=1,
+            out_dir=str(tmp_path / "designed"), overwrite=False, model=None,
+            temperature=None, top_p=None, top_k=None, rep_penalty=None)),
+    }
+    for backend_name, module, fill in cases:
+        backend = backends.load_backend(backend_name, tree)
+        graph, _ = comfy.load_template(backend, module.WORKFLOW)
+        marked = set(comfy.patch_points(graph, module.WORKFLOW))
+        stated = set(fill(specs[module]))
+        assert stated == marked, (
+            f"{module.WORKFLOW}: the verb states {sorted(stated)} and the template marks {sorted(marked)}"
+        )
+        # And the patch itself goes through, which is the real proof.
+        comfy.patch(graph, fill(specs[module]), module.WORKFLOW)
+
+
+def test_a_music_record_from_a_comfy_run_says_what_ran(tmp_path):
+    """build_record still takes a result and a backend block; both halves are new."""
+    from forge_gen.audio import music
+
+    args = argparse.Namespace(
+        out=str(tmp_path / "theme.wav"), record=str(tmp_path / "theme.json"),
+        prompt="taiko", lyrics_file=None, duration=30.0, seed=7, bpm=None,
+        keyscale=None, timesignature=None, thinking=True, format=None,
+        stop_server=False, timeout=60.0, created_by="human",
+    )
+    request = music.check_inputs(args)
+    inputs = music.template_inputs(request, seed=7, prefix="forge/local/theme")
+    result = {
+        "prompt": request["prompt"], "lyrics": inputs["lyrics"],
+        "seed_value": f"{inputs['plan_seed']},{inputs['seed']}",
+        "dit_model": "ace_step_1.5_turbo_aio.safetensors", "lm_model": None,
+        "metas": {"bpm": inputs["bpm"], "keyscale": inputs["keyscale"],
+                  "timesignature": inputs["timesignature"], "genres": inputs["tags"]},
+    }
+    backend = {
+        "name": "acestep", "commit": None, "python": None, "torch": None,
+        "model": "ace_step_1.5_turbo_aio.safetensors", "model_revision": None,
+        "executor": "comfy", "comfyui_commit": "169fcf35", "workflow_sha256": "sha256:9f1c",
+        "packs": {},
+    }
+    rec = music.build_record(request, result, measured={"duration_s": 30.0}, backend=backend)
+    rec["params"]["workflow"] = music.WORKFLOW
+    written = json.loads(records.dumps(rec))
+    assert written["forge_record"] == 2
+    assert written["backend"]["commit"] is None, "no checkout of its own"
+    assert written["backend"]["executor"] == "comfy"
+    assert written["backend"]["packs"] == {}, "native nodes: empty, not null"
+    # The params keys are the ones the library's shipped music records have.
+    assert set(written["params"]) >= {
+        "lm_model", "dit_model", "seed", "bpm", "keyscale", "timesignature",
+        "genres", "lyrics", "duration_s", "format", "thinking", "workflow",
+    }
+    assert written["params"]["seed"] == "7,7", "the pair the two stages were given"
+    assert written["params"]["bpm"] == 120 and written["params"]["keyscale"] == "C major", (
+        "what the node was given, which is the node's default when the run said nothing"
+    )
+
+
+def test_stop_server_is_refused_by_name(tmp_path):
+    from forge_gen.audio import music
+    from forge_gen.exit_codes import UsageError
+
+    args = argparse.Namespace(stop_server=True, out=None, record=None, prompt=None)
+    with pytest.raises(UsageError) as caught:
+        music.refuse_stop_server(args)
+    assert "forge gpu --free" in caught.value.payload()["hint"]
+    assert "systemctl --user stop forge-comfy" in caught.value.payload()["hint"]
 
 
 def test_speech_fake(tmp_path):
@@ -244,3 +393,26 @@ def test_fake_reruns_over_its_own_placeholders_are_fine(tmp_path):
     out = tmp_path / "door.wav"
     run_fake("sfx", "--prompt", "a door", "--out", str(out))
     run_fake("sfx", "--prompt", "a door", "--out", str(out))
+
+
+def test_a_fake_run_never_loads_the_graph_client(tmp_path):
+    """`ci-fake` is a control for the move to the host, and this is why.
+
+    `run_fake` writes a placeholder through the same doors and validators a
+    real render goes through, and touches no template, no URL and no host —
+    so a defect in the graph client cannot make the fake pipelines fail, and
+    a fake pipeline passing says nothing about the host being up.
+    """
+    import subprocess as sp
+
+    script = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "from forge_gen import cli\n"
+        "args = cli.build_parser().parse_args(['sfx', '--prompt', 'a door', '--out', %r, '--fake'])\n"
+        "args._module.run_fake(args)\n"
+        "assert 'forge_gen.comfy' not in sys.modules, 'a fake run loaded the graph client'\n"
+        "print('clean')\n"
+    ) % (str(REPO / "python"), str(tmp_path / "door.wav"))
+    done = sp.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
+    assert "clean" in done.stdout

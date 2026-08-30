@@ -1,0 +1,35 @@
+{
+  "1": {
+    "class_type": "MossTTSEngineNode",
+    "_meta": { "title": "MOSS-VoiceGenerator 1.7B: PATCH:audio_temperature=temperature PATCH:audio_top_p=top_p PATCH:audio_top_k=top_k PATCH:audio_repetition_penalty=repetition_penalty — sampler_preset Custom, so the record's knobs are the ones that ran" },
+    "inputs": {
+      "model_variant": "Voice Design 1.7B",
+      "multi_speaker_mode": "Custom Character Switching",
+      "device": "auto",
+      "language": "Auto",
+      "duration_tokens": 0,
+      "sampler_preset": "Custom",
+      "temperature": 1.5,
+      "top_p": 0.6,
+      "top_k": 50,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 4096,
+      "chunk_minutes": 0
+    }
+  },
+  "2": {
+    "class_type": "UnifiedVoiceDesignerNode",
+    "_meta": { "title": "PATCH:instruction=voice_instruction PATCH:text=reference_text PATCH:seed — a voice is a description and a seed" },
+    "inputs": {
+      "TTS_engine": ["1", 0],
+      "reference_text": "",
+      "seed": 0,
+      "voice_instruction": ""
+    }
+  },
+  "3": {
+    "class_type": "SaveAudio",
+    "_meta": { "title": "PATCH:filename_prefix — preview_audio is the audition clip every line of this character is then cloned from" },
+    "inputs": { "audio": ["2", 1], "filename_prefix": "audio/forge" }
+  }
+}

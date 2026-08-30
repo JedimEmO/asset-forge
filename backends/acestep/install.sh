@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
-# Install the ACE-Step 1.5 backend: a pinned clone with the soundfile patch,
-# a python 3.12 venv with torch cu128, and the minimal checkpoint set.
+# Install what the ComfyUI host needs to run `forge gen music`: one file.
 #
-#   bash backends/acestep/install.sh [--prefix DIR] [--no-models] [--all-models]
-#   bash backends/acestep/install.sh --adopt-env DIR --adopt-checkout DIR --adopt-checkpoints DIR
+#   bash backends/acestep/install.sh [--prefix DIR]
 #
-# Leaves behind, in this directory: .env -> the venv, .checkout -> the clone,
-# .checkpoints -> the weights, installed.json. Everything heavy lives under
-# $PREFIX (or wherever --adopt-* says it already is). Idempotent: re-running
-# on a finished install re-links, re-probes and touches nothing else.
+# There is no environment here to make. ACE-Step 1.5 is native to the pinned
+# ComfyUI (v0.34.2), so this backend is a tracked graph plus a checkpoint in
+# the host's own model tree, and the host's installer is what made that tree:
+# run `bash backends/comfy/install.sh` first. Idempotent — a file already
+# there is one line and no download.
 #
-# The traps this encodes, dated, are in designs/hosting.md under "ACE-Step":
-#   - torchaudio/torchcodec segfault on save against the system glib, so
-#     patches/0001 routes WAV/FLAC saves through soundfile and the client
-#     transcodes with the ffmpeg CLI;
-#   - it is a server, resident until `forge gen music --stop-server`;
-#   - ACESTEP_CHECKPOINTS_DIR points it at the minimal ~7.3 GB set, else it
-#     downloads its own (bigger) one into the clone.
-#
-# --all-models adds the two XL DiTs (~38 GB); nothing in the toolkit asks
-# for them, so they are off by default.
+# What this replaced, and why it is not here any more: a pinned clone of
+# ACE-Step-1.5, a python 3.12 venv with torch cu128, the soundfile patch
+# around torchaudio's segfault, a ~7.3 GB checkpoint directory of its own
+# and a resident API server on 127.0.0.1:8001 with a pid file. All of it was
+# one model behind one HTTP door; the host is that door for four models now.
+# The old path is in git history at the commit before this one, and
+# `backends/acestep/{patches,fetch_models.py,probe.py}` are still here until
+# a real track has come out of the host — nothing is deleted on a promise.
 
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,132 +26,39 @@ BACKEND_DIR="$here"
 . "$here/../_lib/common.sh"
 parse_common_flags "$@"
 
-ALL_MODELS=0
-for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
-    case "$arg" in
-        --all-models) ALL_MODELS=1 ;;
-        *) die "unknown flag: $arg (see --help)" ;;
-    esac
-done
-
 # Pinned in backend.toml; repeated here so the script stands alone.
-UPSTREAM="https://github.com/ACE-Step/ACE-Step-1.5.git"
-COMMIT="82252c2418de6cb8b3ca99b05592aaf539cc7fb3"
-PYVER="3.12"
-TORCH_INDEX="https://download.pytorch.org/whl/cu128"
-PATCH="$here/patches/0001-audio_utils-soundfile.patch"
+WEIGHTS_REPO="Comfy-Org/ace_step_1.5_ComfyUI_files"
+WEIGHTS_FILE="checkpoints/ace_step_1.5_turbo_aio.safetensors"
+WEIGHTS_LOCAL="ace_step_1.5_turbo_aio.safetensors"
+WEIGHTS_GB="10.03"
 
-CHECKOUT="${ADOPT_CHECKOUT:-$PREFIX/checkout}"
-ENV_DIR="${ADOPT_ENV:-$PREFIX/env}"
-CKPT="${ADOPT_CHECKPOINTS:-$PREFIX/checkpoints}"
+HOST_DIR="$here/../comfy"
+[ -d "$HOST_DIR" ] || die "backends/comfy is not here: acestep runs on that host and nothing else"
+HOST_ENV="$HOST_DIR/.env"
+[ -e "$HOST_ENV" ] || die "the ComfyUI host is not installed — bash $HOST_DIR/install.sh first (acestep has no environment of its own)"
 
-# ------------------------------------------------------------------- patch --
+# $PREFIX/data is the host's --base-directory: the venv is $PREFIX/venv, and
+# the data tree is its sibling. $FORGE_COMFY_DATA overrides for an install
+# that put it somewhere else.
+HOST_PREFIX="$(dirname "$(readlink -f "$HOST_ENV")")"
+DATA="${FORGE_COMFY_DATA:-$HOST_PREFIX/data}"
+DEST="$DATA/models/checkpoints"
 
-# patch_applied DIR — 0 when the soundfile patch is already in the tree.
-patch_applied() { git -C "$1" apply --check -R "$PATCH" >/dev/null 2>&1; }
-
-# apply_patch DIR — apply it once; refuse a tree where it neither is nor fits.
-apply_patch() {
-    if patch_applied "$1"; then
-        log "soundfile patch already applied"
-    elif git -C "$1" apply --check "$PATCH" >/dev/null 2>&1; then
-        log "applying $(basename "$PATCH")"
-        git -C "$1" apply "$PATCH"
-    else
-        die "$(basename "$PATCH") neither applies to nor is present in $1 — is it at $COMMIT?"
-    fi
-}
-
-# ---------------------------------------------------------------- checkout --
-
-if [ -n "$ADOPT_CHECKOUT" ]; then
-    log "adopting checkout $CHECKOUT"
-    [ -d "$CHECKOUT/acestep" ] || die "$CHECKOUT does not look like an ACE-Step clone (no acestep/ package)"
-    if patch_applied "$CHECKOUT"; then
-        log "soundfile patch present in the adopted checkout"
-    else
-        # Adoption installs nothing and edits nothing; an unpatched clone is
-        # the user's to patch, and the server will segfault on its first
-        # save until they do.
-        warn "the adopted checkout lacks the soundfile patch: git -C $CHECKOUT apply $PATCH"
-    fi
+if [ -f "$DEST/$WEIGHTS_LOCAL" ]; then
+    log "have checkpoints/$WEIGHTS_LOCAL"
 else
-    clone_pinned "$UPSTREAM" "$COMMIT" "$CHECKOUT"
-    apply_patch "$CHECKOUT"
+    log "fetching $WEIGHTS_REPO :: $WEIGHTS_FILE (${WEIGHTS_GB} GB) -> $DEST"
+    mkdir -p "$DEST"
+    # --local-dir keeps the weights out of the HF blob cache: stored once,
+    # not twice. The CLI recreates the repo's subdirectories under it.
+    HF_XET_HIGH_PERFORMANCE=1 PYTHONNOUSERSITE=1 \
+        "$(readlink -f "$HOST_ENV")/bin/hf" download "$WEIGHTS_REPO" "$WEIGHTS_FILE" --local-dir "$DEST.dl"
+    mv "$DEST.dl/$WEIGHTS_FILE" "$DEST/$WEIGHTS_LOCAL"
+    rm -rf "$DEST.dl"
 fi
 
-# --------------------------------------------------------------------- env --
-
-if [ -n "$ADOPT_ENV" ]; then
-    log "adopting env $ENV_DIR"
-    # An adopted venv may carry an editable ace-step whose recorded path is
-    # where the clone used to be. Every launch stands in the checkout, so
-    # `python -m acestep.api_server` still finds the package through the
-    # working directory; say so rather than let doctor be the first to.
-    adopted_python="$ENV_DIR/bin/python"; [ -x "$adopted_python" ] || adopted_python="$ENV_DIR/bin/python3"
-    editable="$(PYTHONNOUSERSITE=1 "$adopted_python" - <<'PY' 2>/dev/null || true
-import importlib.metadata as m, json
-try:
-    print(json.loads(m.distribution("ace-step").read_text("direct_url.json") or "{}").get("url", ""))
-except Exception:
-    pass
-PY
-)"
-    case "$editable" in
-        file://*) [ -d "${editable#file://}" ] || warn "the venv's editable ace-step points at ${editable#file://} (gone); imports resolve through the checkout only — pip install -e $CHECKOUT into it to fix" ;;
-        "") warn "ace-step is not installed in $ENV_DIR; the server will import it from the checkout only if the checkout is the working directory" ;;
-    esac
-else
-    make_venv "$ENV_DIR" "$PYVER"
-    # torch first, from the cu128 index, at the exact build the pyproject
-    # pins for linux/x86_64 — PyPI's torch 2.10.0 is a different wheel and
-    # the `+cu128` pin would otherwise be unresolvable.
-    log "torch 2.10.0+cu128 (+ torchaudio, torchvision) from $TORCH_INDEX"
-    pip_install "$ENV_DIR" --extra-index-url "$TORCH_INDEX" \
-        "torch==2.10.0+cu128" "torchaudio==2.10.0+cu128" "torchvision==0.25.0+cu128"
-    # nano-vllm is vendored under the checkout and named through
-    # [tool.uv.sources], which `pip install -e` does not read; install the
-    # path first so the package's own requirement is already satisfied.
-    log "nano-vllm (vendored)"
-    pip_install "$ENV_DIR" "$CHECKOUT/acestep/third_parts/nano-vllm"
-    # The package, editable, with the two pins the hosting log names:
-    # transformers 4.57 (5.x breaks the checkpoint loaders) and soundfile for
-    # the patched save path.
-    log "ace-step (editable) + transformers==4.57.6 + soundfile"
-    pip_install "$ENV_DIR" --extra-index-url "$TORCH_INDEX" \
-        -e "$CHECKOUT" "transformers==4.57.6" "soundfile>=0.13.1"
-fi
-
-# The client renders WAV and transcodes to ogg itself; the server's own
-# encoders go through torchcodec, which is what the patch routes around.
-need_cmd ffmpeg "the music command transcodes WAV to ogg with it"
-
-# ------------------------------------------------------------------ models --
-
-if [ -n "$ADOPT_CHECKPOINTS" ]; then
-    log "adopting checkpoints $CKPT"
-fi
-if [ "$NO_MODELS" = 1 ]; then
-    log "--no-models: skipping weights (doctor will say partial until they are there)"
-    mkdir -p "$CKPT"
-else
-    mkdir -p "$CKPT"
-    python_bin="$ENV_DIR/bin/python"
-    [ -x "$python_bin" ] || python_bin="$ENV_DIR/bin/python3"
-    fetch_args=(--dir "$CKPT")
-    [ "$ALL_MODELS" = 1 ] && fetch_args+=(--all)
-    log "fetching checkpoints into $CKPT"
-    # From the checkout: the fetcher's code sync imports the upstream package,
-    # which an adopted env may only resolve through the working directory.
-    (cd "$CHECKOUT" && PYTHONNOUSERSITE=1 "$python_bin" "$here/fetch_models.py" "${fetch_args[@]}")
-fi
-
-# ------------------------------------------------------------------- links --
-
-link_env "$ENV_DIR"
-link_checkout "$CHECKOUT"
-link_extra checkpoints "$CKPT"
-
-write_installed_json
-run_probe
-log "done — forge gen music starts the server on first use; stop it with --stop-server"
+# No .env, no .checkout, no installed.json with a python and a torch in it:
+# this backend runs no interpreter, and a receipt claiming one would be the
+# first thing to read as a lie. What proves it works is `forge doctor`,
+# which asks the host.
+log "done — the file is at checkpoints/$WEIGHTS_LOCAL; just doctor says whether the host lists it"
