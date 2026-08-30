@@ -811,8 +811,18 @@ the pits, an inflated skull, big hands and boots — and the prompt left it
 out. Three things follow for the reference door: the style prefix carries
 the guide's volume sentences, not only its texture sentence; the pose image
 leaves air under the feet and the keyer runs on the drawn PNG before a lift;
-and the lift gets a gate the fit gate is not — posed bounds against rest
-stature (rig check already prints them: 2.38 × 2.79 × 2.83 m against
-1.80 m is the refusal) and a sliver check on the seven views. The strip on
+and the lift gets a gate the fit gate is not — a sliver check on the
+prepared mesh (limb cross-sections against the profile's bone lengths, or
+the seven views read for a limb thinner than a bone), and *not* posed
+bounds against stature: the same evening a good body printed 2.56 × 2.83 ×
+2.52 m on the walk because a walk travels, so that number does not separate
+them. The strip on
 the real body is the judge of a new door, not a rest-pose sheet; the spike
-read the sheet and called it fine. 2026-08-30.
+read the sheet and called it fine. The same door with the guide's volume
+sentences in the prompt (seed 7, `out/spike/v2/`) lifted, skinned, walked
+and shot correctly the same evening — the chain was never the fault. Two
+wording facts from that re-roll: "an inflated skull" draws a literal skull
+in four of four, so the prefix says "a large head"; and a faint contact
+shadow still passes the keyer as a detached island above the 0.025 m dust
+threshold and rides a foot bone, so the keyer pre-check on the drawn PNG is
+a gate, not a convenience. 2026-08-30.
