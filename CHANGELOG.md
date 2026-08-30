@@ -1,5 +1,98 @@
 # Changelog
 
+## Unreleased
+
+**Forge 2, Phase 1 — the daemon.** One queue owns the card, both doors are
+its clients, and the audio models move off their own environments onto a
+ComfyUI host the toolkit drives but does not schedule. The plan is
+`designs/forge2.md`, the daemon's contract `designs/serve.md`, the reasons
+`designs/decisions.md`, the install traps `designs/hosting.md` — all dated.
+
+### Added
+
+- **`forge serve`** — the daemon: one FIFO at concurrency 1, a job table
+  written atomically under `out/serve/`, and a card lease that is an
+  exclusive `flock(2)` rather than a pidfile, so the kernel drops it when
+  the holder dies. Two executors behind it: `env` (today's per-backend
+  launcher, driven in-process) and `comfy` (HTTP to the host). A loopback
+  HTTP API with a bearer token and a 0600 endpoint file, with the MCP
+  router nested at `/mcp`.
+- **Jobs at both doors.** `forge gen` submits and follows the log with the
+  exit codes it always had (`^C` still cancels and gives the card back),
+  and runs in-process — taking the same lock, writing the same row — when
+  no daemon is up. Terminal doors: `forge jobs`, `forge job show|log|cancel`,
+  `forge stop`; `just serve`, `just stop`, `just jobs`, `just job-log`.
+- **The three questions.** `forge.toml` grows `[make]` (six kinds chosen by
+  what you make, never by model name) and `[hardware]` (`tier` =
+  `full | lean | fake`, detected and overridable; `comfy_url`). `forge init`
+  asks them once on a TTY and states its assumptions where there is no
+  terminal. The kind → backend map lives once, in `MakeKind::backends`.
+- **One screen before a byte downloads.** `forge setup` prints the
+  backends, their disk, the total and every licence in full, asks once,
+  takes `--yes <id>` by name, refuses a bare `--yes`, and appends what was
+  accepted to `$FORGE_BACKENDS_HOME/licences.json` beside the installs.
+- **Doctor's fifth word.** `off` for a kind `[make]` did not choose —
+  never probed, never a reason to exit 1 — plus `executor` and `chosen`
+  columns, one shared `GET /object_info` for every comfy row, and exit 1
+  only while a *chosen* backend is not `ok`.
+- **MCP: eighteen tools over two transports.** `init_project`, `licences`,
+  `setup`, `doctor`, `status`, `list_runs`, `wait`, `cancel` join the
+  existing surface; `generate_audio` returns a job. `forge mcp` in a
+  directory with no `forge.toml` now serves a session — `init_project`,
+  `licences` and a doctor that says "no project here" — instead of exiting
+  before the handshake.
+- **New gate `mcp-session`** — one scripted fake-tier session
+  (`init_project → setup → doctor → generate_audio → wait → inspect_audio →
+  promote_audio → verify`) run twice, over stdio and over the daemon's
+  streamable HTTP. `just ci` runs it; so does GitHub.
+- `forge_record: 2` — `backend` gains `executor`, and a comfy job records
+  `comfyui_commit`, `workflow_sha256` and `packs`. `backend.toml` gains
+  `executor = "env" | "comfy"`.
+- `backends/comfy` — ComfyUI as a systemd `--user` unit with a committed
+  snapshot, `extra_model_paths.yaml` over the weight caches, pinned packs
+  and tracked API-format workflow templates.
+
+### Changed
+
+- **Audio runs on the host.** ACE-Step 1.5 native; MOSS-TTS,
+  MOSS-VoiceGenerator and MOSS-SoundEffect through TTS-Audio-Suite at a
+  pinned commit. Every audio verb now transcodes to WAV (the host writes
+  FLAC) and holds its own output to `forge audio inspect`'s three checks —
+  silence, full-scale runs, a truncated tail — *before* a record is
+  written, refusing with exit 5 and the measurement in the message.
+- Both doors resolve a generate's backend from one map, build their queue
+  options from the project (so `tier = "fake"` reaches the queue instead of
+  relying on an environment variable), and call the card back against the
+  card's own idle floor rather than a number an earlier job's leftovers are
+  inside of.
+- Read verbs (`forge jobs`, `forge job show|log`, `forge serve --status`)
+  open the store with no worker and reconcile nothing; only the daemon
+  adopts rows a previous process left. `forge stop` cancels its child by
+  recorded pid and waits for the terminal row.
+- The comfy release ladder stops at step 1 when the host does not answer:
+  no restart, no withheld lease, `vram_after_gb: null`. `forge gpu --free`
+  clears a withholding only where it measured a return.
+- An installer is handed `--yes` only for the licence ids this machine's
+  receipt covers, and the comfy host is told which model group the chosen
+  kinds need — a music project no longer pulls 73.7 GB of image weights.
+
+### Removed
+
+- The `acestep`, `moss_sfx` and `moss_tts` virtualenvs, their probes, and
+  ACE-Step's resident server with its pidfile, `--stop-server` and
+  soundfile patch. `forge gpu --free` is the door for the card now.
+
+### Known limitations
+
+- `forge gen speech` cannot make a line: MOSS-TTS 1.7B does not run under
+  the host's transformers 5 at this pin and the pack answers with silence,
+  which the new gate refuses. `backends/moss_tts`'s notice names the pin
+  that would lift it.
+- `forge gen music` renders but does not promote: ACE-Step 1.5 turbo comes
+  off the host at 0.0 dBFS and the clipping gate refuses it.
+- The MCP `setup` plans, gates and records; it does not install. Its
+  description says so.
+
 ## 0.1.0 — 2026-08-23
 
 The first cut: the asset pipeline one game grew over three weeks, distilled

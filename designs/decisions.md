@@ -702,3 +702,94 @@ one-way rule applied to a dependency. What the experiment bought is the
 entry in `hosting.md` naming both API breaks by name, which is the thing a
 future pin bump can be checked against. Investigate in the checkout; ship
 only from the pin. 2026-08-30.
+
+**The queue lives in the daemon, and a model host is not a scheduler.**
+`forge serve` owns the FIFO, the job table and the card lease; ComfyUI owns
+the graphs it runs well. The alternative was on the table and was cheaper:
+ComfyUI already has a worker thread, a queue endpoint and a history, so a
+toolkit that spoke only to it would have needed no daemon at all. **Why
+not:** every one of this toolkit's generators would then have to be a node
+pack, and the research the plan was written on says they are not — TRELLIS.2
+wrappers carry the same CUDA build fight with Windows-first wheels,
+SkinTokens packs are weeks old, one of three HY-Motion packs already 404s,
+and ARDY has no node at all. A queue that only schedules half the work
+schedules nothing: the card would be held by an `env` lift the host had
+never heard of. So the properties a user actually asked for — one queue, one
+card, never two generates, a job you can watch, a remote card — belong to the
+process that can see both executors, and the host is demoted to what it is
+good at, a place to run a graph. The consequence to hold on to is that
+**ComfyUI is a backend of the daemon and never its scheduler**, so nothing in
+the toolkit may depend on a node pack existing for a UX property to hold.
+2026-08-30.
+
+**A generate is a job, and both doors are clients of the same one.** `forge
+gen` submits and follows a log; the MCP `generate_audio` returns a job id and
+the literal `wait` call to make next. Neither runs a generator in the caller's
+own process when a daemon is up. **Why:** a lift is minutes and a sweep is
+longer, and a tool call that blocks for minutes is a tool call an agent's
+client times out, retries and thereby double-books the card — the risk table
+names it, "a generate blocks an MCP call for minutes", and jobs are what
+retires it. The second reason is bigger than the first: the two doors were
+racing. A terminal `just character` and an agent's `generate_mesh` are two
+processes reaching for one 24 GB card, and the only way they can be made to
+take turns is if the thing they both talk to is the same queue holding the
+same `flock`. Jobs are the shape that makes "one queue" observable — a row
+with a state, an exit, a log and a record path, which `status` and `list_runs`
+read after a context reset instead of the agent remembering. And the door that
+asked is the one that knows: a shell that says `FORGE_FAKE=1` gets a
+placeholder even when the daemon it submitted to was started from another
+terminal, because a queue option is carried by the submission and not by the
+daemon's environment. 2026-08-30.
+
+**The door for a mesh promote opens.** The first form of the MCP surface had
+`promote_clip` and `promote_audio` and, deliberately, no promote for a body or
+a model: a mesh was the thing an agent had to hand back to a human. Phase 2
+gives it `promote_body` and `promote_model`. **Why the rule goes:** the human
+was never absent — the harness that issues every one of these calls is a human
+in the loop, which is the same ground the older "no review queue" decision
+already stands on, and a rule that pretends otherwise only makes the agent ask
+a human to type the command the agent composed. What actually protects the
+library is not the doorman but the gates: the export gate (armature node,
+depth, rest pose, ≤ 4 influences, a self-contained container), `forge rig
+check` on the walk, and the refused taken name that must be told `overwrite`
+and then echoes what it replaced. All three run inside `promote_body`, and
+none of them is weaker for being called by an agent. **What stays
+un-automatable is a different thing entirely** — accepting a licence, which is
+why `setup`'s `accept` is an explicit argument naming ids that `licences`
+returned in full, and why the DINOv3 token stops flat at a human. The eye is
+the other: "look before you promote" is not a gate and never was, and it is
+the reason `render_model` exists beside the promote rather than instead of it.
+2026-08-30.
+
+**Nothing measured is nothing claimed, in both directions.** The comfy release
+ladder reads `/system_stats`, and when the host does not answer at all the
+ladder stops at step 1: no `POST /free`, no `systemctl restart`, no lease
+withheld, `vram_after_gb: null` and a line saying the host did not answer.
+`forge gpu --free` clears a withholding only when it *measured* a return
+against the card's own floor. **Why:** driving `forge gpu --free` at a dead
+port found both halves of the same error. Unreachable had been falling through
+to "the card did not come back", so a bogus URL restarted the developer's
+ComfyUI unit and then withheld the lease — which would have blocked every card
+job, an `env` lift that never touches the host included, until somebody ran
+`forge gpu --free`, which cannot answer either while the service is down. And
+the same run printed "the card is back; any withheld lease is cleared" on the
+strength of no measurement at all. A failed reading is not a bad reading: it
+licenses neither the alarm nor the all-clear, and the row says `null`, which
+is what `null` has always meant here. 2026-08-30.
+
+**Three venvs retire because the host is already installed, not because a
+host is better.** ACE-Step, MOSS-TTS and MOSS-SoundEffect lost their own
+environments, their probes and — with the ACE-Step server — a pidfile, a
+`--stop-server` and a soundfile patch; they run on the ComfyUI unit now,
+ACE-Step native and the three MOSS models through TTS-Audio-Suite. **Why
+these three and not the rest:** the measured cost of putting the pack on the
+host was zero — 58 nodes registered on the first restart with not one pip
+installed and torch untouched — while TRELLIS.2, ARDY and SkinTokens each
+want an interpreter, a CUDA build and patches of their own, which is exactly
+the fight the `env` executor exists to keep out of one process. A backend
+moves onto the host when the host already hosts it well, one backend at a
+time, with the pack pinned and its snapshot committed. What the move costs is
+recorded honestly rather than argued away: the pack ships no unload node at
+this pin, so `unload_node` is `null` for all three, `POST /free` does nothing
+for what they loaded, and `systemctl --user restart forge-comfy` is the only
+lever that returns their card — measured, 4.4 s. 2026-08-30.

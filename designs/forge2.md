@@ -355,9 +355,9 @@ also bought: the keyer, not the prompt, decides whether a drawn reference is
 liftable, and half the repository's `vram_gb` figures were budgets reading as
 facts. Phases 1–4 stand as written.
 
-**Phase 1 — the daemon (2 weeks). Landed 2026-08-30, and audited the same
-day.** `forge.toml` carries `[make]` and `[hardware]`; `forge init` asks the
-three questions on a TTY and takes the defaults with one line of assumptions
+**Phase 1 — the daemon (2 weeks). Landed, audited and closed
+2026-08-30.** `forge.toml` carries `[make]` and `[hardware]`; `forge init`
+asks the three questions on a TTY and takes the defaults with one line of assumptions
 where there is none; `forge setup` prints one screen — backends, disk, total,
 every licence in full — before a byte downloads, refuses a bare `--yes`, and
 appends acceptances to `$FORGE_BACKENDS_HOME/licences.json`; doctor has its
@@ -389,7 +389,25 @@ and the clipping gate is right to refuse it. The MCP `setup` tool also
 **plans and gates rather than installing** — `serve.md` §7 has it returning
 a job, and the queue schedules `forge gen` command lines, so an install
 executor is a decision of its own; the tool's description says what it does
-instead of what the plan said it would.
+instead of what the plan said it would. One fix came after the audit and
+belongs to the same shape: the comfy release ladder now stops at step 1 when
+the host does not answer, and `forge gpu --free` clears a withheld lease only
+where it measured one back — nothing measured is nothing claimed, in both
+directions.
+
+**What did not ship, said plainly.** The two audio verbs above: speech makes
+no line at this pin, music renders and cannot promote. The MCP `setup` gates
+and plans rather than installing, so there is no install executor. The tool
+surface is **eighteen**, not the thirty-two the table above lists:
+`inspect_record`, `list_backends`, `design_voice`, `import_rig`, `audit`
+and `manifest_check` are Phases 2 to 4, and `mcp-check` is pinned at
+eighteen until they land. No mesh moved: `generate_mesh`, `prepare_body`,
+`skin_body`, `promote_body` and `promote_model` are Phase 2, and SkinTokens is still only the Phase 0 spike
+with its checkout, patches and probe committed. No reference is drawn here
+yet — `backends/qwen_image` is Phase 3, and every reference in the sample
+library still lives on a `SOURCES.md` row. `forge top` does not exist. And
+nothing under `assets/` was rebaked, which is the promise this plan opened
+with.
 
 **Phase 1, as planned —** `forge serve`: the queue, the card
 lock, the job table, two executors. `env` is today's launcher driven
