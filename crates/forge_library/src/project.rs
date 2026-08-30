@@ -409,8 +409,18 @@ impl Project {
 
     /// Every backend the chosen kinds need — what doctor is told to hold to
     /// `ok`, and what `setup` installs. See [`MakeKinds::backends`].
+    ///
+    /// **Tier `fake` chooses nothing.** `FORGE_FAKE=1` makes every
+    /// `forge gen` write a branded placeholder through the same doors and
+    /// validators, so no backend is needed and none is held to `ok`: every
+    /// doctor row reads `off` and doctor exits 0. That is how the gate runs
+    /// green on a machine with no card, and it is a first-class answer to
+    /// the second question rather than a way of switching the check off.
     #[must_use]
     pub fn chosen_backends(&self) -> Vec<&'static str> {
+        if self.tier().is_fake() {
+            return Vec::new();
+        }
         self.make.backends()
     }
 
@@ -1281,6 +1291,217 @@ pub fn required_licences(kinds: &[MakeKind]) -> Vec<&'static Licence> {
         .collect()
 }
 
+// ------------------------------------------------------------- the one screen --
+
+/// What `setup` would do, worked out **before a byte downloads**: per chosen
+/// kind the backends it needs, what they cost on disk, the total, and every
+/// licence fact they carry.
+///
+/// One screen, one place: the CLI prints it and asks once; the MCP `setup`
+/// tool returns the same thing and refuses until `accept` names every id
+/// that needs one. Neither invents a number — the disk figures come from
+/// [`BACKEND_NEEDS`], each with the file it was read out of.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetupPlan {
+    /// The kinds this plan covers, in [`MakeKind::ALL`] order.
+    pub kinds: Vec<MakeKind>,
+    /// Every backend they need, deduplicated, in [`BACKEND_NEEDS`] order.
+    pub backends: Vec<&'static BackendNeed>,
+    /// Every licence fact those backends carry, in [`LICENCES`] order.
+    pub licences: Vec<&'static Licence>,
+    /// The register this project runs in — it changes which weights are
+    /// fetched, so it belongs on the bill.
+    pub tier: Tier,
+}
+
+impl SetupPlan {
+    /// The plan for a set of kinds at a tier.
+    #[must_use]
+    pub fn for_kinds(kinds: &[MakeKind], tier: Tier) -> Self {
+        let mut make = MakeKinds::none();
+        for kind in kinds {
+            make.set(*kind, true);
+        }
+        let names = make.backends();
+        Self {
+            kinds: make.chosen(),
+            backends: BACKEND_NEEDS
+                .iter()
+                .filter(|need| names.contains(&need.name))
+                .collect(),
+            licences: licences_for(kinds),
+            tier,
+        }
+    }
+
+    /// The plan for what a project's `[make]` chose.
+    #[must_use]
+    pub fn for_project(project: &Project) -> Self {
+        Self::for_kinds(&project.make.chosen(), project.tier())
+    }
+
+    /// What the whole thing costs on disk, in GB.
+    #[must_use]
+    pub fn total_disk_gb(&self) -> f64 {
+        self.backends.iter().map(|need| need.disk_gb).sum()
+    }
+
+    /// The licences that must be accepted by name before anything installs.
+    #[must_use]
+    pub fn required(&self) -> Vec<&'static Licence> {
+        self.licences
+            .iter()
+            .copied()
+            .filter(|licence| licence.needs_accept)
+            .collect()
+    }
+
+    /// The required licence ids that are neither already on this machine's
+    /// receipt nor named in `accepted`. Empty means setup may proceed.
+    #[must_use]
+    pub fn missing_accepts(
+        &self,
+        receipt: &licences::Receipt,
+        accepted: &[String],
+    ) -> Vec<&'static Licence> {
+        self.required()
+            .into_iter()
+            .filter(|licence| {
+                !receipt.has(licence.id) && !accepted.iter().any(|id| id == licence.id)
+            })
+            .collect()
+    }
+
+    /// **The one screen**, printed before a byte downloads: what each kind
+    /// needs, what it costs, the total, and every licence in full.
+    #[must_use]
+    pub fn screen(&self) -> String {
+        let mut out = String::new();
+        if self.kinds.is_empty() {
+            return String::from(
+                "nothing is chosen, so there is nothing to install. `forge init --make \
+                 props,characters,clips` (or edit [make] in forge.toml) says what you \
+                 make here.\n",
+            );
+        }
+        let _ = writeln!(
+            out,
+            "setup — what this installs, before a byte downloads. tier {} ({}).\n",
+            self.tier,
+            self.tier.blurb()
+        );
+        if self.tier.is_fake() {
+            let _ = writeln!(
+                out,
+                "  On tier fake nothing below is *needed*: every generator writes a branded\n\
+                 \x20 placeholder through the same doors and validators, and doctor reads every\n\
+                 \x20 row `off`. Install it anyway if a card is coming.\n"
+            );
+        }
+        for kind in &self.kinds {
+            let _ = writeln!(out, "  {} — {}", kind.as_str(), kind.blurb());
+            for need in self
+                .backends
+                .iter()
+                .filter(|need| kind.backends().contains(&need.name))
+            {
+                let _ = writeln!(
+                    out,
+                    "      {:<12} {:>6.1} GB  [{}]  {}",
+                    need.name,
+                    need.disk_gb,
+                    need.executor.as_str(),
+                    need.disk_note
+                );
+            }
+        }
+        let hosts: Vec<&&BackendNeed> = self
+            .backends
+            .iter()
+            .filter(|need| {
+                !self
+                    .kinds
+                    .iter()
+                    .any(|kind| kind.backends().contains(&need.name))
+            })
+            .collect();
+        if !hosts.is_empty() {
+            let _ = writeln!(out, "  hosts — what those run inside");
+            for need in hosts {
+                let _ = writeln!(
+                    out,
+                    "      {:<12} {:>6.1} GB  [{}]  {}",
+                    need.name,
+                    need.disk_gb,
+                    need.executor.as_str(),
+                    need.disk_note
+                );
+            }
+        }
+        let _ = writeln!(
+            out,
+            "\n  total        {:>6.1} GB under ${} (default ~/{}), plus the Hugging Face cache.",
+            self.total_disk_gb(),
+            licences::BACKENDS_HOME_ENV,
+            licences::DEFAULT_BACKENDS_HOME
+        );
+        let _ = writeln!(
+            out,
+            "  Every figure above is disk, read out of the file named beside it. None of \
+             them is a VRAM number: a backend's vram_gb is a budget and is never quoted \
+             as a measurement."
+        );
+        if self.licences.is_empty() {
+            let _ = writeln!(out, "\nNo licence here asks anything of you.");
+            return out;
+        }
+        let _ = writeln!(
+            out,
+            "\n{} licence fact(s) come with that. Read them; they travel with every asset \
+             you make.\n",
+            self.licences.len()
+        );
+        for licence in &self.licences {
+            let _ = writeln!(
+                out,
+                "── {} ({}) — {} ────",
+                licence.id,
+                licence.backend,
+                if licence.needs_accept {
+                    "needs your yes"
+                } else {
+                    "told, not asked"
+                }
+            );
+            let _ = writeln!(out, "{}", licence.terms);
+            let _ = writeln!(out, "  Full text: {}\n", licence.full_text);
+        }
+        out
+    }
+
+    /// The refusal an agent gets when `accept` does not name every id: the
+    /// ids that are missing, and the one sentence that says what to do.
+    ///
+    /// A tool that does not exist, rather than a prompt asking an agent to
+    /// behave: the call cannot succeed until the ids are in it.
+    #[must_use]
+    pub fn refusal(missing: &[&'static Licence]) -> String {
+        let ids: Vec<&str> = missing.iter().map(|licence| licence.id).collect();
+        format!(
+            "refused: nothing was installed. {} licence(s) here need accepting by name, and \
+             this call named none of them: {}.\n{}\ncall licences first and pass each id in \
+             accept",
+            missing.len(),
+            ids.join(", "),
+            missing
+                .iter()
+                .map(|licence| format!("  {} — {} ({})", licence.id, licence.name, licence.backend))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
+}
+
 /// The licence receipt: who accepted what, when, and at which door.
 ///
 /// It lives at `$FORGE_BACKENDS_HOME/licences.json` — **beside the installs,
@@ -1669,6 +1890,11 @@ mod tests {
         assert_eq!(project.tier(), Tier::Fake);
         assert_eq!(
             project.chosen_backends(),
+            Vec::<&str>::new(),
+            "tier fake chooses nothing: every generator writes a placeholder"
+        );
+        assert_eq!(
+            make.backends(),
             vec!["comfy", "moss_sfx", "moss_tts"],
             "anything comfy adds the host, and no mesh kind adds no Blender"
         );
@@ -1776,6 +2002,64 @@ mod tests {
         assert!(error.to_string().contains("full"), "{error}");
         let error = MakeKinds::parse_list("props,widgets").expect_err("refuse");
         assert!(error.to_string().contains("characters"), "{error}");
+    }
+
+    #[test]
+    fn the_one_screen_names_every_backend_its_disk_and_every_licence_in_full() {
+        let plan = SetupPlan::for_kinds(&[MakeKind::Characters], Tier::Full);
+        let screen = plan.screen();
+        for name in ["trellis2", "skintokens", "qwen_image", "comfy", "blender"] {
+            assert!(screen.contains(name), "{name} missing from:\n{screen}");
+        }
+        assert!(screen.contains("total"), "{screen}");
+        assert!(
+            screen.contains("non-commercially"),
+            "the operative clause is quoted, not summarised:\n{screen}"
+        );
+        assert!(screen.contains("Full text: https://github.com/NVlabs/nvdiffrast"));
+        assert!(
+            screen.contains("is a budget and is never quoted as a measurement"),
+            "{screen}"
+        );
+        assert!(
+            (plan.total_disk_gb() - 58.6).abs() < 0.05,
+            "{}",
+            plan.total_disk_gb()
+        );
+
+        // The refusal names the ids and the sentence that fixes the call.
+        let receipt = licences::Receipt::default();
+        let missing = plan.missing_accepts(&receipt, &[]);
+        assert_eq!(
+            missing.iter().map(|l| l.id).collect::<Vec<_>>(),
+            vec!["nvdiffrast", "dinov3"]
+        );
+        let refusal = SetupPlan::refusal(&missing);
+        assert!(refusal.contains("nvdiffrast"), "{refusal}");
+        assert!(refusal.contains("dinov3"), "{refusal}");
+        assert!(
+            refusal.contains("call licences first and pass each id in accept"),
+            "{refusal}"
+        );
+        assert!(refusal.contains("nothing was installed"), "{refusal}");
+
+        // Accepting one leaves the other named, and an acceptance already on
+        // the machine's receipt counts.
+        let missing = plan.missing_accepts(&receipt, &[String::from("nvdiffrast")]);
+        assert_eq!(
+            missing.iter().map(|l| l.id).collect::<Vec<_>>(),
+            vec!["dinov3"]
+        );
+
+        // sfx asks nothing: its one licence fact is told, not asked.
+        let plan = SetupPlan::for_kinds(&[MakeKind::Sfx], Tier::Fake);
+        assert!(plan.missing_accepts(&receipt, &[]).is_empty());
+        assert!(plan.screen().contains("GPL-3.0-or-later"));
+        assert!(
+            SetupPlan::for_kinds(&[], Tier::Fake)
+                .screen()
+                .contains("nothing is chosen")
+        );
     }
 
     #[test]

@@ -28,7 +28,7 @@
 //! reads `off` and doctor exits 0.
 
 use forge_library::backends::{BackendState, Backends, KNOWN};
-use forge_library::project::{BLENDER_BACKEND, COMFY_BACKEND, MakeKind};
+use forge_library::project::{BLENDER_BACKEND, COMFY_BACKEND, MakeKind, Tier};
 use forge_library::{Catalog, Kind, Project, manifest};
 use serde_json::{Value, json};
 
@@ -99,7 +99,7 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     let chosen = project.chosen_backends();
     let chosen_list = chosen.join(",");
     let comfy_url = project.hardware.comfy_url.clone();
-    let off_flags: Vec<String> = off_rows(&backends, &chosen);
+    let off_flags: Vec<String> = off_rows(&backends, &chosen, project.tier());
     let mut doctor_call: Vec<&str> = vec![
         "doctor",
         "--chosen",
@@ -130,7 +130,14 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     if let Some(report) = &gen_report {
         probed_lines(report, &backends.origin, &mut lines, &mut not_ok);
     } else {
-        unprobed_lines(&backends, &chosen, args.quick, &mut lines, &mut not_ok);
+        unprobed_lines(
+            &backends,
+            &chosen,
+            project.tier(),
+            args.quick,
+            &mut lines,
+            &mut not_ok,
+        );
     }
     if let Some(root) = &toolkit {
         lines.push(format!("toolkit   {} (python/forge_gen)", root.display()));
@@ -195,18 +202,27 @@ const KNOWN_ORDER: [&str; 5] = ["0", "1", "2", "3", "4"];
 /// The reason names the line in `forge.toml` that turned it off, because
 /// that is where the fix is. A host row — Blender, the comfy service — has
 /// no `[make]` line of its own and says which kind would have brought it.
-fn off_rows(backends: &Backends, chosen: &[&str]) -> Vec<String> {
+fn off_rows(backends: &Backends, chosen: &[&str], tier: Tier) -> Vec<String> {
     backends
         .backends
         .iter()
         .map(|backend| backend.name.as_str())
         .filter(|name| !chosen.contains(name))
-        .map(|name| format!("{name}={}", off_reason(name)))
+        .map(|name| format!("{name}={}", off_reason(name, tier)))
         .collect()
 }
 
 /// Why one backend is off, in the words the project uses.
-fn off_reason(name: &str) -> String {
+fn off_reason(name: &str, tier: Tier) -> String {
+    if tier.is_fake() {
+        // The tier answers before [make] does: on `fake` nothing is
+        // installed and nothing needs to be, because every generator writes
+        // a branded placeholder through the same validators.
+        return String::from(
+            "[hardware] tier = \"fake\" — every generator writes a placeholder, so no \
+             backend is needed",
+        );
+    }
     let kinds: Vec<MakeKind> = MakeKind::ALL
         .into_iter()
         .filter(|kind| kind.backends().contains(&name))
@@ -214,7 +230,7 @@ fn off_reason(name: &str) -> String {
     if kinds.is_empty() {
         return match name {
             COMFY_BACKEND => String::from("no chosen kind runs in the comfy executor"),
-            BLENDER_BACKEND => String::from("[make] props = false and characters = false"),
+            BLENDER_BACKEND => String::from("[make] props = false and [make] characters = false"),
             _ => String::from("no chosen kind needs it"),
         };
     }
@@ -269,6 +285,7 @@ fn probed_lines(report: &Value, origin: &str, lines: &mut Vec<String>, not_ok: &
 fn unprobed_lines(
     backends: &Backends,
     chosen: &[&str],
+    tier: Tier,
     quick: bool,
     lines: &mut Vec<String>,
     not_ok: &mut Vec<String>,
@@ -289,7 +306,7 @@ fn unprobed_lines(
                 "  {:<10} {:<8} off — {}",
                 backend.name,
                 "off",
-                off_reason(&backend.name)
+                off_reason(&backend.name, tier)
             ));
             continue;
         }
@@ -573,14 +590,18 @@ mod tests {
 
     #[test]
     fn an_off_reason_names_the_kind_that_would_have_chosen_it() {
-        assert_eq!(off_reason("acestep"), "[make] music = false");
+        assert_eq!(off_reason("acestep", Tier::Full), "[make] music = false");
         assert_eq!(
-            off_reason("trellis2"),
+            off_reason("trellis2", Tier::Full),
             "[make] props = false and [make] characters = false"
         );
         assert_eq!(
-            off_reason(COMFY_BACKEND),
+            off_reason(COMFY_BACKEND, Tier::Full),
             "no chosen kind runs in the comfy executor"
+        );
+        assert!(
+            off_reason("ardy", Tier::Fake).contains("tier = \"fake\""),
+            "the tier answers before [make] does"
         );
     }
 
