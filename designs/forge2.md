@@ -473,7 +473,7 @@ commercial stance ever changes. A second, non-humanoid profile.
 | SkinTokens skin-only is a demo mode with no numbers | the whole point | the Phase 0 spike on a real lift, judged on the walk strip; if it loses to bone heat on plated bodies, the ladder stays and this plan shrinks to the daemon and the references |
 | SkinTokens has no seed | a rig is unrepeatable | it claims integrity, like a body; the record names the output hash and the commit |
 | The encoder licence question | shipping | `skinner` in the record; doctor warns; it runs in its own process already |
-| Wrapper packs bypass ComfyUI's memory manager | the card stays held | every template ends in the pack's unload node; the daemon's card lock reads `/system_stats` and restarts the unit when free VRAM does not return |
+| Wrapper packs bypass ComfyUI's memory manager | the card stays held | measured 2026-08-30: TTS-Audio-Suite ships no unload node at its pin and `POST /free` does not return what it loaded; the daemon's card lease reads `/system_stats` against the host's floor and restarts the unit (4.4 s) when free VRAM does not return |
 | Node-result caching returns a stale output | a "re-roll" that never ran | `cached: true, same_as` on the job; the seed is always in the template |
 | A generate blocks an MCP call for minutes | every agent session | jobs; `wait` has a ceiling; `mcp-session` in CI |
 | An agent accepts a licence nobody read | every project | `setup` refuses without `accept`; `licences` returns the text; the receipt names who |

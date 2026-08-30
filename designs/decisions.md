@@ -793,3 +793,26 @@ recorded honestly rather than argued away: the pack ships no unload node at
 this pin, so `unload_node` is `null` for all three, `POST /free` does nothing
 for what they loaded, and `systemctl --user restart forge-comfy` is the only
 lever that returns their card — measured, 4.4 s. 2026-08-30.
+
+**A reference that passes every gate can still lift to junk, and the fit
+gate cannot know.** The first in-project reference (Qwen-Image seed 42, the
+courier, drawn with the style guide's "flat matte, lighting painted in,
+posterized" line and nothing else from the guide) went reference → lift →
+prepare → SkinTokens → export gate → rig check with every gate green — fit
+reach 1.21, 55 of 55 bones weighted, 0 unweighted, the walk driving 27 of
+27 with 0 orphaned — and on the walk strip the arm was a sliver stretched
+to 2.8 m on a 1.80 m body, the drawn contact shadow rode the feet as a
+slab, and the shins were broken strips (`out/spike/courier_qwen_check.png`
+beside `out/spike/refs/courier_qwen.png`). **Why:** a posterized picture
+with 25-pixel shins gives TRELLIS.2 no shading to lift volume from, and the
+fit gate measures reach and arm height, never limb volume. The guide
+already asks for what was missing — a baked key with occlusion painted into
+the pits, an inflated skull, big hands and boots — and the prompt left it
+out. Three things follow for the reference door: the style prefix carries
+the guide's volume sentences, not only its texture sentence; the pose image
+leaves air under the feet and the keyer runs on the drawn PNG before a lift;
+and the lift gets a gate the fit gate is not — posed bounds against rest
+stature (rig check already prints them: 2.38 × 2.79 × 2.83 m against
+1.80 m is the refusal) and a sliver check on the seven views. The strip on
+the real body is the judge of a new door, not a rest-pose sheet; the spike
+read the sheet and called it fine. 2026-08-30.
