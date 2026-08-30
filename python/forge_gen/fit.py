@@ -1,23 +1,26 @@
 """Fit a skeleton's bone LENGTHS to one body, from the skin weights it already carries.
 
-    python3 python/forge_gen/spike_fit.py out/grok/<name>/<name>.skinned.glb
+    python3 python/forge_gen/fit.py out/skin/<name>.skinned.glb
             [--names GLB | --map JSON] [--profile DIR]
-            [--out out/spike_fit/<stem>.fit.json] [--compare EARLIER.fit.json]
+            [--out out/skin/<stem>.fit.json] [--compare EARLIER.fit.json]
             [--min-support N] [--ratio-min 0.4] [--ratio-max 2.5]
-            [--asymmetry 0.10] [--no-symmetry] [--no-ground] [--json]
+            [--asymmetry-arms F] [--asymmetry-other F]
+            [--no-symmetry] [--no-ground] [--json]
 
 Stdlib plus numpy, nothing else: it runs under this repository's system
 ``python3`` (numpy 2.4 here), and under the ``skintokens`` or ``ardy``
 backend interpreters just as well. It opens no Blender and spends no card.
 
-**A Phase 2 spike, not a door.** ``designs/forge2.md`` proposes fitting the
-skeleton to the body instead of refusing the body: freeze what every clip in
-the library binds to — bone **names**, **hierarchy** and **rest rotations** —
-and let bone **lengths** belong to the body. This file is the measuring half
-of that proposal. It reads a mesh SkinTokens has already skinned and answers
-one question per bone: *how long is this bone on this body?* It writes
-numbers and refuses when the numbers are not trustworthy; turning them into
-an armature is ``python/forge_gen/blender/spike_fit_rig.py``.
+**A library, not a subcommand.** ``forge gen skin`` imports it and runs it
+once, between the two skinning passes; the ``__main__`` half below is how a
+report is re-read or re-made by hand, and there is no ``forge gen fit``. The
+decision it implements is the one ``decisions.md`` records on 2026-08-30:
+freeze what every clip in the library binds to — bone **names**,
+**hierarchy** and **rest rotations** — and let bone **lengths** belong to the
+body. It reads a mesh SkinTokens has already skinned and answers one question
+per bone: *how long is this bone on this body?* It writes numbers and refuses
+when the numbers are not trustworthy; turning them into an armature is
+``python/forge_gen/blender/fit_rig.py``.
 
 # What is frozen, and what one number per run may move
 
@@ -55,10 +58,10 @@ their boundary at the base of it, so the boundary is not an estimate of that
 joint, and the measured ratio ranged over 0.27–2.26 on three bodies while the
 neck run it now inherits stayed inside 0.7–1.1.
 
-**The landmark set is body-plan knowledge and belongs in ``profile.toml``**
-(a `[fit] landmarks` list beside the T-pose gate) the day this becomes a
-door. It is a table in this file because a spike may hard-code what a door
-must read.
+**The landmark set is body-plan knowledge and lives in ``profile.toml``**,
+as ``[fit] landmarks`` beside the T-pose gate: which joints a skinner can
+see is a fact about the body plan, not about this file, and a profile for
+something that is not a humanoid would name its own.
 
 # The estimator: the weight-product centroid of the transition band
 
@@ -83,7 +86,7 @@ alternatives:
   leaves its parent sideways.** The shoulder axis is three-quarters vertical
   and the whole arm lies to one side of it, so the arm's lateral extent adds
   to its projection and the crossing puts the shoulder *higher* than it is —
-  the exact error this spike exists to remove. The crossing is still computed
+  the exact error this estimator exists to remove. The crossing is still computed
   as ``split_length_m`` and reported as a cross-check, never used to place a
   joint.
 * **The support is an effective sample size**, ``(Σab)² / Σ(ab)²``, not a
@@ -92,15 +95,30 @@ alternatives:
 
 # Where the chain starts, and where it ends
 
-**The root.** ``Hips`` has no parent and so no run. Its height comes from the
-same estimator between ``Hips``' own weight and both leg subtrees at once:
-the two hip joints are mirrored, so their shared band centroid sits on the
-mirror plane at the height of the hip line, and ``Hips`` is placed the
-contract's own small offset (2.8 cm on the shipped profile) above it. Its
-**x and z stay the contract's** — ``rig.py``'s ``_normalize`` has already
-centred the mesh on the skeleton's mirror plane and on the root's depth, so
-there is nothing left there to measure, and a root-depth estimator is not
-something this spike has.
+**The root comes from geometry, not from the weights.** ``Hips`` has no
+parent and so no run, and the weight-product estimator that places a
+landmark well places a *centre* badly: on ``vex_runner``, a body that
+already ships, it put the hip line 5.8 cm high and asked for a
+``motion_scale`` of 1.0605. The weights know where a limb ends; they do not
+know where a body's middle is (``decisions.md``, 2026-08-30). So the root's
+height is read off the body itself — its own floor and its own height,
+which ``prepare`` has already established — as
+
+    root_y = lowest_y + reference_root_y * (highest_y - lowest_y) / reference_stature
+
+and its **x and z stay the contract's**, because ``prepare``'s
+``_normalize`` has already centred the mesh on the skeleton's mirror plane
+and on the root's depth and there is nothing left there to measure.
+
+Two cross-checks travel beside it and neither places anything: the **weight
+band's** own hip line (``hip_line_weights_m``), and the **crotch**
+(``crotch_y_m``, from ``fitgeom``). The crotch is reported rather than used
+because it was measured on five bodies and does not survive a garment: it
+reads 0.90 m on ``vex_runner`` against a contract hip line of 0.927, 0.73 m
+on ``courier_v2``, 0.47 m on the witch and 0.49 m on the warlock, whose
+robes close the gap between the legs entirely, and nothing on
+``courier_qwen``, which has no gap to find. A number that ranges over 43 cm
+across four bodies of the same stature is a picture of their clothes.
 
 **Feet on the ground.** The measured leg joints are pinned to the mesh, and
 on a body in a long robe the bands ride up: the witch's ankle measures 15 cm
@@ -121,9 +139,15 @@ symmetrising hides nothing.
 Exit 4 when
 
 * a measured run's ratio is outside ``[--ratio-min, --ratio-max]`` (0.4–2.5);
-* a left/right pair of runs disagrees by more than ``--asymmetry`` (10 %) of
-  their mean — bodies are mirrored, the estimator is not, so this measures
-  the estimator;
+* a left/right pair of runs disagrees by more than the profile's own
+  tolerance — bodies are mirrored, the estimator is not, so this measures the
+  estimator. **Two bands, because the arms are the hard case**: an arm
+  boundary inside a sleeve is a guess the two sides make differently, and the
+  worst measured on a body that walks is 28.7 % (the warlock's forearm)
+  against 16.2 % anywhere else (the hip, on two bodies). So
+  ``[fit] asymmetry_arms = 0.35`` on ``Arm->ForeArm`` and ``ForeArm->Hand``
+  and ``[fit] asymmetry_other = 0.20`` elsewhere. A single 10 % rule refuses
+  ``vex_runner``, which ships;
 * a measured run's support is below ``--min-support`` (8 effective vertices).
 
 Warnings, printed and never fatal, cover a grounding factor outside
@@ -135,8 +159,15 @@ alone, and the warning is where that shows up as a number.
 # Reading a second pass
 
 ``--compare`` takes an earlier fit report and prints how far every joint
-moved between the two. That is the design's convergence claim: skin → fit →
-re-skin → fit again, and the second fit should move nothing.
+moved between the two, through :func:`convergence`. That was the design's
+convergence claim — skin, fit, re-skin, fit again, and the second fit should
+move nothing — and the spike measured it false: the second pass walks the
+torso downhill 73.5 mm a time, because the weights are always made against
+the skeleton that was handed in. So **the door fits once**, there is no
+``--passes``, and :func:`convergence` survives as a library function with no
+caller, exercised by ``test_fit.py`` against the two frozen reports. That is
+how the evidence is kept without adding a knob whose only correct value is
+off.
 """
 
 from __future__ import annotations
@@ -158,29 +189,13 @@ from forge_gen.exit_codes import ForgeGenError, InputRejected, UsageError  # noq
 
 TAG = "fit"
 
-#: The joints the weights can see on a humanoid, in the shipped profile's
-#: names. Body-plan knowledge: this belongs in ``profile.toml`` the day this
-#: file becomes a door — see the module doc.
-LANDMARKS = (
-    "Neck",
-    "LeftArm",
-    "RightArm",
-    "LeftForeArm",
-    "RightForeArm",
-    "LeftHand",
-    "RightHand",
-    "LeftUpLeg",
-    "RightUpLeg",
-    "LeftLeg",
-    "RightLeg",
-    "LeftFoot",
-    "RightFoot",
-    "LeftToeBase",
-    "RightToeBase",
-)
-
 #: The chain below each hip that the grounding pass scales, per side.
 GROUNDED_CHAIN = ("Leg", "Foot", "ToeBase")
+
+#: The runs the wider symmetry band applies to, by the landmark they end on.
+#: An arm boundary inside a sleeve is the one the two sides disagree about;
+#: see the module doc for the two numbers and the bodies they came from.
+ARM_LANDMARKS = ("LeftForeArm", "RightForeArm", "LeftHand", "RightHand")
 
 #: A vertex enters the 1-D cross-check when either side owns this much of it.
 SPLIT_FLOOR = 0.3
@@ -218,7 +233,7 @@ def _accessor(document: dict, binary: bytes, index: int) -> np.ndarray:
     """One accessor as a (count, components) array; byteStride honoured."""
     accessor = document["accessors"][index]
     if "bufferView" not in accessor:
-        raise InputRejected("a sparse or zero-filled accessor is not something this spike reads")
+        raise InputRejected("a sparse or zero-filled accessor is not something this reader handles, and no exporter here writes one")
     view = document["bufferViews"][accessor["bufferView"]]
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
     columns = _COUNT[accessor["type"]]
@@ -328,39 +343,67 @@ def _split_length(points: np.ndarray, origin: np.ndarray, axis: np.ndarray, own:
 # ------------------------------------------------------------------- fit --
 
 
+def landmarks_of(prof: profile_mod.Profile) -> tuple[str, ...]:
+    """``[fit] landmarks`` — the joints this body plan's weights can see."""
+    try:
+        named = prof.section("fit")["landmarks"]
+    except (KeyError, profile_mod.ProfileError) as err:
+        raise UsageError(
+            f"{prof.dir}/profile.toml has no [fit] landmarks — the fit measures runs between named joints "
+            "and cannot guess which of a body plan's joints a skinner can see"
+        ) from err
+    return tuple(str(name) for name in named)
+
+
 def fit(points: np.ndarray, dense: np.ndarray, prof: profile_mod.Profile, *, min_support: float, symmetry: bool, ground: bool) -> dict:
     """Every bone's fitted length, in contract order. The gate is separate."""
+    from forge_gen import fitgeom
+
     names, parents, reference = _rest_world(prof)
     subtree = _subtrees(parents)
     index_of = {name: i for i, name in enumerate(names)}
     root = index_of[prof.root]
     fitted = np.array(reference, dtype=np.float64)
+    landmark_names = landmarks_of(prof)
+    stature = float(prof.section("bones")["reference_stature_m"])
 
-    # --- the root: height from the pelvis band, x and z from the contract ---
+    # --- the root: height from the body's own floor and height, x and z from
+    # the contract. The weight band is measured too, and reported, and never
+    # used to place anything: on vex_runner it sits 5.8 cm high. See the
+    # module doc.
+    geometry = fitgeom.measure(points)
     legs = [i for i, parent in enumerate(parents) if parent == root and reference[i][1] < reference[root][1]]
-    leg_mass = np.zeros(len(points)) if legs else np.zeros(len(points))
+    leg_mass = np.zeros(len(points))
     for leg in legs:
         leg_mass += dense[:, subtree[leg]].sum(axis=1)
     centroid, support, squareness = _centroid(points, dense[:, root], leg_mass)
     hip_line = float(np.mean([reference[leg][1] for leg in legs])) if legs else float(reference[root][1])
-    root_measured = centroid is not None and support >= min_support
-    if root_measured and centroid is not None:
-        fitted[root] = np.array([reference[root][0], centroid[1] + (reference[root][1] - hip_line), reference[root][2]])
+    height = float(geometry["highest_y"] - geometry["lowest_y"])
+    root_measured = height > 1e-6 and stature > 1e-6
+    if root_measured:
+        fitted[root] = np.array(
+            [reference[root][0], geometry["lowest_y"] + reference[root][1] * height / stature, reference[root][2]]
+        )
     root_row = {
         "bone": prof.root,
         "kind": "root",
+        "source_of_height": "geometry" if root_measured else "contract",
         "support": round(support, 1),
         "squareness": round(squareness, 3),
         "measured": bool(root_measured),
-        "hip_line_m": round(float(centroid[1]), 4) if centroid is not None else None,
+        "measured_height_m": round(height, 4),
+        "floor_y_m": geometry["lowest_y"],
+        "crotch_y_m": geometry["crotch_y"],
+        "hip_line_weights_m": round(float(centroid[1]), 4) if centroid is not None else None,
+        "hip_line_contract_m": round(hip_line, 4),
         "fitted_y_m": round(float(fitted[root][1]), 4),
         "reference_y_m": round(float(reference[root][1]), 4),
-        "note": "height from the pelvis band; x and z are the contract's",
+        "note": "height from this body's own floor and stature; x and z are the contract's; the weight band and the crotch are cross-checks",
     }
 
     # --- landmarks ---
     landmarks: dict[int, dict] = {}
-    for name in LANDMARKS:
+    for name in landmark_names:
         index = index_of.get(name)
         if index is None or parents[index] is None:
             continue
@@ -485,7 +528,9 @@ def fit(points: np.ndarray, dense: np.ndarray, prof: profile_mod.Profile, *, min
     return {
         "profile": prof.name,
         "root": prof.root,
-        "landmarks": list(LANDMARKS),
+        "landmarks": list(landmark_names),
+        "sources": {"limbs": "weights", "root": "geometry", "shoulder_line": "geometry", "ground": "geometry"},
+        "geometry": geometry,
         "symmetrised": bool(symmetry),
         "grounded": bool(ground),
         "runs": runs,
@@ -594,8 +639,40 @@ def _ground(
 # -------------------------------------------------------------- the gate --
 
 
-def gate(report: dict, *, ratio_min: float, ratio_max: float, asymmetry: float, min_support: float) -> tuple[list[str], list[str]]:
-    """The refusals this design would ship with, and the warnings it would print."""
+def symmetry_bands(prof: profile_mod.Profile, *, arms: float | None = None, other: float | None = None) -> dict:
+    """``{asymmetry_arms, asymmetry_other}`` from the profile, or from an override.
+
+    One reader of the two numbers, so the gate, the record's ``fit`` block and
+    every message that quotes them cannot drift apart.
+    """
+    section = prof.section("fit")
+    return {
+        "asymmetry_arms": float(section["asymmetry_arms"]) if arms is None else float(arms),
+        "asymmetry_other": float(section["asymmetry_other"]) if other is None else float(other),
+    }
+
+
+def asymmetry_band(end: str, *, asymmetry_arms: float, asymmetry_other: float) -> float:
+    """How far a left/right pair ending on ``end`` may disagree.
+
+    Two bands, not one: see the module doc. The arm runs are the ones whose
+    boundary lives inside a sleeve, and a single tolerance tight enough to
+    mean anything elsewhere refuses the body that ships. Keyed the way
+    :func:`symmetry_bands` returns them, so the two are used together.
+    """
+    return asymmetry_arms if end in ARM_LANDMARKS else asymmetry_other
+
+
+def gate(
+    report: dict,
+    *,
+    ratio_min: float,
+    ratio_max: float,
+    asymmetry_arms: float,
+    asymmetry_other: float,
+    min_support: float,
+) -> tuple[list[str], list[str]]:
+    """The refusals this design ships with, and the warnings it prints."""
     problems: list[str] = []
     warnings: list[str] = []
     runs = {run["end"]: run for run in report["runs"]}
@@ -622,10 +699,12 @@ def gate(report: dict, *, ratio_min: float, ratio_max: float, asymmetry: float, 
         if abs(mean) <= 1e-6:
             continue
         gap = abs(run["ratio_measured"] - mirror["ratio_measured"]) / abs(mean)
-        if gap > asymmetry:
+        band = asymmetry_band(end, asymmetry_arms=asymmetry_arms, asymmetry_other=asymmetry_other)
+        if gap > band:
+            where = "an arm" if end in ARM_LANDMARKS else "a mirrored body"
             problems.append(
                 f"{run['run']} measured {run['ratio_measured']:.2f}x and {mirror['run']} {mirror['ratio_measured']:.2f}x — "
-                f"{gap * 100:.1f}% apart, past the {asymmetry * 100:.0f}% a mirrored body allows"
+                f"{gap * 100:.1f}% apart, past the {band * 100:.0f}% {where} allows"
             )
 
     for side, values in report.get("grounding", {}).items():
@@ -761,17 +840,18 @@ def _joint_order(document: dict, args, prof: profile_mod.Profile) -> list[str]:
 
 
 def run(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="spike_fit", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="forge-gen fit", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("skinned", help="a skinned glb: JOINTS_0/WEIGHTS_0 and POSITION in the bind pose")
     parser.add_argument("--names", metavar="GLB", help="a glb whose skin joint order carries the contract names (the prepared mesh that went in)")
-    parser.add_argument("--map", metavar="JSON", help="the joint-order map spike_reattach wrote")
+    parser.add_argument("--map", metavar="JSON", help="the joint-order map reattach.py wrote")
     parser.add_argument("--profile", metavar="DIR", help="rig profile directory (default: $FORGE_RIG_PROFILE or the project's)")
-    parser.add_argument("--out", metavar="JSON", help="where the fit report goes (default: out/spike_fit/<stem>.fit.json)")
+    parser.add_argument("--out", metavar="JSON", help="where the fit report goes (default: out/skin/<stem>.fit.json)")
     parser.add_argument("--compare", metavar="JSON", help="an earlier fit report; print how far every joint moved")
     parser.add_argument("--min-support", type=float, default=8.0, metavar="N", help="fewest effective vertices a measured run may rest on (default: 8)")
     parser.add_argument("--ratio-min", type=float, default=0.4, metavar="R")
     parser.add_argument("--ratio-max", type=float, default=2.5, metavar="R")
-    parser.add_argument("--asymmetry", type=float, default=0.10, metavar="F", help="how far a left/right pair of runs may differ, as a fraction of their mean")
+    parser.add_argument("--asymmetry-arms", type=float, default=None, metavar="F", help="how far an arm's left/right pair may differ (default: the profile's [fit] asymmetry_arms)")
+    parser.add_argument("--asymmetry-other", type=float, default=None, metavar="F", help="and every other pair (default: the profile's [fit] asymmetry_other)")
     parser.add_argument("--no-symmetry", action="store_true", help="keep each side's own measurement instead of the pair's mean")
     parser.add_argument("--no-ground", action="store_true", help="skip the grounding pass and report the weights raw")
     parser.add_argument("--bones", action="store_true", help="print the per-bone table as well as the per-run one")
@@ -791,13 +871,21 @@ def run(argv: list[str]) -> int:
     report = fit(points, dense, prof, min_support=args.min_support, symmetry=not args.no_symmetry, ground=not args.no_ground)
     report["source"] = str(skinned)
     report["profile_dir"] = str(prof.dir)
-    problems, warnings = gate(report, ratio_min=args.ratio_min, ratio_max=args.ratio_max, asymmetry=args.asymmetry, min_support=args.min_support)
+    bands = symmetry_bands(prof, arms=args.asymmetry_arms, other=args.asymmetry_other)
+    problems, warnings = gate(
+        report,
+        ratio_min=args.ratio_min,
+        ratio_max=args.ratio_max,
+        min_support=args.min_support,
+        **bands,
+    )
+    report["asymmetry"] = bands
     report["problems"] = problems
     report["warnings"] = warnings
     if args.compare:
         report["convergence"] = convergence(report, json.loads(Path(args.compare).read_text(encoding="utf-8")))
 
-    out = Path(args.out).expanduser().resolve() if args.out else Path("out/spike_fit") / (skinned.stem.split(".")[0] + ".fit.json")
+    out = Path(args.out).expanduser().resolve() if args.out else Path("out/skin") / (skinned.stem.split(".")[0] + ".fit.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

@@ -92,13 +92,40 @@ def test_prop_fake(lift_glb, tmp_path):
     assert rec["kind"] == "prop" and rec["inputs"][0]["role"] == "mesh"
 
 
-def test_rig_fake(lift_glb, tmp_path):
-    out, rec_path = tmp_path / "hero.blend", tmp_path / "hero.rig.json"
-    run_fake("rig", str(lift_glb), "--out", str(out), "--record", str(rec_path), "--name", "hero")
-    assert placeholders.is_placeholder(out)
+def test_prepare_fake(lift_glb, tmp_path):
+    out, rec_path = tmp_path / "hero.glb", tmp_path / "hero.prepare.json"
+    run_fake("prepare", str(lift_glb), "--out", str(out), "--record", str(rec_path))
+    info = glb.verify_glb(out)
+    assert info["skins"] == 0, "prepare hands the skinner a bare mesh; the weights are what it is being asked for"
+    names = {node.get("name") for node in info["document"]["nodes"]}
+    assert "Hips" in names and "LeftHand" in names, "the profile's own bone nodes are what --use_skeleton reads"
     rec = load_and_normalize(rec_path)
-    assert rec["kind"] == "rig"
+    assert rec["kind"] == "prepare"
     assert all(value is None for value in rec["measured"].values()), "nothing was measured"
+
+
+def test_skin_fake(lift_glb, tmp_path):
+    prepared, prepare_record = tmp_path / "hero.glb", tmp_path / "hero.prepare.json"
+    run_fake("prepare", str(lift_glb), "--out", str(prepared), "--record", str(prepare_record))
+    result = run_fake(
+        "skin",
+        str(prepared),
+        "--out", str(tmp_path / "hero.skinned.glb"),
+        "--blend", str(tmp_path / "hero.blend"),
+        "--record", str(tmp_path / "hero.rig.json"),
+        "--work", str(tmp_path / "work"),
+    )
+    info = glb.verify_glb(tmp_path / "hero.skinned.glb")
+    assert info["skins"] == 1, "a skin placeholder that binds nothing exercises none of schema 2"
+    assert placeholders.is_placeholder(tmp_path / "hero.blend")
+    rec = load_and_normalize(tmp_path / "hero.rig.json")
+    assert rec["kind"] == "rig" and rec["params"]["seed"] is None
+    assert rec["params"]["fit"]["passes"] == 1, "one pass is a decision, not a default"
+    assert result["motion_scale"] != 1.0, "a fitted-looking skeleton is what makes motion_scale worth carrying"
+    # The bones came out scaled and unrotated: the one move a real fit makes.
+    hips = next(node for node in info["document"]["nodes"] if node.get("name") == "Hips")
+    assert hips["rotation"] == [0.0, 0.0, 0.0, 1.0] or len(hips["rotation"]) == 4
+    assert hips["translation"][1] == pytest.approx(0.954413 * result["motion_scale"], abs=1e-5)
 
 
 def test_export_fake(tmp_path):
@@ -409,10 +436,19 @@ def test_keys_fake_states_batch_and_grid(tmp_path):
 
 def test_fake_refuses_to_overwrite_a_real_blend(lift_glb, tmp_path):
     """The finding's exact shape: FORGE_FAKE=1 replaced a committed 3 MB .blend with 69 bytes."""
+    prepared, prepare_record = tmp_path / "hero.glb", tmp_path / "hero.prepare.json"
+    run_fake("prepare", str(lift_glb), "--out", str(prepared), "--record", str(prepare_record))
     out = tmp_path / "hero.blend"
     out.write_bytes(b"BLENDER-v405RENDH" + b"\x00" * 4096)
     with pytest.raises(UsageError, match="hero.blend"):
-        run_fake("rig", str(lift_glb), "--out", str(out), "--record", str(tmp_path / "hero.rig.json"), "--name", "hero")
+        run_fake(
+            "skin",
+            str(prepared),
+            "--out", str(tmp_path / "hero.skinned.glb"),
+            "--blend", str(out),
+            "--record", str(tmp_path / "hero.rig.json"),
+            "--work", str(tmp_path / "work"),
+        )
     assert out.stat().st_size > 4096 - 1, "the real file is untouched"
 
 

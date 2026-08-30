@@ -47,7 +47,11 @@ SCHEMA = 2
 SCHEMA_MIN = 1
 
 #: The record kinds the Rust reader knows, as ``RecordKind`` spells them.
-KINDS = ("lift", "prop", "rig", "export", "take", "sfx", "music", "speech", "voice")
+#: ``prepare`` is the normalised mesh plus a bare skeleton that ``forge gen
+#: skin`` then hashes as its ``mesh`` input, so the chain from a lift to a
+#: body is ``lift -> prepare -> rig`` by hash and nothing in it is a claim
+#: about a file nobody can name.
+KINDS = ("lift", "prop", "prepare", "rig", "export", "take", "sfx", "music", "speech", "voice")
 
 #: Top-level keys, in the Rust field order. ``write`` refuses a record that
 #: has any other key or lacks any of these.

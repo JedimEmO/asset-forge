@@ -21,6 +21,17 @@ from pathlib import Path
 #: The profile a toolkit checkout ships, by directory name under ``rigs/``.
 DEFAULT_NAME = "humanoid"
 
+#: ``[fit]`` keys that named a gate this toolkit no longer has, and what to
+#: say about each. A profile is hand-written and hand-copied, so a dead gate
+#: rides forward silently unless the reader refuses it by name: ``reach_min``
+#: and ``reach_max`` measured a body's half-span against the *skeleton's*
+#: wrists, and the fitted skeleton moves those wrists to the body — the gate
+#: was measuring its own input (designs/skin.md, 2026-08-30).
+RETIRED_FIT_KEYS = {
+    "reach_min": "the reach gate is gone: it measured a body's span against wrists the fit now moves to the body",
+    "reach_max": "the reach gate is gone: it measured a body's span against wrists the fit now moves to the body",
+}
+
 
 class ProfileError(Exception):
     """The profile directory is not one, or a file in it does not say what it must."""
@@ -279,6 +290,7 @@ def load_profile(directory: str | os.PathLike | None = None) -> Profile:
     for socket in sockets.get("sockets", []):
         if socket.get("bone") not in by_name:
             raise ProfileError(f"{directory}: socket {socket.get('name')!r} rides {socket.get('bone')!r}, not a contract bone")
+    _refuse_retired_keys(directory, data)
     fixture = head.get("fixture_clip")
     return Profile(
         dir=directory,
@@ -291,3 +303,23 @@ def load_profile(directory: str | os.PathLike | None = None) -> Profile:
         fixture_clip=directory / str(fixture) if fixture else None,
         _by_name=by_name,
     )
+
+
+def _refuse_retired_keys(directory: Path, data: dict) -> None:
+    """Refuse a profile that still names a gate this toolkit deleted.
+
+    Loudly, by name, at load time: a knob nothing reads is worse than a
+    missing one, because the file goes on claiming a rule the pipeline
+    stopped enforcing and the next person to copy the profile carries the
+    claim forward.
+    """
+    fit = data.get("fit")
+    if not isinstance(fit, dict):
+        return
+    dead = [key for key in RETIRED_FIT_KEYS if key in fit]
+    if dead:
+        listed = "; ".join(f"[fit] {key} — {RETIRED_FIT_KEYS[key]}" for key in dead)
+        raise ProfileError(
+            f"{directory}/profile.toml still names {len(dead)} retired key(s): {listed}. "
+            "Delete the line; nothing reads it, and a profile that keeps it claims a gate that is not there"
+        )

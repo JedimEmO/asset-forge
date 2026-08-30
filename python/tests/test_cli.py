@@ -18,12 +18,26 @@ def _run(*argv: str, env=None):
 def test_help_lists_every_command():
     done = _run("--help")
     assert done.returncode == 0
-    for name in ("doctor", "mesh", "prop", "rig", "export", "rig-build", "motion", "sfx", "music", "speech", "voice"):
+    for name in ("doctor", "mesh", "prop", "prepare", "skin", "export", "rig-build", "motion", "sfx", "music", "speech", "voice"):
         assert f"\n    {name} " in done.stdout or f"    {name}\n" in done.stdout, name
     done = _run("motion", "--help")
     assert done.returncode == 0
     for name in ("sweep", "keys", "review"):
         assert name in done.stdout
+
+
+def test_the_two_mesh_doors_are_prepare_and_skin_in_that_order():
+    """The bind half of `rig` went with bone heat; what is left is two doors.
+
+    Order matters in the listing because it is the order a body is made in,
+    and `rig` is gone by name: a stranger typing it should be told the
+    command does not exist rather than handed a stale one.
+    """
+    names = [name for name, _module, _help in cli.COMMANDS]
+    assert "rig" not in names, "forge gen rig is deleted; the doors are prepare and skin"
+    assert names.index("prepare") == names.index("prop") + 1
+    assert names.index("skin") == names.index("prepare") + 1
+    assert _run("rig", "--json").returncode == exit_codes.USAGE
 
 
 def test_help_never_imports_torch(tmp_path):
@@ -134,7 +148,7 @@ def test_argparse_refusals_keep_the_json_contract():
     assert done.returncode == exit_codes.USAGE
     last = json.loads(done.stdout.strip().splitlines()[-1])
     assert last["ok"] is False and last["error"] == "usage" and "--no-such-flag" in last["message"]
-    done = _run("rig", "--json")  # missing required arguments
+    done = _run("prepare", "--json")  # missing required arguments
     assert done.returncode == exit_codes.USAGE
     assert json.loads(done.stdout.strip().splitlines()[-1])["error"] == "usage"
     # Without --json the contract asks for nothing on stdout but the usage text.

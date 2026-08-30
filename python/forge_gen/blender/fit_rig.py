@@ -1,15 +1,24 @@
 """Build a per-body skeleton from a fit report: same names, same hierarchy, same rest rotations, new lengths.
 
-    python3 python/forge_gen/blender/spike_fit_rig.py out/spike_fit/pass1.fit.json
-            [--source rigs/humanoid] [--out out/spike_fit/profile]
-            [--reach-max 2.0] [--arm-height-tolerance 0.35] [--json]
+    python3 python/forge_gen/blender/fit_rig.py out/skin/<name>.fit.json
+            [--source rigs/humanoid] [--out out/skin/<name>] [--json]
 
-**A Phase 2 spike, not a door.** ``spike_fit.py`` measures how long every
-bone is on one body; this turns those numbers into an armature, as a
-**scratch profile** under ``out/`` — a copy of the source profile whose
-``rig.blend`` and ``rig.glb`` are the fitted skeleton. Nothing under
-``rigs/`` or ``assets/`` is touched, and the scratch profile is thrown away
-with the rest of ``out/``.
+**A library, called by ``forge gen skin``**, not a subcommand. ``fit.py``
+measures how long every bone is on one body; this turns those numbers into
+an armature and writes it twice: ``skeleton.blend``, which the re-attach
+binds the body to, and ``skeleton.glb``, which the loop's **second prepare**
+hands the skinner as ``--skeleton``. Nothing under ``rigs/`` or ``assets/``
+is touched — the profile is opened and never saved, because it is a
+committed source and the contract's own.
+
+**No scratch profile.** An earlier shape of this file copied the whole
+profile and loosened two of its ``[fit]`` numbers, because the T-pose gate
+measured the mesh against *the skeleton's* wrists and a body whose wrists
+the skeleton now matches was exactly the body that gate refused. Both of
+those gates changed shape upstream — the arm-height check measures the body
+against its own shoulder line and the reach check is deleted — so there is
+nothing left to loosen, and a door that rewrote a profile to pass its own
+gate would be the hand-edit rule in a larger file.
 
 # What it moves and what it may not
 
@@ -39,21 +48,6 @@ rig that binds perfectly and animates wrongly.
 The bones are unlinked from their parents' tails (``use_connect = False``)
 before anything moves, because a connected child's head follows its parent's
 tail and the second edit would undo the first.
-
-# The scratch profile's own gates
-
-``profile.toml`` is copied with two numbers loosened — ``[fit] reach_max``
-and ``[fit] arm_height_tolerance_m`` — because the T-pose gate measures the
-mesh against *the skeleton's* wrists, and a body whose wrists the skeleton
-now matches is exactly the body that gate refused. Nothing else is relaxed:
-the export gate's 0.1 mm rest tolerance, the influence cap and the stature
-band stay where the shipped profile has them, and they are met against this
-profile's own regenerated ``contract.json``.
-
-After this runs, the profile is not yet self-consistent — ``contract.json``
-still describes the source skeleton. Regenerate it::
-
-    cargo run -q -p forge_rig --example export_contract -- out/spike_fit/profile
 """
 
 from __future__ import annotations
@@ -61,8 +55,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -88,60 +80,36 @@ ROTATION_TOLERANCE = 1e-5
 HEAD_TOLERANCE_M = 1e-6
 
 
+#: What the two outputs are called inside ``--out``.
+SKELETON_BLEND = "skeleton.blend"
+SKELETON_GLB = "skeleton.glb"
+
+
 def _add_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("report", help="the fit report spike_fit.py wrote")
-    parser.add_argument("--source", metavar="DIR", help="the profile to copy (default: the project's)")
-    parser.add_argument("--out", metavar="DIR", default="out/spike_fit/profile", help="where the scratch profile goes")
-    parser.add_argument("--reach-max", type=float, default=2.0, metavar="R", help="the scratch profile's [fit] reach_max")
-    parser.add_argument("--arm-height-tolerance", type=float, default=0.35, metavar="M", help="the scratch profile's [fit] arm_height_tolerance_m")
+    parser.add_argument("report", help="the fit report fit.py wrote")
+    parser.add_argument("--source", metavar="DIR", help="the profile whose rig.blend the skeleton starts from (default: the project's)")
+    parser.add_argument("--out", metavar="DIR", required=True, help=f"where {SKELETON_BLEND} and {SKELETON_GLB} go")
 
 
 # ------------------------------------------------------------------- outer --
 
 
 def run(args) -> dict:
+    """Validate, then build the fitted armature under Blender."""
     report_path = _common.existing_file(args.report, what="fit report")
-    report = json.loads(report_path.read_text(encoding="utf-8"))
 
     from forge_gen import profile as profile_mod
 
     source = profile_mod.load_profile(args.source)
     out_dir = Path(args.out).expanduser().resolve()
-    if out_dir.resolve() == source.dir.resolve():
-        raise UsageError(f"--out is the source profile ({source.dir}) — a spike writes under out/, never into a shipped profile")
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    shutil.copytree(source.dir, out_dir)
-    _loosen(out_dir / "profile.toml", reach_max=args.reach_max, arm_height=args.arm_height_tolerance)
-    _common.log(TAG, f"copied {source.dir} -> {out_dir}, [fit] reach_max {args.reach_max}, arm_height_tolerance_m {args.arm_height_tolerance}")
+    if out_dir == source.dir.resolve():
+        raise UsageError(f"--out is the profile itself ({source.dir}) — a fitted skeleton is a per-body artefact and never a shipped profile")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     argv = [os.fspath(report_path), "--source", os.fspath(source.dir), "--out", os.fspath(out_dir)]
     argv += _common.passthrough_argv(args)
     inner = _common.run_blender_module(__file__, argv)
-    result = _common.outer_result(inner)
-    result.setdefault("measured", {})["profile"] = str(out_dir)
-    _common.log(TAG, f"next — cargo run -q -p forge_rig --example export_contract -- {out_dir}")
-    return result
-
-
-def _loosen(path: Path, *, reach_max: float, arm_height: float) -> None:
-    """Rewrite the two T-pose numbers, in place, with a line saying why."""
-    text = path.read_text(encoding="utf-8")
-    text = re.sub(
-        r"^reach_max = [0-9.]+.*$",
-        f"reach_max = {reach_max}                    # SPIKE: loosened — the mesh is measured against the FITTED wrists",
-        text,
-        count=1,
-        flags=re.M,
-    )
-    text = re.sub(
-        r"^arm_height_tolerance_m = [0-9.]+.*$",
-        f"arm_height_tolerance_m = {arm_height}      # SPIKE: loosened — this body is the point of the fit",
-        text,
-        count=1,
-        flags=re.M,
-    )
-    path.write_text(text, encoding="utf-8")
+    return _common.outer_result(inner)
 
 
 # ------------------------------------------------------------------- inner --
@@ -166,10 +134,13 @@ def run_in_blender(argv: list[str]) -> dict:
     ratios = {row["bone"]: float(row["ratio"]) for row in report["bones"]}
     reported = {name: Vector(_to_blender(position)) for name, position in report["fitted_joints"].items()}
 
-    bpy.ops.wm.open_mainfile(filepath=os.fspath((out_dir / source.rig_blend.name).resolve()))
+    # The profile's own rig.blend: opened, edited in memory, saved elsewhere.
+    # It is the contract's source and a committed file, and this door never
+    # writes back to it.
+    bpy.ops.wm.open_mainfile(filepath=os.fspath(source.rig_blend.resolve()))
     arm_obj = bpy.data.objects.get(armature_node)
     if arm_obj is None or arm_obj.type != "ARMATURE":
-        raise BackendFailed(f"the copied profile holds no {armature_node!r} armature — the source profile is broken")
+        raise BackendFailed(f"{source.rig_blend} holds no {armature_node!r} armature — the profile is broken")
     missing = sorted(bone.name for bone in arm_obj.data.bones if bone.name not in reported or bone.name not in ratios)
     if missing:
         raise InputRejected(f"the fit report has no joint for {len(missing)} bone(s) ({', '.join(missing[:6])}) — it was written against another profile")
@@ -232,10 +203,10 @@ def run_in_blender(argv: list[str]) -> dict:
         f"the furthest joint moved {moved * 100:.1f} cm, and every head is within {against_report * 1000:.3f} mm of the report's own joint",
     )
 
-    out_blend = out_dir / source.rig_blend.name
+    out_blend = out_dir / SKELETON_BLEND
     bpy.ops.wm.save_as_mainfile(filepath=os.fspath(out_blend))
     _common.log(TAG, f"wrote {out_blend}")
-    out_glb = out_dir / source.rig_glb.name
+    out_glb = out_dir / SKELETON_GLB
     bpy.ops.object.select_all(action="DESELECT")
     _common.export_glb(out_glb, materials="NONE", y_up=bool(source.section("export").get("y_up", True)))
     _common.log(TAG, f"wrote {out_glb}")
@@ -251,6 +222,8 @@ def run_in_blender(argv: list[str]) -> dict:
         "max_gap_to_report_m": round(against_report, 6),
         "rotation_tolerance": ROTATION_TOLERANCE,
         "source_profile": str(source.dir),
+        "skeleton_blend": str(out_dir / SKELETON_BLEND),
+        "skeleton_glb": str(out_dir / SKELETON_GLB),
         "blender_version": _common.blender_identity()["version"],
     }
     return _common.success(None, [out_blend, out_glb], measured=measured)
@@ -305,7 +278,7 @@ def _main_outer(argv: list[str]) -> int:
     from forge_gen import cli
     from forge_gen.exit_codes import ForgeGenError
 
-    parser = argparse.ArgumentParser(prog="spike_fit_rig", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="fit-rig", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     _add_arguments(parser)
     parser.add_argument("--json", action="store_true", help="last stdout line is one JSON object")
     parser.add_argument("--project", default=None, metavar="DIR")
