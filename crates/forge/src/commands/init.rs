@@ -31,27 +31,11 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use clap::Args;
-use forge_library::project::{Hardware, MakeKind, MakeKinds, SOURCES_LEDGER, Tier};
-use forge_library::{Project, manifest};
+use forge_library::project::{Hardware, MakeKind, MakeKinds, Tier};
 
 use crate::cli::InitArgs;
 use crate::outcome::{Failure, Outcome};
 use crate::toolkit;
-
-/// The ledger a new project starts with: the header row and the rule. The
-/// same text the toolkit's own `assets-src/SOURCES.md` opens with.
-pub(crate) const LEDGER_HEADER: &str = "# Reference sources\n\
-\n\
-Every reference image under `refs/` has a row here — where it came from, on \
-what terms, and what was made from it. A reference PNG claims integrity \
-(its sha256) and this row, never regeneration: the row is where its origin \
-and its licence live, and a PNG without one is a file nobody can account \
-for, which is why `forge verify` fails on it. Add the row when you add the \
-image; the ledger is the answer to \"can we ship this?\" and has to be \
-answerable from this file alone.\n\
-\n\
-| File | Origin | For | Date |\n\
-|---|---|---|---|\n";
 
 /// The three answers, as flags.
 ///
@@ -111,99 +95,40 @@ pub(crate) fn run_with(root: Option<&Path>, args: &InitArgs, flags: &MakeFlags) 
             })?,
     };
     let (make, hardware) = ask(flags)?;
-    let project = Project::init_with(&root, &name, make, &hardware)?;
-    println!("initialised {} at {}", project.name, project.root.display());
-    println!(
-        "  forge.toml, assets/{{bodies,models,clips,audio/{{sfx,music,voice}}}}, \
-         assets-src/{{takes,refs,blender,rigs}}, out/"
-    );
-    println!("  {}", answered_line(&project));
-
-    let ledger = project.sources_ledger();
-    if !ledger.exists() {
-        std::fs::write(&ledger, LEDGER_HEADER)
-            .map_err(|e| Failure::failed(format!("{}: {e}", ledger.display())))?;
-        println!("  {SOURCES_LEDGER}: the reference ledger, header only");
-    }
-
     let profile = match &args.rig_dir {
         Some(dir) => Some(dir.clone()),
-        None => toolkit::profile_dir(&project.rig_name),
+        None => toolkit::profile_dir(&project_rig()),
     };
-    match profile {
-        Some(source) => {
-            project.install_profile(&source)?;
-            println!(
-                "  rig profile {} installed from {}",
-                project.rig_name,
-                source.display()
-            );
-            let written = manifest::write(&project)?;
-            println!(
-                "  {}: empty, on rig {} ({} bones)",
-                project
-                    .rel_to_root(&project.manifest_path())
-                    .unwrap_or_else(|| project.manifest_path().display().to_string()),
-                written.rig.profile,
-                written.rig.bone_count
-            );
-        }
-        None => {
-            // Exit non-zero: without the profile the project is half-made —
-            // the very next `forge verify` and `forge manifest` both exit 1
-            // on it — and an `init` that said ok anyway buried the one
-            // message that names the fix.
-            return Err(Failure::refused(format!(
-                "no rig profile installed — the toolkit's rigs/{} could not be found from \
-                 this executable. Set {} to the asset-forge checkout (or pass --rig-dir), \
-                 then run `forge init` here again; forge.toml and the directories are \
-                 already in place",
-                project.rig_name,
-                forge_library::backends::TOOLKIT_ENV,
-            )));
-        }
+    let (project, lines) =
+        forge_library::project::create(&root, &name, make, &hardware, profile.as_deref())?;
+    let mut lines = lines.into_iter();
+    if let Some(first) = lines.next() {
+        println!("{first}");
     }
-    println!("next: {}", next_step(&project));
+    for line in lines {
+        println!("  {line}");
+    }
+    if profile.is_none() {
+        // Exit non-zero: without the profile the project is half-made — the
+        // very next `forge verify` and `forge manifest` both exit 1 on it —
+        // and an `init` that said ok anyway buried the one message that
+        // names the fix.
+        return Err(Failure::refused(format!(
+            "no rig profile installed — the toolkit's rigs/{} could not be found from this \
+             executable. Set {} to the asset-forge checkout (or pass --rig-dir), then run \
+             `forge init` here again; forge.toml and the directories are already in place",
+            project.rig_name,
+            forge_library::backends::TOOLKIT_ENV,
+        )));
+    }
+    println!("next: {}", project.next_step());
     Ok(())
 }
 
-/// One line saying what the project answered, so the three questions are
-/// visible whether they were asked, flagged or assumed.
-pub(crate) fn answered_line(project: &Project) -> String {
-    let chosen = project.make.chosen();
-    let made = if chosen.is_empty() {
-        String::from("nothing (every backend reads off)")
-    } else {
-        chosen
-            .iter()
-            .map(|kind| kind.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    format!(
-        "makes {made}; tier {}; comfy at {}",
-        project.tier(),
-        project.hardware.comfy_url
-    )
-}
-
-/// What to do next, which depends on what was chosen.
-pub(crate) fn next_step(project: &Project) -> String {
-    if project.make.is_empty() {
-        return String::from(
-            "nothing is chosen yet — edit [make] in forge.toml, then `forge setup`",
-        );
-    }
-    if project.tier().is_fake() {
-        return String::from(
-            "tier fake: every `forge gen` writes a branded placeholder through the same \
-             validators, so the whole path works with no card. `forge setup` when a card \
-             arrives",
-        );
-    }
-    String::from(
-        "`forge setup` — it prints what it installs, and what it costs, before a byte downloads",
-    )
+/// The rig profile a new project is given. Named here because the profile
+/// has to be found *before* the project exists to name it.
+fn project_rig() -> String {
+    String::from(forge_library::project::DEFAULT_RIG)
 }
 
 /// Ask the three questions, or take the answers as given.

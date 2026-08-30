@@ -36,6 +36,24 @@ pub const MANIFEST_FILE: &str = "library.json";
 /// The library version a new project starts at.
 pub const INITIAL_LIBRARY_VERSION: &str = "0.1.0";
 
+/// The reference ledger a new project starts with: the header row and the
+/// rule. The same text the toolkit's own `assets-src/SOURCES.md` opens
+/// with, and the same text both doors — `forge init` and the MCP
+/// `init_project` — write, because a project made by an agent and a project
+/// made by a person have to be the same project.
+pub const LEDGER_HEADER: &str = "# Reference sources\n\
+\n\
+Every reference image under `refs/` has a row here — where it came from, on \
+what terms, and what was made from it. A reference PNG claims integrity \
+(its sha256) and this row, never regeneration: the row is where its origin \
+and its licence live, and a PNG without one is a file nobody can account \
+for, which is why `forge verify` fails on it. Add the row when you add the \
+image; the ledger is the answer to \"can we ship this?\" and has to be \
+answerable from this file alone.\n\
+\n\
+| File | Origin | For | Date |\n\
+|---|---|---|---|\n";
+
 /// The rig profile a new project is given.
 pub const DEFAULT_RIG: &str = "humanoid";
 
@@ -405,6 +423,49 @@ impl Project {
     #[must_use]
     pub fn tier(&self) -> Tier {
         self.hardware.tier()
+    }
+
+    /// One line saying what this project answered to the three questions,
+    /// so they are visible whether they were asked, flagged or assumed.
+    #[must_use]
+    pub fn answered_line(&self) -> String {
+        let chosen = self.make.chosen();
+        let made = if chosen.is_empty() {
+            String::from("nothing (every backend reads off)")
+        } else {
+            chosen
+                .iter()
+                .map(|kind| kind.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "makes {made}; tier {}; comfy at {}",
+            self.tier(),
+            self.hardware.comfy_url
+        )
+    }
+
+    /// What to do next, which depends on what was chosen. The last line
+    /// `forge init` prints and the last line `init_project` returns.
+    #[must_use]
+    pub fn next_step(&self) -> String {
+        if self.make.is_empty() {
+            return String::from(
+                "nothing is chosen yet — edit [make] in forge.toml, then `forge setup`",
+            );
+        }
+        if self.tier().is_fake() {
+            return String::from(
+                "tier fake: every `forge gen` writes a branded placeholder through the same \
+                 validators, so the whole path works with no card. `forge setup` when a card \
+                 arrives",
+            );
+        }
+        String::from(
+            "`forge setup` — it prints what it installs, and what it costs, before a byte \
+             downloads",
+        )
     }
 
     /// Every backend the chosen kinds need — what doctor is told to hold to
@@ -1739,6 +1800,77 @@ pub mod licences {
     pub fn accept(ids: &[&str], by: &str, via: Via) -> Result<(Receipt, Vec<String>)> {
         accept_in(&path(), ids, by, via)
     }
+}
+
+/// Make a project, whole: `forge.toml` with the three answers in it, the
+/// convention directories, the reference ledger's header, the rig profile
+/// copied in and an empty manifest written — so the very next
+/// `forge manifest --check` and `forge verify` pass on a library that holds
+/// nothing, which is the honest starting state rather than a broken one.
+///
+/// Both doors call this: `forge init` at a terminal and the MCP
+/// `init_project`. A project an agent made and a project a person made are
+/// the same project, down to the ledger's wording, because the alternative
+/// is two subtly different starting states and a verify that passes in one
+/// of them.
+///
+/// `profile_source` is the toolkit's `rigs/<rig>` directory. `None` leaves
+/// the project half-made — `forge.toml` and the directories are there, the
+/// profile and the manifest are not — and says so in the returned lines,
+/// which is a state the caller must treat as a failure.
+///
+/// # Errors
+///
+/// As [`Project::init_with`], or when the ledger, the profile or the
+/// manifest cannot be written.
+pub fn create(
+    root: &Path,
+    name: &str,
+    make: MakeKinds,
+    hardware: &Hardware,
+    profile_source: Option<&Path>,
+) -> Result<(Project, Vec<String>)> {
+    let project = Project::init_with(root, name, make, hardware)?;
+    let mut lines = vec![
+        format!("initialised {} at {}", project.name, project.root.display()),
+        String::from(
+            "forge.toml, assets/{bodies,models,clips,audio/{sfx,music,voice}}, \
+             assets-src/{takes,refs,blender,rigs}, out/",
+        ),
+        project.answered_line(),
+    ];
+    let ledger = project.sources_ledger();
+    if !ledger.exists() {
+        crate::write_atomic(&ledger, LEDGER_HEADER.as_bytes())?;
+        lines.push(format!(
+            "{SOURCES_LEDGER}: the reference ledger, header only"
+        ));
+    }
+    match profile_source {
+        Some(source) => {
+            project.install_profile(source)?;
+            lines.push(format!(
+                "rig profile {} installed from {}",
+                project.rig_name,
+                source.display()
+            ));
+            let written = crate::manifest::write(&project)?;
+            lines.push(format!(
+                "{}: empty, on rig {} ({} bones)",
+                project
+                    .rel_to_root(&project.manifest_path())
+                    .unwrap_or_else(|| project.manifest_path().display().to_string()),
+                written.rig.profile,
+                written.rig.bone_count
+            ));
+        }
+        None => lines.push(format!(
+            "NO RIG PROFILE INSTALLED — the toolkit's rigs/{} could not be found. \
+             forge.toml and the directories are in place; nothing else is.",
+            project.rig_name
+        )),
+    }
+    Ok((project, lines))
 }
 
 /// Drop the named top-level tables from a TOML document, keeping every
