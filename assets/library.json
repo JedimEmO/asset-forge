@@ -2,7 +2,7 @@
   "schema": 1,
   "forge_version": "0.1.0",
   "library_version": "0.1.0",
-  "generated": "2026-08-23",
+  "generated": "2026-08-30",
   "rig": {
     "profile": "humanoid",
     "version": 1,
@@ -1432,6 +1432,14 @@
       ]
     },
     {
+      "name": "chain_drag",
+      "path": "audio/sfx/chain_drag.wav",
+      "sha256": "sha256:0c164a6d0e67f9f7b49ccc21143a03bce0cbea76541ea9ba3a7d0df1d862edbc",
+      "kind": "sfx",
+      "duration_s": 3.0,
+      "tags": []
+    },
+    {
       "name": "door_metal",
       "path": "audio/sfx/door_metal.wav",
       "sha256": "sha256:8fb419a84e69fe7d9860d5787f70a29f5bb2ba53a8dffba08e8546b57f0e748b",
@@ -1440,6 +1448,14 @@
       "tags": [
         "sample"
       ]
+    },
+    {
+      "name": "door_slam",
+      "path": "audio/sfx/door_slam.wav",
+      "sha256": "sha256:e996ecf3ea162290a9b1ae00746d5ff6c460664d4bfe7ef8216d8bcaf74687f5",
+      "kind": "sfx",
+      "duration_s": 3.0,
+      "tags": []
     },
     {
       "name": "footsteps_stone",

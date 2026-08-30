@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "kind": "sfx",
+  "name": "door_slam",
+  "prompt": "a heavy wooden door slams shut in a stone corridor",
+  "tags": [],
+  "created": "2026-08-30",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_sound_effect",
+    "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+    "seed": 876283429,
+    "duration_s": 3.0,
+    "steps": 100,
+    "cfg": 4.0
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 3.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "events": null,
+  "content_hash": "sha256:e996ecf3ea162290a9b1ae00746d5ff6c460664d4bfe7ef8216d8bcaf74687f5",
+  "note": null
+}

@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "kind": "sfx",
+  "name": "chain_drag",
+  "prompt": "a heavy iron chain drags across stone and rattles to a stop",
+  "tags": [],
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_sound_effect",
+    "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+    "seed": 1627167584,
+    "duration_s": 3.0,
+    "steps": 100,
+    "cfg": 4.0
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 3.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "events": null,
+  "content_hash": "sha256:0c164a6d0e67f9f7b49ccc21143a03bce0cbea76541ea9ba3a7d0df1d862edbc",
+  "note": null
+}

@@ -20,3 +20,6 @@ backends/*/installed.json
 backends/*/.checkpoints
 backends.local.toml
 python/.venv
+
+# Workflow agents' worktrees (tool state, never source)
+.claude/worktrees/
