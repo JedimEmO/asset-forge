@@ -24,9 +24,10 @@ $PREFIX = ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends}/comfy
   $PREFIX/snapshot.json  what the Manager says is installed, as of the last install
 
 backends/comfy/
-  backend.toml           the pin, the licence, [server], and the models by
-                         ComfyUI model folder (the `store` vocabulary has no
-                         word for a comfy folder until Phase 1)
+  backend.toml           the pin, the licence, [server], and the models as
+                         ordinary [[models]] with `store = "comfy:models/<dir>"`,
+                         resolved under $PREFIX/<base_directory>/ — one model
+                         list, the same one doctor, install.sh and probe.py read
   install.sh             venv, clone, Manager, unit, paths, weights — idempotent
   probe.py               GET /system_stats + /object_info; doctor's one JSON line
   forge-comfy.service    the systemd --user unit, %h-relative
@@ -90,6 +91,13 @@ Fetched into `$PREFIX/data/models/<folder>/`. Sizes are the download.
 | `text_encoders` | `t5xxl_fp8_e4m3fn.safetensors` | comfyanonymous/flux_text_encoders | 4.89 | Apache-2.0 |
 | `vae` | `ae.safetensors` | black-forest-labs/FLUX.1-schnell | 0.34 | Apache-2.0, **gated "auto"** — needs an HF token |
 | `controlnet` | `FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors` | Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0 | 4.28 | **FLUX.1-dev Non-Commercial** |
+
+A backend that runs *on* this host brings its own row and its own installer:
+`backends/acestep` adds `checkpoints/ace_step_1.5_turbo_aio.safetensors`
+(Comfy-Org/ace_step_1.5_ComfyUI_files, 10.03 GB, Apache-2.0) through
+`bash backends/acestep/install.sh`, which refuses until this host is
+installed. Its `[[models]]` row carries the same `comfy:models/<dir>` store,
+so doctor reads every weight on this card's tree out of one list.
 
 Two facts the spike has to carry, not bury:
 

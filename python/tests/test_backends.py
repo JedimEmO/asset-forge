@@ -246,6 +246,37 @@ def test_a_comfy_store_that_could_leave_the_host_tree_is_refused(backends_tree, 
         backends.load_backend("moss_sfx")
 
 
+def test_the_shipped_backends_are_one_model_list_and_say_how_they_run(repo_root):
+    """The files this repository ships, held to the second form.
+
+    ``[[comfy.models]]`` existed because ``store`` had no word for a comfy
+    folder; it has one now, and the workaround is what gave doctor two model
+    lists that could disagree. This is the check that it stays folded.
+    """
+    tree = repo_root / "backends"
+    host = backends.load_backend("comfy", tree)
+    assert host.executor == "tool" and host.role == "host"
+    assert "models" not in host.comfy.extra, "[[comfy.models]] is folded into [[models]]"
+    assert host.models, "the host's weights are an ordinary model list"
+    assert all(m.is_comfy for m in host.models), "every one of them lives in the host's tree"
+    assert all(m.file and m.gb for m in host.models), "each names its file and what it costs to fetch"
+    assert host.comfy.extra["frontend"] == "1.49.6", "a key that belonged to the pack, not the table"
+
+    music = backends.load_backend("acestep", tree)
+    assert music.executor == "comfy" and music.host == "comfy" and music.commit is None
+    assert music.comfy.workflows == ["music.api.json"]
+    assert music.comfy.unload_node is None, "native nodes honour POST /free"
+    assert music.comfy.packs == [], "and need no pack"
+    assert music.workflow("music.api.json").is_file(), "the graph it names is tracked beside it"
+    assert [m.store for m in music.models] == ["comfy:models/checkpoints"]
+    # Every backend the toolkit ships says how it is run, one way or the other.
+    for name in backends.KNOWN:
+        backend = backends.load_backend(name, tree)
+        assert backend.executor in backends.EXECUTORS
+        if backend.executor == "comfy":
+            assert backend.host and not backend.env and not backend.python
+
+
 def test_default_backends_dir_is_beside_the_package(monkeypatch, repo_root):
     monkeypatch.delenv("FORGE_BACKENDS", raising=False)
     assert backends.backends_dir() == repo_root / "backends"
