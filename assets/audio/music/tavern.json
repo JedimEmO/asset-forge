@@ -1,0 +1,41 @@
+{
+  "schema": 2,
+  "kind": "music",
+  "name": "tavern",
+  "prompt": "warm lute and fiddle, 96 bpm, loop-friendly",
+  "tags": [],
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "ace_step",
+    "lm_model": null,
+    "dit_model": "ace_step_1.5_turbo_aio.safetensors",
+    "seed": "8899,8899",
+    "bpm": 96,
+    "keyscale": "C major",
+    "timesignature": "4",
+    "genres": "warm lute and fiddle, 96 bpm, loop-friendly",
+    "lyrics": "[instrumental]",
+    "duration_s": 30.0
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 30.006666,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:73c8749def1dfd83c492bc9eecdcc79a1c227a04044c144fb937b5fc05c34437",
+  "note": "rendered at --gain-db -3, the first music track through the graph's AudioAdjustVolume node; peak -2.6 dBFS, 0 full-scale samples, where the same prompt and seed without the node came off the host pinned at 0.0 dBFS with 84 consecutive samples clipped. Not a loop: the last 2.7 s are a decaying tail and the file ends 44.2 dB under its start"
+}

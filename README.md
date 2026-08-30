@@ -144,7 +144,7 @@ door that names what would have passed.
 | Class | Make | Judge | Ship | Refuses |
 |---|---|---|---|---|
 | References | `just ref-import` — the one way a PNG gets under `assets-src/refs/`; the door writes the PNG (original bytes), its `.ref.json` and its `SOURCES.md` row | the door's own measurements, printed | — (a reference is a source, not an asset) | a drawn floor, a contact shadow, a flood-through hole, a key that kept under a tenth or over four fifths of the frame, a span outside 0.7–1.3, under three heads, more than one subject — all of it **before** a GPU minute, because a lift is four minutes and a redraw is a sentence |
-| Bodies and models | `just character` / `just prop` (TRELLIS.2), then `just prepare` (normalise + skeleton, no weights) and `just skin` (SkinTokens' weights, and the skeleton **fitted to this body's own bone lengths**) — `just body` runs both; `just prop-import` normalizes a prop | `just views`, `just check-mesh`, the studio | `just promote-body`, `just prop-import` (→ `forge promote body` / `model`) | arms not level with the body's own shoulder line; an arm thinner than 0.22 of the bone it hangs on (a sliver animates as one); a left/right gap over 0.35 on an arm run or 0.20 elsewhere; a rest translation more than 1° off the contract's direction; an existing name without `--overwrite` |
+| Bodies and models | `just character` / `just prop` (TRELLIS.2), then `just prepare` (normalise + skeleton, no weights) and `just skin` (SkinTokens' weights, and the skeleton **fitted to this body's own bone lengths**) — `just body` runs both; `just prop-import` normalizes a prop | `just views`, `just check-mesh`, the studio | `just promote-body`, `just prop-import` (→ `forge promote body` / `model`) | arms not level with the body's own shoulder line; a left/right gap over 0.35 on an arm run or 0.20 elsewhere; a rest translation more than 1° off the contract's direction; an existing name without `--overwrite` |
 | Clips | `just sweep` (ARDY, many takes in one load) | `just review` table + sheet, `just sheet` on the real body, `just bones` | `just promote-clip` (native bake, no Blender) | a clip that drives no bone or never moves (`sheet` exits 1); an unstated recipe knob (every knob is echoed) |
 | Audio | `just sfx`, `just music`, `just speech` (MOSS, ACE-Step) — always to `out/audio/`; `just voice` designs a character's voice from a description into `assets-src/voices/<name>/` (MOSS-VoiceGenerator), so a project never has to bring a reference clip, and every line is cloned from it by name | `just audio` plot + numbers, `just audio-list` | `just promote-audio` | a silent or clipped file; a sound with no record ships as `unknown` provenance and says so; a voice clip with neither its record nor a ledger row fails `verify` |
 
@@ -317,7 +317,7 @@ forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three ques
       doctor | gpu | sheet | views | turntable | bones | bundle | studio | mcp
 ```
 
-`forge mcp` serves twenty-five tools over stdio, registered in
+`forge mcp` serves twenty-six tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -335,8 +335,9 @@ exist, so a wrong name costs one turn, not a guess.
 | `inspect_audio` | numbers, the record, a waveform-over-spectrogram plot |
 | `import_reference` | the one door under `assets-src/refs/`: format, `mesh.py`'s own keyer, the four keyer pre-checks and the geometry pre-checks, then the PNG's original bytes, its record and its ledger row |
 | `generate_mesh` | `forge gen mesh` — TRELLIS.2 lifts a reference into `out/lifts/`, character or prop register |
-| `prepare_body` | normalise, drop dust, matte, insert the profile's skeleton, no weights; a refusal returns the arm-height and sliver numbers and names the reference PNG |
-| `skin_body` | the whole skin → fit → re-prepare → re-skin → re-attach loop; returns the fit table and `motion_scale` |
+| `prepare_body` | normalise, drop dust, matte, insert the profile's skeleton, no weights; a refusal returns the arm-height numbers and names the reference PNG, and every limb's cross-section is printed and recorded as a note |
+| `skin_body` | the whole skin → fit → re-prepare → re-skin → re-attach loop; the done frame carries the fit table and `motion_scale` |
+| `export_body` | `forge gen export` — the rigged `.blend` to the `.glb` a body is filed as, through the export gate. The step between `skin_body` and `promote_body`, and there is no way round it |
 | `promote_body` | the export gate + `forge rig check` + the taken-name refusal, then `promote body` |
 | `promote_model` | the doors `just prop-import`'s promote runs |
 | `generate_clips` | `forge gen motion sweep` + `review`; refuses with the doctor line when ARDY is absent |
@@ -357,12 +358,15 @@ library is the export gate, the rig check and the refused taken name — all of
 which `promote_body` runs. The thing that must not be automatable is
 accepting a licence, which is why `accept` is an explicit argument.
 `just mcp-check` handshakes the server and holds the tool list to exactly
-these twenty-five, and `just mcp-session` runs the whole path — the audio leg
+these twenty-six, and `just mcp-session` runs the whole path — the audio leg
 (`init_project → licences → setup → doctor → generate_audio → wait →
 inspect_audio → promote_audio → verify`) and the character leg
 (`import_reference → generate_mesh → wait → prepare_body → wait → skin_body →
-wait → promote_body → render_model → verify`), plus the refusals — over
-**both** transports, stdio and the daemon's streamable HTTP at `/mcp`.
+wait → export_body → wait → promote_body → render_model → verify`), plus the
+refusals — over **both** transports, stdio and the daemon's streamable HTTP
+at `/mcp`. Every step of that leg is a tool call, which is the point of it:
+`export_body` was missing until 2026-08-31 and the gate was shelling the
+missing verb, so it proved the terminal rather than the surface.
 
 ## Backends and licences
 

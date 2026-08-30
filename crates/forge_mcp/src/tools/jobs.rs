@@ -353,6 +353,15 @@ impl ForgeServer {
             // when there is no record to ask.
             "fake": self.record_fake(job),
         });
+        // What the door itself reported, in its own words. `job.payload` is
+        // the generator's whole last JSON line and it is kept for exactly
+        // this: the numbers a door measured — a reference's span and head
+        // count, a skin's fit table and motion_scale — are the reason the
+        // door was called, and before this they reached the log and stopped
+        // there. An agent has no shell to read a log with.
+        if let Some(reported) = Self::reported(job) {
+            frame["reported"] = reported;
+        }
         if job.cached {
             let same = job
                 .same_as
@@ -379,10 +388,50 @@ impl ForgeServer {
             // own words — never an Err, which a client renders opaquely.
             return CallToolResult::error(blocks);
         }
+        if let Some(summary) = job
+            .payload
+            .as_ref()
+            .and_then(|payload| payload.get("summary"))
+            .and_then(Value::as_str)
+            .filter(|summary| !summary.trim().is_empty())
+        {
+            blocks.push(Content::text(String::from(summary)));
+        }
         if let Some(sound) = self.sound_output(job) {
             blocks.extend(self.audio_block(&sound).await);
         }
         CallToolResult::success(blocks)
+    }
+
+    /// The generator's own words, minus what the frame already states.
+    ///
+    /// A projection by *subtraction*, not by a list of keys: a door that
+    /// starts measuring something new is read without this file changing,
+    /// which is the whole argument for keeping the child's last line whole.
+    /// A door that renders its own prose puts it under `summary`, which is
+    /// pulled out as a text block as well. (`_`-prefixed keys are the
+    /// Python layer's private channel to its own printer and never reach
+    /// the wire; filtered here so they cannot start.) `None` when nothing
+    /// is left to say.
+    fn reported(job: &Job) -> Option<Value> {
+        const ALREADY_SAID: [&str; 9] = [
+            "ok",
+            "record",
+            "outputs",
+            "elapsed_s",
+            "fake",
+            "comfy",
+            "message",
+            "reason",
+            "hint",
+        ];
+        let object = job.payload.as_ref()?.as_object()?;
+        let rest: serde_json::Map<String, Value> = object
+            .iter()
+            .filter(|(key, _)| !key.starts_with('_') && !ALREADY_SAID.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        (!rest.is_empty()).then_some(Value::Object(rest))
     }
 
     /// Whether the record beside this job's output says it is a `--fake`

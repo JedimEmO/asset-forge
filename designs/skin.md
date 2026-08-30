@@ -32,7 +32,7 @@ lesson dated in `decisions.md`.
 |---|---|---|---|---|
 | T-pose, arm height | `gen prepare` | arm-tip geometry not level with **the body's own shoulder line** | `[fit] arm_height_tolerance_m = 0.15` | shipped; **budget** by the ledger's own words ("the tolerance is a budget, not a measurement of where bodies break"). The witch measures 3.4 cm against her fitted wrists and is inside it against her own arm tube before any fit runs |
 | reach / wrist span | — | **deleted** | — | `forge2.md`: "the fit gate stops measuring span". It measured a body's span against wrists the fit had just moved to it |
-| sliver, arms | `gen prepare` | an arm run's median cross-section radius below `[fit] limb_radius_min_fraction` of the run's reference length | **0.22**, measured — see §1 | the courier sliver 0.200–0.214 against `vex_runner` 0.245–0.610 and `courier_v2` 0.505–0.674 |
+| sliver, arms | `gen prepare` | **never — measured, printed and noted.** Shipped as a refusal at 0.22 and demoted in the same commit under this document's own clause (§1), because the fifth body measured, `moss_witch_v4`, walks at 0.218/0.160 | **0.22**, the note's floor — see §1 | the courier sliver 0.200–0.214 against `vex_runner` 0.245–0.610 and `courier_v2` 0.505–0.674; then `moss_witch_v4` under all of them, `decisions.md` 2026-08-31 |
 | sliver, legs | `gen prepare` | never — measured and printed | — | measured: `vex_runner` legs read 0.149–0.183 and the sliver's legs 0.265–0.310. The number does not separate, so it is not a gate |
 | dust | `gen prepare` | islands under 0.025 m across are dropped, not refused | shipped | ledger 2026-08-20 |
 | no weights arrive | `gen prepare` | a vertex group on the input | shipped (`_refuse_any_skin`) | prepare hands SkinTokens a bare mesh |
@@ -183,7 +183,13 @@ isolates an arm and does not isolate a leg. The honest thing is to say that
 in the record rather than to invent a leg threshold, and the acceptance run
 re-measures all four numbers on three more bodies; if any good arm lands
 under 0.22 the gate becomes a note in the same commit, with the lesson dated
-in `decisions.md`. The off-axis distance is reported beside the radius: the
+in `decisions.md`. **That clause fired.** `moss_witch_v4` measures 0.218 and
+0.160 on her upper arms and walks, aims and rolls, below every arm of the
+body that walked as a sliver, so the arm gate refuses nothing: `prepare`
+prints all four ratios with the off-axis distance beside them and names an
+arm under the floor in a `NOTE`, the one refusing gate left on the prepared
+mesh is the arm-height check, and the judge of volume is the strip on the
+real body (`decisions.md`, 2026-08-31). The off-axis distance is reported beside the radius: the
 sliver's right arm sits a median 1.47 m off the contract axis, which is a
 direction failure and not a thinness one, and the fit's own off-axis warning
 already names that family.
@@ -214,12 +220,23 @@ about the number of passes**:
    imported as a library. `fit()`, `_centroid`, `_split_length`,
    `_symmetrise`, `_ground`, `_inherit`, `gate()`, `run_table()` keep their
    names and their arithmetic. Three changes, all from the ledger: the limb
-   runs come from the weights, **the root and the shoulder line come from
-   `fitgeom`** (the weights put `vex_runner`'s root 5.8 cm high — they place
-   a limb's end well and a body's centre badly), and `LANDMARKS` moves out of
-   source into `profile.toml`'s `[fit] landmarks`, which is body-plan
-   knowledge and belongs in the profile. `fit()` runs **once**, from the
-   unfitted skin;
+   runs come from the weights, **the root comes from `fitgeom`** (the weights
+   put `vex_runner`'s root 5.8 cm high — they place a limb's end well and a
+   body's centre badly), and `LANDMARKS` moves out of source into
+   `profile.toml`'s `[fit] landmarks`, which is body-plan knowledge and
+   belongs in the profile. `fit()` runs **once**, from the unfitted skin.
+   **The shoulder line is not anchored to geometry, and the record says
+   `"shoulder_line": "weights"`** — the ledger's 2026-08-30 entry proposed
+   both anchors and only the root's is buildable: `fitgeom`'s `shoulder_y`
+   is the arm tube's median height, chosen "narrow enough to leave the
+   shoulders out of it", and a run's whole freedom is one positive scalar
+   along a frozen direction, so spending a *height* on the diagonal
+   `Spine3 → Arm` run either rotates it (forbidden) or drags the joint
+   sideways — 8.7 cm from the mirror plane on `ember_knight`, whose
+   fingertips are 91.7 cm out. The two numbers travel together in the report
+   and the rig record as `shoulder_line` (weights, arm tube, the gap:
+   14.6 cm on `ember_knight`, 6.5 cm on the `vex_runner` re-skin, 1.7 cm on
+   the witch) and nothing refuses on them. `decisions.md`, 2026-08-31;
 3. **build the per-body armature** — `python/forge_gen/blender/fit_rig.py`
    (`git mv` of `blender/spike_fit_rig.py`). **No scratch profile:**
    `_loosen`, `--reach-max`, `--arm-height-tolerance`, the profile copy and
@@ -376,7 +393,9 @@ gains, in `params`:
         "motion_scale": 0.9780,
         "asymmetry_arms": 0.35, "asymmetry_other": 0.20,
         "sources": {"limbs": "weights", "root": "geometry",
-                    "shoulder_line": "geometry", "ground": "geometry"},
+                    "shoulder_line": "weights", "ground": "geometry"},
+        "shoulder_line": {"joints": ["LeftArm", "RightArm"], "weights_m": 1.5327,
+                          "arm_tube_geometry_m": 1.38707, "gap_m": 0.1456},
         "ratios": {"Spine": 0.7311, "LeftArm": 0.8497, "…": 0.0},
         "runs": [{"run": "Hips->Neck", "reference_length_m": 0.60272,
                   "ratio": 0.7311, "ratio_measured": 0.7311, "support": 338.0,
@@ -426,13 +445,14 @@ shape of claim `content_hash` already makes.
 
 ---
 
-## 4. MCP — nineteen becomes twenty-five
+## 4. MCP — nineteen becomes twenty-six
 
 | tool | shape | notes |
 |---|---|---|
 | `generate_mesh` | job (`env`, trellis2) | `kind: "generate_mesh.character\|prop"`; claims `out/lifts/<name>.glb` |
-| `prepare_body` | job (`env`, blender) | claims `out/prepare/<name>.glb`; a refusal returns the fit-gate and sliver numbers |
-| `skin_body` | job (`env`, skintokens) | the whole skin → fit → re-prepare → re-skin → re-attach loop; returns the fit table and `motion_scale` |
+| `prepare_body` | job (`env`, blender) | claims `out/prepare/<name>.glb`; a refusal returns the fit-gate's numbers, and the sliver ratios travel in the record and the log as a note |
+| `skin_body` | job (`env`, skintokens) | the whole skin → fit → re-prepare → re-skin → re-attach loop; the done frame carries the fit table and `motion_scale` |
+| `export_body` | job (`env`, blender) | claims `out/export/<name>.glb` and its export record. **Added 2026-08-31**, after the loop was driven for real and stopped here: the shell path had `forge gen export` in the middle and the surface had nothing, so an agent could skin a body and never ship it |
 | `promote_body` | direct write | export gate + `rig check` + taken-name refusal, then `promote body` |
 | `promote_model` | direct write | the doors `just prop-import`'s promote runs |
 | `import_reference` | job (no card) | queued like every other write under `assets-src/`, so one door owns the source tree |
@@ -449,15 +469,16 @@ the reference PNG.
 The surface, sorted, as `mcp-check` compares it:
 
 ```
-cancel doctor export_bundle generate_audio generate_clips generate_mesh
-import_reference init_project inspect_audio licences list_audio list_clips
-list_models list_runs prepare_body promote_audio promote_body promote_clip
-promote_model render_clip_strip render_model setup skin_body status wait
+cancel doctor export_body export_bundle generate_audio generate_clips
+generate_mesh import_reference init_project inspect_audio licences list_audio
+list_clips list_models list_runs prepare_body promote_audio promote_body
+promote_clip promote_model render_clip_strip render_model setup skin_body
+status wait
 ```
 
 Four pinned places move in one commit: `justfile`'s `mcp-check`
 `expected=` string; `crates/forge/tests/mcp_session.rs`'s `const TOOLS: [&str;
-25]`; `crates/forge/tests/cli.rs`'s `mine` array and its "Sixteen of the
+26]`; `crates/forge/tests/cli.rs`'s `mine` array and its "Sixteen of the
 nineteen" comment; and `crates/forge_mcp/src/lib.rs`'s
 `the_tool_surface_is_the_nineteen_names_mcp_check_pins` plus the module doc
 and the server instructions, whose "no promote for a body or a model"
@@ -635,10 +656,17 @@ refused on a clip; migrate 1 → 2 re-deriving 55 bones from a fixture glb with
 `motion_scale 1.0` and provenance untouched; verify's re-derivation green and
 drifted (2 mm, and 1°); bundle defaulting to the sidecar's scale.
 `forge_manifest`: schema-2 round trip with `motion_scale` on `BodyEntry`.
-`forge_studio`: `check_rest_directions` and `check_contact_feet`, both marks.
-`forge_mcp`: the twenty-five-name pin; each new tool's refusal frame asserted
-on its text. `forge`: `cli.rs` and `mcp_session.rs` at 25, and the character
-loop over both transports.
+`forge_studio`: `check_rest_directions` and `check_contact_feet`, both marks
+— and, since the contact-frame rule changed under a real run (2026-08-31),
+two cases that pin the change itself: a slow frame 8 cm off the floor that
+must not be called a contact (the witch's swing apex, which the old rank
+chose and the grounded filter does not), and a foot that never reaches the
+tolerance, whose *closest* frame is reported and still refused.
+`forge_mcp`: the twenty-six-name pin; each new tool's refusal frame asserted
+on its text. `forge`: `cli.rs` and `mcp_session.rs` at 26, and the character
+loop over both transports — `import_reference → generate_mesh →
+prepare_body → skin_body → export_body → promote_body`, every step a tool
+call and none of them shelled.
 
 **pytest.** `test_prepare.py` — the arm-height gate against a synthetic
 shoulder line; the sliver check on a synthetic sliver and on a synthetic good
@@ -651,14 +679,21 @@ limb; "a skinned file arrives" refused. `test_fit.py` — the frozen reports
 the `fit` block. `test_reference.py` — a floor band, a contact shadow and a
 flood-through hole each refused by name from generated PNGs; a clean PNG
 passing and writing all three files; the stored PNG is byte-identical to the
-input. `test_profile.py` — every scalar `profile.toml` and `contract.json`
+input; and, both halves of the fake tier pinned by a fixture rather than
+discovered — the placeholder path with its note in the record *and* in the
+reply, and (where the keyer's libraries are importable) the real path,
+measuring, refusing a 1.5-wide slab and recording `fake: false`. `test_profile.py` — every scalar `profile.toml` and `contract.json`
 share is equal, and a profile naming `reach_min` is refused. `test_cli.py`,
 `test_records.py` — the new `COMMANDS`, and byte equality of the `prepare`
 and `ref` records between the Python and Rust writers.
 
-**ci-fake** grows fakes for `prepare`, `skin` and `ref-import`; the loop
-becomes: write a placeholder PNG → `ref-import` → `character` → `prepare` →
-`skin` → `promote-body` → the gates. The fake skin writes a fitted-looking
+**ci-fake** grows fakes for `prepare` and `skin`; the loop becomes: draw a
+1024-px T-posed figure → `ref-import` → `character` → `prepare` → `skin` →
+`promote-body` → the gates. **`ref-import` is not faked**: it needs numpy and
+a PNG, never a card, so on tier `fake` it keys and measures for real wherever
+the libraries are there — which is what makes CI exercise the keyer at all
+(`decisions.md`, 2026-08-31). A 4×4 grey square would be refused for its long
+side, which is why the picture is a picture. The fake skin writes a fitted-looking
 skeleton (bones scaled 0.95) so schema 2's `bones[]` and `motion_scale` are
 exercised end to end with no card. `just ci`'s list is unchanged.
 
@@ -721,7 +756,7 @@ door, in the commit that adds the four scalars.
 
 **Contested files, one owner each.** `cli.py` is **B's** — C sends the one
 `COMMANDS` row for `ref-import` as a patch note. The `justfile` is **C's** —
-A sends `promote-body` and the twenty-five-name `expected=` string, B sends
+A sends `promote-body` and the twenty-six-name `expected=` string, B sends
 `prepare`, `skin` and `body`; A's Rust test is what fails if C mistypes the
 list. Every `Cargo.toml` is **A's**. `profile.toml` is **B's**; A reads those
 numbers only through `contract.json` and `export::Options`, and B's new

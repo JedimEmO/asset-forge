@@ -1096,3 +1096,218 @@ under `assets-src/blender/`. Both were caught by the character loop over MCP the
 moment the three doors were in one tree, which is the argument for that test
 existing at all: three implementers each held a correct half of a path contract.
 2026-08-30.
+
+**A door nobody ran end to end is a door that does not run.** `forge gen
+skin` — the whole Phase 2 loop behind one command — died on its first real
+call, at step 4 of 5, with `vex_runner.glb would write a stem 'vex_runner.p2'
+that is not [a-z0-9_]+`. The door names its second-pass intermediate
+`<name>.p2.glb` and then hands it to `forge gen prepare`, whose own gate
+refuses an output stem that is not a library name. Both halves are correct and
+together they are a door that cannot complete for **any** body, on any tier.
+The fix is one character, `_p2` for `.p2`. **Why it got that far:** every gate
+that could have caught it runs on placeholders — `ci-fake` and `mcp-session`
+stub the generators, so the second prepare never runs — and the spike scripts
+this door replaced used their own names. A pipeline whose middle steps are
+stubbed in CI is tested at its ends; the only thing that tests the middle is
+running it on the card, which is what this run was for. 2026-08-31.
+
+**Slow is not planted, and a picture said so.** `check_contact_feet` picked a
+foot's contact frames as the quarter it is slowest on horizontally, and that
+rule refused three of the three fitted bodies on disk. On `moss_witch_v4_fitted`
+it named `LeftFoot at 2.05 s` a contact frame **8.0 cm off the floor** while
+the whole-clip lowest vertex was −1.5 cm; the strip at that time
+(`out/p2run/witch_t205.png`) is a foot mid-swing, heel up, toe pointed. **Why
+the rank was half a rule:** a foot's horizontal speed turns around *twice* per
+stride — once at touch-down and once at the apex of the swing — so the slowest
+frames of an in-place clip hold both, and the second is in the air. The
+existing unit test guards the mirror-image mistake (a fast, low scuff is not a
+contact either), so neither rank alone is the answer and ranking by height
+first breaks the test. What holds both is a **filter, not a second rank**: a
+frame is a candidate only while the foot is within the gate's *own* tolerance
+of the floor or below it, and the slowest quarter of those is the stance. No
+new number is introduced, a sinking foot stays a candidate because it is the
+defect being measured, and a foot that never nears the floor falls back to its
+closest frame, which is outside tolerance by construction. The witch then
+reads +4.9 cm and passes, against the +3.0 cm the fitted-skeleton spike
+measured. **What the fix does not buy, recorded so nobody assumes it:** the
+gate is now a sinking-foot gate with a floating-foot backstop, not a symmetric
+one — a foot that touches down once and hovers the rest of the time passes.
+Catching that wants stance *duration* off a contact-labelled clip, which is a
+clip-side fact this body-side gate does not hold. 2026-08-31.
+
+**`contact_foot_tolerance_m` has two millimetres of headroom over the body
+that ships, and that is a measurement nobody took.** With the contact-frame
+rule corrected, the five bodies on this disk read: `vex_runner` as shipped
+(bone heat, contract skeleton) **−4.8 cm**, `ember_knight` (SkinTokens,
+fitted) **−3.8 cm**, `moss_witch_v4_fitted` **+4.9 cm**, `vex_runner`
+re-skinned and fitted **−5.4 cm**, `drow_warlock_fitted` **−7.7 cm**. The
+tolerance is 5.0 cm, so the shipped sample body sits 4 % inside it and a
+re-skin of the *same lift* falls 8 % outside. The number came from the spike's
+"−1.5 to +3.0 cm on the fitted witch", which was the **whole-clip** lowest
+vertex and not the planted foot's own — a number measured one way and spent on
+a gate that asks another. **Why it is left standing anyway:** moving it now
+would be loosening a gate to ship the artifact that failed it, which is the
+same defect as editing a record to pass one, and the deepest of the five
+numbers is not the fit's doing — `walk` is baked from ARDY with no IK and puts
+a booted 1.8 m body's planted foot about 5 cm through the floor on its worst
+frame whatever weights it carries. So the tolerance keeps its value, the
+measurement above is the record of what it separates, and the real answer is
+upstream in the clip. 2026-08-31.
+
+**The agent's character loop has no door between `skin_body` and
+`promote_body`.** Driven for real over MCP streamable HTTP — `import_reference
+→ generate_mesh → wait → prepare_body → skin_body → render_model →
+promote_body` — the loop stops after the skin: `skin_body`'s own `then` says
+"export the body, then `promote_body`", and there is no export tool among the
+twenty-five. `promote_body` takes the *exported* glb and runs the export gate
+and rig check on it; handed the skinned one it refuses, correctly, with `lowest
+vertex at y=-0.074 m`. `crates/forge/tests/mcp_session.rs` proves the gap by
+stepping outside the protocol in the middle of its own character loop to shell
+`forge gen export`. **Why it matters more than one missing verb:** the shell
+path has six doors and the MCP surface has five, so an agent given only the
+tools cannot ship a body it just skinned, and the test that is supposed to hold
+that path green is the thing routing around it. The fix is an `export_body`
+tool with `mcp-check` re-pinned; it is not made here because this run was to
+find out, and finding out is what it found. 2026-08-31.
+
+**A fake tier stubs the one door that costs no card.** `import_reference` on
+tier `fake` stores the original PNG bytes, hashes them, and writes every
+measurement as `null` with the note "placeholder run: the picture was stored
+and hashed, but nothing about it was measured". The record is honest — `null`
+means unknown, which is the rule — but it means the keyer, the span, the head
+count and the contact-shadow check, the whole reason the door exists, never run
+in `ci-fake` or `mcp-session`. **Why this is worth a line:** every other
+generator is stubbed because it needs a GPU; this one needs numpy and a PNG.
+The tier is a statement about the *card*, and a door that does not touch the
+card has no reason to answer to it. 2026-08-31.
+
+**The re-skin of `vex_runner` was refused, and the shipped body stands.** The
+first thing Phase 2 promised — the sample body re-skinned through the new doors
+— ran clean through prepare (fit 1.358 m against its own shoulder line at
+1.361 m), skin (55 of 55 bones weighted, 0 unweighted of 24 119, `motion_scale`
+1.0000) and export, and `forge rig check` refused it on the contact-feet
+finding at −5.4 cm against the contract's 5.0 cm. Nothing was promoted, the
+committed `.blend` was restored, and the evidence is under `out/p2run/reskin/`.
+**What the strip says, which is the part a number cannot:** on `walk` and on
+`pistol_shoot` the fitted SkinTokens body and the shipped bone-heat body are
+indistinguishable to the eye at four and six frames, front, left and
+three-quarter (`out/p2run/cmp_frame0.png`, `out/p2run/cmp_pistol.png`) — the
+pauldron improvement the Phase 0 spike measured on `pistol_shoot` does not read
+on a body whose skeleton was also re-fitted. So the honest summary of the
+re-skin is: no visible gain, one gate lost by 4 mm, and the library unchanged.
+`ember_knight` is the body that proves the doors, because it is the one that
+had nowhere else to come from. 2026-08-31.
+
+**The shoulder line comes from the weights, and the geometry anchor the
+ledger promised cannot be built.** The 2026-08-30 entry above ends "the root
+and the shoulder line come from geometry (the crotch and the lowest vertices,
+the arm tube's centroid)". Only the root's half was implemented, and the fit
+record shipped claiming `"shoulder_line": "geometry"` for a line the weights
+had decided — a record stating a design's intent rather than a door's
+behaviour, on the first library body carrying its own bone lengths. The claim
+is now `"weights"`, which is what happens, and `fit.py` reports the geometry
+beside it as a cross-check that places nothing. **Why the anchor is not being
+built instead.** `fitgeom.shoulder_y` is the median height of every vertex
+further out than 0.55 of the half-span, and its own source says that fraction
+is "narrow enough to leave the shoulders out of it": it is the **arm tube**,
+a statement about a pose, not a measurement of the joint where an arm leaves
+the torso. On `ember_knight` the band starts 50.5 cm out, past the elbow at
+42.2 cm, and reads 1.3871 m against a shoulder the weights place at 1.5327 m.
+And a run's whole freedom in this design is **one positive scalar along the
+contract's frozen direction**, because a scalar cannot rotate a vector and the
+rest rotations are what every baked clip binds to. `Spine3 → Arm` runs
+diagonally, so anchoring its *height* means either rotating the segment —
+forbidden — or solving the scalar from the height alone, which would put
+`ember_knight`'s shoulder joint 8.7 cm from the mirror plane on a body whose
+fingertips are 91.7 cm out: an arm leaving the torso from inside the chest, to
+satisfy a number that was never about that joint. The root can be anchored
+because the root has no parent segment and so no direction to break. **What is
+kept from the idea:** the gap travels in the report and in the rig record —
+14.6 cm on `ember_knight` (plate armour, a pauldron the skinner reads as
+shoulder), 6.5 cm on the `vex_runner` re-skin, 1.7 cm on the witch of the
+original spike — printed by the door and refused by nothing, because three
+bodies is not a threshold. 2026-08-31.
+
+**The arm-sliver check ships as a note, and no number separates the bodies on
+this disk.** `designs/skin.md` pinned `[fit] limb_radius_min_fraction` at
+**0.22** on four bodies — the courier sliver at 0.200–0.214 against
+`vex_runner` at 0.245–0.610 — and pre-authorised its own demotion: "if any
+good arm lands under 0.22 the gate becomes a note in the same commit, with the
+lesson dated in `decisions.md`". The fifth body measured is that clause
+arriving. `moss_witch_v4` reads **0.218 / 0.160** on the upper arms and 0.872 /
+0.844 on the forearms, and she walks, aims and rolls — below every arm of the
+body that walked as a sliver. Two others measured in between: `courier_flux`
+0.244/0.253 with forearms at 0.164/0.166, `drow_warlock` 0.549/0.545 and
+0.682/0.568. So the ranking is not monotone in "is this body any good", and no
+threshold separates a body that ships from one that does not. **Why she reads
+that low without being thin:** she is a narrow arm inside a wide sleeve, and
+her 1.04 m half-span puts the contract's upper-arm run across the sleeve
+rather than through the arm — the measurement is of the run's neighbourhood,
+not of a limb. The 2026-08-30 entry above, written the same day, calls
+it "the sliver gate" while deriving the head count's headroom from it: the
+arithmetic stands and the word does not. `prepare` prints the four ratios and
+the off-axis distance beside them and refuses on neither; the one refusing gate left on the prepared
+mesh is the arm-height check against the body's own shoulder line, and the
+judge of volume is the strip on the real body. The demotion is stated in
+`prepare.py`'s docstring, in `profile.toml`, in the `prepare_body` tool's
+description, in `forge-character` and in the README, so nothing promises a
+refusal that does not happen. **Do not restore the refusal without a number
+that separates** — the one that would have refused the witch is the one this
+entry exists to prevent. 2026-08-31.
+
+**`export_body` is the twenty-sixth tool, and the gate that was supposed to
+hold the character path green was shelling the verb that was missing.** The
+entry above found the gap and left it: `skin_body` writes a `.blend`,
+`promote_body` takes an exported `.glb`, and nothing on the surface turned
+one into the other, so an agent with no shell could skin a body and never
+ship it. `export_body` now queues `forge gen export` exactly as
+`just promote-body` does, `skin_body`'s `then` names it, and `mcp-check` is
+re-pinned at twenty-six. **The part worth keeping as a lesson is the test.**
+`crates/forge/tests/mcp_session.rs` stepped outside the protocol in the
+middle of its own character loop to run `forge gen export` in a subprocess —
+and it was green, every day, while the path it claimed to hold was broken at
+exactly that step. A gate that reaches for a terminal in the middle of the
+loop it is proving has stopped proving that loop: it proves the terminal.
+Both loops are tool calls end to end now, and the `forge rig fixture` call
+that remains in the shipping half is labelled as what it is — a fixture
+nobody ships, not a door with no tool. 2026-08-31.
+
+**What a door measured belongs in the reply, not only in the log.** A real
+`import_reference` over MCP came back `state: done, message: null` — no span,
+no head count, no keyer numbers, no notes — and the CLI printed `record`,
+`output` and `elapsed`. The 3.37-heads note that decides whether a picture
+is worth a card minute reached the job log and stopped there, and an agent
+has no shell to read a log with. Everything needed was already on the row:
+`Job::payload` keeps the child's whole JSON last line for exactly this
+reason, and its own doc says so — "the MCP frames must print the generator's
+own words, not a summary of them". So the done frame now carries `reported`,
+which is that object **minus** what the frame already states, plus the
+door's own rendering (`_text`) as a text block; `forge gen` prints the same
+two things. **A projection by subtraction, not by a list of keys:** a door
+that starts measuring something new is read without `jobs.rs` changing,
+which is the whole argument for keeping the last line whole in the first
+place. `skin_body`'s description promised a fit table it was not sending;
+the door now puts the run table, the shoulder-line cross-check and the
+`motion_scale` in its payload under `fit_table`, so the promise and the
+frame agree. 2026-08-31.
+
+**A tier is a statement about the card, so the door that needs no card runs
+for real on tier `fake`.** The entry above recorded that `import_reference`
+stubbed itself on the fake tier and left every measurement `null` — the
+keyer, the span, the head count and the contact-shadow check never running
+in `ci-fake` or `mcp-session`, which is the entire reason the door exists.
+`run_fake` now asks one question — are Pillow, numpy and OpenCV importable
+here? — and where they are, it **is** `run`: the same key, the same
+refusals, a record with `fake: false`, because nothing about that run is a
+placeholder. Where they are not (a bare runner, the machine tier `fake` was
+invented for) there is nothing to re-exec into, since a fake tier installs
+no backend: the bytes are stored, every field is `null`, and one sentence
+says so in the record **and** in the frame and the summary — an agent told
+only "done" would file an unliftable reference believing it passed.
+**Two things this forced, both improvements.** `ci-fake` and `mcp-session`
+now *draw* a T-posed figure at 1024 instead of handing the door a 4×4 grey
+square or a single transparent pixel, so what CI exercises is a picture
+being measured. And the door's own tests pin the answer to that question
+with a fixture instead of discovering it: an unpinned test would have taken
+one path on this disk and the other on the runner, which is the
+"works here" defect one directory over. 2026-08-31.

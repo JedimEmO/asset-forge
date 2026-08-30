@@ -23,8 +23,9 @@ keyer, runs the pre-checks that would otherwise cost a lift, stores the
 `<name>.ref.json` and this row. Re-import with `--overwrite` to correct a
 row's Origin; the door restates Origin and the date and leaves the **For**
 cell standing, because that sentence is somebody's account of what was made
-from the picture and not the door's to invent. The three rows below were
-written that way on 2026-08-30, restating what the file already said; the
+from the picture and not the door's to invent. The first three rows below
+were written that way on 2026-08-30, restating what the file already said,
+and `ember_knight` came through the door for real on 2026-08-31; the
 `<name>.lift.json` beside each still carries the lift.
 
 | File | Origin | For | Date |
@@ -32,8 +33,9 @@ written that way on 2026-08-30, restating what the file already said; the
 | `characters/vex_runner.png` | xAI grok (cloud image model), image_edit chained from a style board that does not ship here, then two self-edits (one arm per side in T-pose; taller, six heads, shoulders higher); painted 2026-08-18 | `assets/bodies/vex_runner.glb` — lifted at seed 7 after seed 42 left the rear skull absent | 2026-08-30 |
 | `props/sword.png` | xAI grok, image_edit chained from the same style board; painted and lifted 2026-08-22 | `assets/models/sword.glb` — a held weapon, grip at the origin (`hand_r` socket) | 2026-08-30 |
 | `props/barrel.png` | xAI grok, image_edit chained from the same style board; painted 2026-08-18 | `assets/models/barrel.glb` — a floor prop, floor at the origin | 2026-08-30 |
+| `characters/ember_knight.png` | xAI grok (cloud image model), drawn 2026-08-30 under xAI's consumer terms (user owns the output) for the Phase 2 fitted-skeleton runs; third version, re-proportioned to fingertip span equal to height and seven heads after two squat drafts the fit gate refused | `assets/bodies/ember_knight.glb` — lifted at seed 7 (the first lift that needed no re-roll), skinned by SkinTokens and carrying its own fitted bone lengths | 2026-08-31 |
 
-**Licence posture.** All three were generated with the grok CLI ("Grok
+**Licence posture.** All four were generated with the grok CLI ("Grok
 Build", xAI) in the repository this one was distilled from. xAI's consumer
 Terms of Service (<https://x.ai/legal/terms-of-service>) state that the user
 retains ownership of inputs and owns the output, free to use including
@@ -60,8 +62,8 @@ reproducible and does not ship; that is why the lift record claims the
 PNG's hash and nothing upstream of it.
 
 **What nvdiffrast means for the shipped meshes, plainly.** The textures on
-all three lifted samples (`vex_runner`, `sword`, `barrel`) were baked
-through nvdiffrast 0.4.0, which ships under the NVIDIA Source Code License
+all four lifted samples (`vex_runner`, `ember_knight`, `sword`, `barrel`)
+were baked through nvdiffrast 0.4.0, which ships under the NVIDIA Source Code License
 — non-commercial use only. So: the geometry's provenance is clean
 (TRELLIS.2 is MIT, code and weights), but **the sample textures are not
 licensed for commercial use or commercial redistribution**. They ship for
@@ -107,6 +109,16 @@ with its seed, steps, cfg and model. The previous repository's sounds had
 | `footsteps_stone` | sfx | MOSS-SoundEffect-v2 (Apache-2.0), 2 s, 100 steps, cfg 4 | 7 | four boot steps at a walking pace; the model renders a sequence however the prompt is worded — a "single footstep" prompt gave six quiet taps peaking at -19.5 dBFS |
 | `door_metal` | sfx | MOSS-SoundEffect-v2, 2 s, 100 steps, cfg 4 | 101 | first seed tried |
 | `ambient_crypt` | music | ACE-Step 1.5 turbo (MIT), 30 s, `acestep-5Hz-lm-0.6B` planner; B minor, 80 bpm as the model resolved them | 7, plus the LM seed the record carries | not a seamless loop: every 15 s render (four seeds, two wordings) spent its last third near silence; at 30 s the model fills the length and ends with about two seconds of tail |
+
+`tavern` (music) was rendered on 2026-08-31 through the ComfyUI host's
+ACE-Step 1.5 turbo graph at `--gain-db -3`, the first track to ship through
+that graph's `AudioAdjustVolume` node: the same prompt and seed without it
+came off the host pinned at 0.0 dBFS with 84 consecutive clipped samples, and
+with it the file peaks at -2.6 dBFS with none. It is not a loop; its last
+2.7 s are a decaying tail. `door_slam` and `chain_drag` (sfx) are this
+repository's own MOSS-SoundEffect renders and carry recorded generator blocks;
+neither has a row above because a sound's record *is* its account, and this
+table exists for the pictures, whose origin lives nowhere else.
 
 Neither generator is bit-reproducible, so the shipped file is the exact
 file that was auditioned (`just audio`, verdict `clean`) and its record is

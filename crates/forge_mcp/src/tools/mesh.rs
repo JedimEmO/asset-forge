@@ -1,10 +1,22 @@
-//! The three steps that turn a reference PNG into a rigged body, each a job.
+//! The four steps that turn a reference PNG into a rigged body, each a job.
 //!
 //! `generate_mesh` lifts the picture, `prepare_body` normalises the lift and
 //! puts a skeleton in it, `skin_body` hands that to `SkinTokens` and fits the
-//! skeleton to the body its own weights describe. All three write under
-//! `out/` and none of them touches the library: `promote_body` is the door
-//! for that, and it is a separate decision on purpose.
+//! skeleton to the body its own weights describe, and `export_body` writes
+//! the `.glb` a library body is. All four write under `out/` (`skin_body`
+//! also writes the working `.blend` under `assets-src/`) and none of them
+//! touches the library: `promote_body` is the door for that, and it is a
+//! separate decision on purpose.
+//!
+//! # Why `export_body` exists
+//!
+//! It was missing, and the loop stopped without it. `skin_body` leaves a
+//! `.blend` and `promote_body` takes an exported `.glb`; the shell path had
+//! `forge gen export` in the middle and the tool surface had nothing, so an
+//! agent with no shell could skin a body and never ship it — and the test
+//! that was supposed to hold the path green shelled the missing verb itself
+//! (`decisions.md`, 2026-08-31). The shell recipe and the tool now run the
+//! same three commands in the same order.
 //!
 //! # Why they are jobs and not calls
 //!
@@ -108,6 +120,19 @@ pub(crate) struct SkinBodyArgs {
     pub(crate) wait_s: Option<f64>,
 }
 
+/// Arguments for `export_body`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct ExportBodyArgs {
+    /// The rigged `.blend`, as `skin_body` reported it —
+    /// `assets-src/blender/<name>.blend`.
+    pub(crate) blend: String,
+    /// `snake_case` library name for the body. Default: the input's stem.
+    pub(crate) name: Option<String>,
+    /// Seconds to wait inline before answering. An export is Blender and no
+    /// card — seconds, not minutes.
+    pub(crate) wait_s: Option<f64>,
+}
+
 #[tool_router(router = mesh_router, vis = "pub(crate)")]
 impl ForgeServer {
     /// Lift a reference PNG to a textured mesh.
@@ -206,13 +231,16 @@ impl ForgeServer {
                        to the profile's stature, face the rig's front, drop generation debris, \
                        hold the triangle budget, and refuse a mesh the skinner cannot work \
                        with. This returns a JOB; the prepared mesh and its record land under \
-                       out/prepare/. TWO GATES LIVE HERE and both name the reference PNG when \
-                       they refuse: the arms must be horizontal against the body's OWN \
-                       shoulder line (a weight cannot fix a pose), and a limb must not be \
-                       thinner than the bone it hangs on (a posterized picture gives the lift \
-                       no shading to take volume from). Both refusals print the numbers they \
-                       measured. The fix for either is upstream — redraw the picture, or \
-                       re-lift at another seed — never a patch in Blender. Next is skin_body."
+                       out/prepare/. ONE GATE REFUSES HERE, and it names the reference PNG \
+                       when it does: the arms must be horizontal against the body's OWN \
+                       shoulder line (a weight cannot fix a pose), and the refusal prints the \
+                       numbers it measured. Every limb's cross-section is measured beside it \
+                       and PRINTED AS A NOTE, never refused: a thin arm is what a posterized \
+                       picture lifts to, but the thinnest arms measured on this disk belong \
+                       to a body that walks, so no number separates them and the judge is the \
+                       strip on the real body. The fix for either is upstream — redraw the \
+                       picture, or re-lift at another seed — never a patch in Blender. Next \
+                       is skin_body."
     )]
     pub(crate) async fn prepare_body(
         &self,
@@ -347,12 +375,78 @@ impl ForgeServer {
         argv.push(String::from(ACTOR));
 
         let then = format!(
-            "when it is done, read the fit table and the motion_scale, export the body, and \
-             promote_body {{\"glb\": \"out/export/{name}.glb\", \"name\": {name:?}, \
-             \"rig_record\": {:?}}} ships it",
-            record.display().to_string()
+            "when it is done, read the fit table and the motion_scale in the frame, then \
+             export_body {{\"blend\": {:?}, \"name\": {name:?}}} writes the .glb that \
+             promote_body ships",
+            blend.display().to_string()
         );
         self.queue_gen("skin_body", argv, args.wait_s, &then).await
+    }
+
+    /// Export a rigged `.blend` to the `.glb` a library body is.
+    #[tool(
+        description = "Export a rigged .blend to the .glb a body is filed as, in headless \
+                       Blender, through the export gate: one armature at the root, every \
+                       contract bone at its contract depth, rest rotations within tolerance, \
+                       each rest translation's DIRECTION within a degree of the contract's \
+                       and its LENGTH free (a fitted skeleton's bones are this body's own), \
+                       at most four influences a vertex, and a self-contained container with \
+                       nothing referenced from outside it. This returns a JOB; the .glb and \
+                       its export record land under out/export/. It is the step between \
+                       skin_body and promote_body, and there is no way round it: promote_body \
+                       takes the EXPORTED file, and handed a skinned one it refuses on the \
+                       rig check. A refusal here is upstream of the .blend — re-skin or \
+                       re-prepare; never repair a .blend by hand. Next is promote_body, with \
+                       the rig record and this export record, so the provenance is recorded \
+                       rather than reconstructed."
+    )]
+    pub(crate) async fn export_body(
+        &self,
+        Parameters(args): Parameters<ExportBodyArgs>,
+    ) -> CallToolResult {
+        let project = &self.config.project;
+        let blend = resolve_path(project, &args.blend);
+        if !blend.is_file() {
+            return util::refuse(format!(
+                "no rigged .blend at {} — pass the path skin_body reported, under \
+                 assets-src/blender/. nothing was written.",
+                blend.display()
+            ));
+        }
+        if let Some(refusal) = self.backend_refusal("blender", "export_body") {
+            return refusal;
+        }
+        let name = match named(args.name.as_deref(), &blend) {
+            Ok(name) => name,
+            Err(refusal) => return util::refuse(refusal),
+        };
+        let dir = project.out.join("export");
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            return util::refuse(format!("cannot create {}: {err}", dir.display()));
+        }
+        let out = dir.join(format!("{name}.glb"));
+        let record = dir.join(format!("{name}.export.json"));
+
+        let argv = vec![
+            String::from("export"),
+            blend.display().to_string(),
+            String::from("--out"),
+            out.display().to_string(),
+            String::from("--record"),
+            record.display().to_string(),
+            String::from("--created-by"),
+            String::from(ACTOR),
+        ];
+
+        let then = format!(
+            "when it is done, promote_body {{\"glb\": {:?}, \"name\": {name:?}, \
+             \"rig_record\": \"assets-src/blender/{name}.rig.json\", \"export_record\": \
+             {:?}}} runs the rig check and files it",
+            out.display().to_string(),
+            record.display().to_string()
+        );
+        self.queue_gen("export_body", argv, args.wait_s, &then)
+            .await
     }
 }
 

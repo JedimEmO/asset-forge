@@ -245,12 +245,13 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    // Twenty-two of the twenty-five `mcp-check` pins: `init_project`,
+    // Twenty-three of the twenty-six `mcp-check` pins: `init_project`,
     // `licences` and `setup` land with tools/setup.rs. Anything else
     // appearing here is a surface change the skills are not written against.
     let mine = [
         "cancel",
         "doctor",
+        "export_body",
         "export_bundle",
         "generate_audio",
         "generate_clips",
@@ -282,7 +283,7 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         assert!(
             mine.contains(&name.as_str())
                 || matches!(name.as_str(), "init_project" | "licences" | "setup"),
-            "{name} is not one of the twenty-five --- stdout\n{out}"
+            "{name} is not one of the twenty-six --- stdout\n{out}"
         );
     }
     // The mesh doors are here now, and their being here is the decision:

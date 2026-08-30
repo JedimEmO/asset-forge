@@ -42,8 +42,9 @@ thing nobody can re-derive.
 
 **The sliver check is not here.** A picture cannot be measured for volume;
 only a mesh can. That is the whole of the 2026-08-30 "a reference that passes
-every gate can still lift to junk" lesson, and the check lives at
-``forge gen prepare``.
+every gate can still lift to junk" lesson, and the measurement lives at
+``forge gen prepare`` — where it is printed and refuses nothing, so the
+seven-view sheet and the strip are what judge a thin limb.
 
 Two layers, like every command in this package. The outer half runs under
 the system python and is stdlib-only: arguments, the format check, the
@@ -180,8 +181,9 @@ SPAN_BAND = (0.7, 1.3)
 #: (`moss_witch_v5.png`) to 7.54 (`courier_flux.png`). skin.md proposed 4.0
 #: "because the four-head witch now ships" — and the witch measures 3.37, so
 #: 4.0 refuses the body Phase 2 exists to ship. 3.0 sits 12 % under her, which
-#: is the same headroom the sliver gate ships with, and still refuses a
-#: picture whose arms begin a third of the way down the frame.
+#: is the same headroom the sliver number ships with (a note since 2026-08-31,
+#: never a refusal), and still refuses a picture whose arms begin a third of
+#: the way down the frame.
 HEADS_REFUSE_BELOW = 3.0
 
 #: Between this and :data:`HEADS_REFUSE_BELOW` the door prints a note and
@@ -227,8 +229,9 @@ holding nothing, with no hair, cloth or gear crossing the silhouette of the
 arms or legs. "Chunky" is volume, never proportion: a large head, big hands
 and boots, limbs as wide as the neck, a baked key with occlusion painted
 into the pits. A picture that passes every gate here can still lift to a
-sliver, because no picture can be measured for volume — the sliver check is
-on the prepared mesh, at `forge gen prepare`.
+sliver, because no picture can be measured for volume — the sliver number is
+measured on the prepared mesh, at `forge gen prepare`, and printed there:
+nothing downstream refuses a thin limb, so look at the seven views.
 
 PROP: a three-quarter view that shows the top and one side, the whole object
 inside the frame, resting the way it will rest in the game.
@@ -737,7 +740,7 @@ def build_record(settled: Settled, *, measured: dict, created_by: str | None, fa
         rec["measured"]["arm_line_fraction"] = None
     rec["fake"] = bool(fake)
     if fake:
-        rec["note"] = "placeholder run: the picture was stored and hashed, but nothing about it was measured"
+        rec["note"] = PLACEHOLDER_NOTE
     return rec
 
 
@@ -832,6 +835,7 @@ def _summary(settled: Settled, measured: dict, notes: list[str], *, fake: bool) 
         )
     else:
         lines.append("  nothing measured: the bytes were stored and hashed, and that is all this run claims")
+        lines.append("  this picture has NOT been held to the format — import it again where the keyer can run")
     lines.append(f"  record {settled.record}")
     lines.append(f"  ledger {settled.ledger}")
     lines.extend(f"  note: {note}" for note in notes)
@@ -868,17 +872,58 @@ def run(args) -> dict:
     return _store(settled, measured, notes, created_by=getattr(args, "created_by", None), fake=False)
 
 
-def run_fake(args) -> dict:
-    """Store and record the picture with nothing measured; no backend, no keyer.
+#: What the record and the frame say when the fake tier could not measure.
+#: One sentence, one home: the record's ``note``, the payload's ``notes`` and
+#: the summary line all read it, so a caller cannot be told less than the
+#: file is.
+PLACEHOLDER_NOTE = (
+    "placeholder run: the picture was stored and hashed, but nothing about it was measured — "
+    "Pillow, numpy and OpenCV are not importable in this interpreter, and tier fake installs no "
+    "backend to borrow them from. Nothing here says the picture is liftable"
+)
 
-    A ``--fake`` reference import is the one placeholder in this toolkit that
-    is not a placeholder file: the bytes stored are the caller's own PNG,
-    because copying a file needs no model. What is fake is the *measurement*
-    — and so every measured field is ``null``, which is what ``null`` means
-    everywhere else in a record.
+
+def measures_here() -> bool:
+    """Whether this interpreter can key and measure a PNG on its own.
+
+    The three the keyer needs, asked as a question rather than as an
+    exception, so the fake tier can *decide* instead of discovering it
+    mid-write — and so a test can pin either answer and measure the door
+    rather than the developer's disk.
+    """
+    try:
+        import cv2  # noqa: F401, PLC0415
+        import numpy  # noqa: F401, PLC0415
+        from PIL import Image  # noqa: F401, PLC0415
+    except ImportError:
+        return False
+    return True
+
+
+def run_fake(args) -> dict:
+    """The real door wherever the picture can be measured; a stored PNG where it cannot.
+
+    **A tier is a statement about the card, and this door never touches
+    one.** It needs a PNG and numpy — no model, no weights, no GPU — so on
+    tier ``fake`` it runs :func:`run` verbatim wherever the keyer's three
+    libraries are importable: the same key, the same refusals, the same
+    record with ``fake: false``, because nothing about that run is
+    a placeholder. That is what makes ``ci-fake`` and ``mcp-session``
+    exercise the keyer and the geometry pre-checks at all, which are the
+    whole reason this door exists (``decisions.md``, 2026-08-31).
+
+    Where the three are *not* importable — a bare runner, which is the
+    machine tier ``fake`` was invented for — there is nothing to re-exec
+    into, because a fake tier installs no backend. Then the bytes are stored
+    and hashed, every measured field is ``null`` (which is what ``null``
+    means everywhere else in a record), and :data:`PLACEHOLDER_NOTE` says so
+    in the record **and** in what the caller gets back — an agent that is
+    told only "done" would file an unliftable reference believing it passed.
     """
     if args.print_format:
         return print_format(args.print_format)
+    if measures_here():
+        return run(args)
     settled = settle(args)
     refuse_taken(settled)
     from forge_gen import placeholders  # noqa: PLC0415 - only the fake path needs it
@@ -901,7 +946,7 @@ def run_fake(args) -> dict:
         "backdrop_rgb": None,
         "keyer_tolerance": None,
     }
-    return _store(settled, measured, [], created_by=getattr(args, "created_by", None), fake=True)
+    return _store(settled, measured, [PLACEHOLDER_NOTE], created_by=getattr(args, "created_by", None), fake=True)
 
 
 def _store(settled: Settled, measured: dict, notes: list[str], *, created_by: str | None, fake: bool) -> dict:
@@ -931,6 +976,7 @@ def _store(settled: Settled, measured: dict, notes: list[str], *, created_by: st
     key = f"{settled.kind}s/{settled.name}.png"
     row = ledger_row(settled, when=rec["created"], keep_for=existing_for(settled.ledger, key))
     ledger = write_ledger_row(settled.ledger, row, key=key)
+    summary = _summary(settled, rec["measured"], notes, fake=fake)
     payload = {
         "name": settled.name,
         "kind": settled.kind,
@@ -942,7 +988,16 @@ def _store(settled: Settled, measured: dict, notes: list[str], *, created_by: st
         "notes": notes,
         # The record's measured block, not the analysis's: what is printed and
         # what is filed have to be the same numbers.
-        "_text": _summary(settled, rec["measured"], notes, fake=fake),
+        #
+        # Under two keys, from one call, on purpose. `_text` is this
+        # package's private channel to `cli.emit` and never reaches the JSON
+        # line — which is the line `forge gen` reads, and the only thing a
+        # caller over MCP ever sees. A door whose measurements live only in
+        # `_text` measures for a terminal and for nobody else, so the same
+        # string travels as a public `summary` too. One call, two keys:
+        # there is nothing here for the two to drift apart on.
+        "summary": summary,
+        "_text": summary,
     }
     if replaced is not None:
         payload["replaced"] = {
@@ -967,11 +1022,7 @@ def measure_image(path: Path) -> dict:
     before anything is written). It is the same module either way — this is a
     question about which interpreter, not about which code.
     """
-    try:
-        import cv2  # noqa: F401, PLC0415
-        import numpy  # noqa: F401, PLC0415
-        from PIL import Image  # noqa: F401, PLC0415
-    except ImportError:
+    if not measures_here():
         backend = load_backend(BACKEND)
         launcher.resolve_interpreter(backend)
         result = launcher.run_inner_checked(backend, "reference", [str(path)])

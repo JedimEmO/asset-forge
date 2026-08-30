@@ -296,15 +296,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tool_surface_is_the_twenty_five_names_mcp_check_pins() {
+    fn the_tool_surface_is_the_twenty_six_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
         // The list is asserted rather than counted so a rename shows up as a
         // diff of names, which is what `just mcp-check` compares against and
         // what `mcp_session.rs` asserts over both transports.
-        let twenty_five = [
+        let twenty_six = [
             "cancel",
             "doctor",
+            "export_body",
             "export_bundle",
             "generate_audio",
             "generate_clips",
@@ -332,7 +333,7 @@ mod tests {
         let mut names = server.tool_names();
         names.sort();
         assert_eq!(
-            names, twenty_five,
+            names, twenty_six,
             "the surface drifted from mcp-check's pin"
         );
     }

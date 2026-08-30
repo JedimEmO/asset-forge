@@ -35,6 +35,12 @@ ComfyUI host the toolkit drives but does not schedule. The plan is
   never probed, never a reason to exit 1 — plus `executor` and `chosen`
   columns, one shared `GET /object_info` for every comfy row, and exit 1
   only while a *chosen* backend is not `ok`.
+- **`export_body`** — the missing middle of the agent's character path.
+  `skin_body` writes a `.blend` and `promote_body` takes an exported `.glb`;
+  nothing on the surface turned one into the other, and the gate that was
+  supposed to hold the path green shelled `forge gen export` itself. The
+  tool queues the same command `just promote-body` runs, and both
+  `mcp-session` loops are tool calls end to end.
 - **MCP: the tool surface over two transports.** `init_project`, `licences`,
   `setup`, `doctor`, `status`, `list_runs`, `wait`, `cancel` join the
   existing surface; `generate_audio` returns a job. `forge mcp` in a
@@ -123,10 +129,36 @@ body, and the skinner's weights say what they are.
 - **`just` recipes:** `just ref-import` and `just ref-format` are new;
   `just rig-mesh` became `just prepare` + `just skin` (`just body` runs
   both) and `just promote-mesh` became `just promote-body`. `mcp-check`
-  pins twenty-five tool names and `mcp-session` grows the character leg.
+  pins twenty-six tool names and `mcp-session` grows the character leg —
+  every step of it a tool call.
 - The reference format text no longer asks for "seven heads or more" as a
   rule: the fitted skeleton made proportion a preference. The door refuses
   below three heads and notes anything under seven.
+- **The arm-sliver check is a printed note, not a refusal.** It shipped as a
+  gate at 0.22 and was demoted in the same commit under `designs/skin.md`'s
+  own clause: the fifth body measured, `moss_witch_v4`, walks with arms at
+  0.218 and 0.160 — below every arm of the body that walked as a sliver — so
+  no threshold separates them. `prepare` prints all four ratios with the
+  off-axis distance; the one refusing gate on a prepared mesh is arm height,
+  and the judge of volume is the strip. Said the same way in the door, the
+  profile, the `prepare_body` description, `forge-character` and the README.
+- **The fit record says the weights placed the shoulder line, because they
+  did.** It claimed `geometry` for a line no geometry touched. The geometry
+  anchor the ledger proposed cannot be built — `fitgeom.shoulder_y` is the
+  arm tube's median height, and a run's freedom is one scalar along a frozen
+  direction — so the record says `weights` and carries the two numbers and
+  their gap as a cross-check that places nothing. `ember_knight`'s records
+  were regenerated through their own doors.
+- **What a door measured reaches the reply.** A done job frame carries
+  `reported` (the generator's own last line, minus what the frame already
+  says) and the door's `summary` block; `forge gen` prints the same. The
+  reference door's span, head count and notes and the skinner's fit table
+  used to reach the job log and stop there, where an agent has no shell.
+- **`import_reference` runs for real on tier `fake`** wherever Pillow, numpy
+  and OpenCV are importable: the tier is a statement about the card, and
+  this door never touches one. Where they are not, every measurement is
+  `null` and the reply says so, not only the record. `ci-fake` and
+  `mcp-session` now draw a 1024-px T-posed figure instead of a 4×4 square.
 
 ### Removed
 

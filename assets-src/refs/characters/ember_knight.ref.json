@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-08-31",
+  "created_by": "unknown",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "out/refs_grok/ember_knight_v3.png",
+      "sha256": "sha256:7a3bd0e9354fa45d6a1e45d46b04e78eaef705b741ecbc491822dcc6715befba",
+      "source": "xAI grok (cloud image model), drawn 2026-08-30 under xAI's consumer terms (user owns the output) for the Phase 2 fitted-skeleton runs; third version, re-proportioned to fingertip span equal to height and seven heads after two squat drafts the fit gate refused",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "character",
+    "long_side_px": 1024,
+    "stated_source": "xAI grok (cloud image model), drawn 2026-08-30 under xAI's consumer terms (user owns the output) for the Phase 2 fitted-skeleton runs; third version, re-proportioned to fingertip span equal to height and seven heads after two squat drafts the fit gate refused"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/characters/ember_knight.png",
+      "sha256": "sha256:7a3bd0e9354fa45d6a1e45d46b04e78eaef705b741ecbc491822dcc6715befba",
+      "bytes": 426312
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.1859,
+    "arm_line_fraction": 0.1532,
+    "backdrop_rgb": [
+      181,
+      183,
+      182
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 304,
+    "heads": 6.53,
+    "height": 1024,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 0.983,
+    "subject_fill": 0.797,
+    "width": 1024
+  },
+  "fake": false,
+  "note": null
+}

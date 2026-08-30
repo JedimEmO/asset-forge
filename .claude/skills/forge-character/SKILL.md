@@ -26,9 +26,8 @@ against wrists the fit now moves to it. `designs/skin.md` is the design and
 **Which lines here were captured and which were read off a door.** The lift
 lines (step 2) and the export/promote lines (step 6) are from a real run
 (2026-08-23, `torv_warden`, RTX 4090, Blender 5.2), with the recipe name
-updated. The `ref-import` numbers and refusals in step 1 were captured
-2026-08-30 by running the shipped gates over every reference PNG in this
-repository. The `prepare` and `skin` lines are quoted from the doors and from
+updated. The `ref-import` numbers and refusals in step 1 were re-captured
+2026-08-31 from real runs of the door itself, into a throwaway project. The `prepare` and `skin` lines are quoted from the doors and from
 the spike evidence they were made out of (`out/spike_fit/`,
 `out/fit_warlock/`) — say so if you paste one at a user, and replace them
 with a captured line the first time you run the real thing.
@@ -77,8 +76,9 @@ edit it:
 > arms or legs. "Chunky" is volume, never proportion: a large head, big hands
 > and boots, limbs as wide as the neck, a baked key with occlusion painted
 > into the pits. A picture that passes every gate here can still lift to a
-> sliver, because no picture can be measured for volume — the sliver check is
-> on the prepared mesh, at `forge gen prepare`.
+> sliver, because no picture can be measured for volume — the sliver number is
+> measured on the prepared mesh, at `forge gen prepare`, and printed there:
+> nothing downstream refuses a thin limb, so look at the seven views.
 >
 > PROP: a three-quarter view that shows the top and one side, the whole object
 > inside the frame, resting the way it will rest in the game.
@@ -102,7 +102,7 @@ one. A lift is minutes of a 22 GB card; a look is free.
 |---|---|---|
 | Arms more than ~10° off horizontal, or bent | `prepare` refuses on arm height against **this body's own shoulder line** | both arms straight out at shoulder height, palms down |
 | Two forearms, a hanging gauntlet, a second limb on one side | the skinner weights a third limb and the fit reads it as an arm run | one arm per side, shoulder to fist in one line |
-| Thin wedges, spikes, thin straps, posterised shading, 25-pixel shins | `prepare` refuses on the **sliver** check — a limb thinner than the bone it hangs on animates as a sliver, and one measured 0.20 of its run and stretched to 2.8 m | thick shapes; tube limbs; oversized hands and boots; a baked key with occlusion painted into the pits — TRELLIS lifts volume out of shading |
+| Thin wedges, spikes, thin straps, posterised shading, 25-pixel shins | nothing refuses it. `prepare` measures every limb's cross-section and **prints** it — one body measured 0.20 of its run and stretched to 2.8 m — but a body that ships reads lower still, so the seven views and the strip are the judge | thick shapes; tube limbs; oversized hands and boots; a baked key with occlusion painted into the pits — TRELLIS lifts volume out of shading |
 | Gradient background, vignette | `ref-import` refuses: the keyer's border vote is not flat | plain flat light background |
 | Ground shadow under the feet | `ref-import` refuses by name — it keys as a detached island above the dust threshold and rides a foot bone | no shadow, no floor |
 | Cropped at the feet or hands, a weapon, a cape, text | missing geometry, or an un-riggable shell stuck to the body | whole body in frame; weapons are props on sockets, not part of the body |
@@ -132,13 +132,36 @@ record it replaced.
 `mesh.py` keys again at lift time, so a keyed PNG in the source tree would be
 a derived artefact whose hash and ledger row describe something nobody drew.
 
-Everything below happens before a GPU minute. Captured 2026-08-30 on this
-repository's own references:
+Everything below happens before a GPU minute. **Re-captured 2026-08-31 by
+running the door**, not by running its gates in a notebook: what a door
+measures reaches the reply now (`notes` and `summary` on the CLI, `reported`
+and a summary block in the MCP frame), so these are the lines you will see.
+A whole healthy run, `moss_witch_v5.png` into a throwaway project:
+
+```
+mesh: keyed background, subject covers 17%
+record   assets-src/refs/characters/moss_witch_v5.ref.json
+output   assets-src/refs/characters/moss_witch_v5.png
+kind     character
+ledger   assets-src/SOURCES.md
+ledger_row added
+name     moss_witch_v5
+notes    3.37 heads (crown to the arm line; a hat counts) — under the format's seven. That is allowed since the skeleton fits the body: judge it on the strip, not here.
+summary:
+  imported moss_witch_v5.png -> assets-src/refs/characters/moss_witch_v5.png
+    1024x1024, subject 0.1671, span/height 1.035, heads 3.37, fill 0.833, islands 1
+    record assets-src/refs/characters/moss_witch_v5.ref.json
+    ledger assets-src/SOURCES.md
+    note: 3.37 heads (crown to the arm line; a hat counts) — …
+elapsed  0.2 s
+```
+
+Line by line:
 
 | Log line | Healthy | Not |
 |---|---|---|
 | `mesh: keyed background, subject covers 19%` | the keyer voted a backdrop off the border and flooded it away | `the image border is not a flat background (median RGB (20, 20, 20), 90th-percentile spread 170 > 24) — cannot key alpha. Regenerate the reference with a plain flat backdrop.` → a gradient or a dark scene backdrop; redraw flat |
-| `1024x1024, subject 0.1859, span/height 0.983, heads 6.53, fill 0.797, islands 1` | this is `ember_knight_v3.png`. Subject 0.10–0.85, span 0.7–1.3, one island | any of them outside → a refusal below |
+| `1024x1024, subject 0.1859, span/height 0.983, heads 6.53, fill 0.797, islands 1` | this is `ember_knight_v3.png`, from its own run. Subject 0.10–0.85, span 0.7–1.3, one island | any of them outside → a refusal below |
 | `note: 3.37 heads (crown to the arm line; a hat counts) — under the format's seven. That is allowed since the skeleton fits the body: judge it on the strip, not here.` | a **note**, not a refusal, from `moss_witch_v5.png` | below 3.0 refuses: there is no torso between the head and the shoulders for a skeleton to sit in |
 | `record assets-src/refs/characters/<name>.ref.json` / `ledger assets-src/SOURCES.md` | the two files the door wrote beside the PNG | — |
 
@@ -155,14 +178,28 @@ this repository:
 4. **retained alpha** — the key kept under 10 % or over 85 % of the frame.
    Reframe the drawing; do not loosen the keyer.
 
-Then the geometry pre-checks. The one that fires most:
-`ember_knight.png: the subject is 1.321 as wide as it is tall, outside 0.7-1.3. Head-to-toe equals fingertip-to-fingertip: the fit scales a bone's length to this body, it cannot rotate an arm. Redraw with the arms straight out and horizontal.`
+Then the geometry pre-checks. The one that fires most, exactly as the door
+printed it on 2026-08-31:
+
+```
+forge: input_rejected: ember_knight.png: the subject is 1.321 as wide as it is tall, outside 0.7-1.3. Head-to-toe equals fingertip-to-fingertip: the fit scales a bone's length to this body, it cannot rotate an arm. Redraw with the arms straight out and horizontal.
+```
+
 — that is `ember_knight` v1, and `ember_knight_v3` at 0.983 is the redraw
-that fixed it.
+that fixed it. Nothing was written: a refusal here costs a redraw, not a
+card minute.
+
+**On tier `fake` this door still runs for real** wherever Pillow, numpy and
+OpenCV are importable — it needs a PNG and numpy, and a tier is a statement
+about the *card*. Where they are not, the reply says so in as many words
+(`this picture has NOT been held to the format`) and every measurement in
+the record is `null`. Do not read a fake-tier import as a picture that
+passed.
 
 **What this door does not check: volume.** A picture that passes every gate
 here can still lift to a sliver, because only a mesh can be measured for
-thickness. That check is step 4.
+thickness. That measurement is step 4 — and it is a printed number, not a
+refusal, so your eye on the seven views is the gate.
 
 ## Step 2 — lift: `just character <name> [flags]`
 
@@ -219,8 +256,9 @@ Judge, in this order:
   scalp, hair or a helmet — not the inside of the face. Hollow → step 2 with
   another seed, look again. The fix is never a patch in Blender.
 - **T-pose intact** — arms straight, nothing fused to the torso.
-- **Limb thickness** — this is the sheet where a sliver is visible before the
-  gate names it. Limbs as wide as the neck, hands and boots oversized.
+- **Limb thickness** — this is the sheet where a sliver is caught, because
+  nothing downstream refuses one. Limbs as wide as the neck, hands and boots
+  oversized.
 - **Nothing that is not the character** — a floating speck (dust that
   `prepare` drops if under 2.5 cm; bigger than that, it ships).
 
@@ -234,26 +272,28 @@ normalises (yaw, stature, feet at y = 0, centred on the hips), drops dust,
 mattes, inserts the profile's skeleton — and **binds nothing**. The skinner
 wants a bare mesh, and the door refuses one that arrives with a vertex group.
 
-Two gates, both about the picture and never about the weights:
+**One check refuses here, and the sliver is a number beside it.** Both are
+about the picture and never about the weights:
 
-| Gate | Number | What a refusal means |
+| Check | Number | What it does |
 |---|---|---|
-| arm height | `[fit] arm_height_tolerance_m = 0.15` — a **budget** | the arm tips are not level with **this body's own shoulder line** (the median height of vertices past 0.55 of the half-span). It refuses a *pose*, and says nothing about stature. The four-head witch is **not** this refusal: against her own shoulders she is inside 3.4 cm |
-| sliver, arms | `[fit] limb_radius_min_fraction = 0.22` — **measured** | an arm run's median cross-section is under 0.22 of its own length. Measured: the body that walked with a 2.8 m arm read 0.200–0.214, `vex_runner`'s thinnest arm reads 0.245, `courier_v2` 0.505–0.674 |
+| arm height | `[fit] arm_height_tolerance_m = 0.15` — a **budget** | **refuses.** The arm tips are not level with **this body's own shoulder line** (the median height of vertices past 0.55 of the half-span). It refuses a *pose*, and says nothing about stature. The four-head witch is **not** this refusal: against her own shoulders she is inside 3.4 cm |
+| sliver, arms | `[fit] limb_radius_min_fraction = 0.22` — the note's floor | **refuses nothing.** An arm run under 0.22 of its own length is named in a `NOTE`. It was a refusal for one day: the body that walked with a 2.8 m arm reads 0.200–0.214 and 0.22 separated it from `vex_runner` at 0.239 — until `moss_witch_v4` measured **0.218 and 0.160** and walks, aims and rolls. She is a thin arm inside a wide sleeve, no threshold separates the two, and the gate became a note (`decisions.md`, 2026-08-31) |
 | sliver, legs | none — measured and printed only | `vex_runner`'s thighs read 0.149 and the sliver's 0.296. The number does not separate, because a T-pose isolates an arm and does not isolate a leg. It is in the record and it is not a gate |
 
-The sliver refusal, as the door states it:
+Every run is printed either way — this is `ember_knight`'s own line, from the
+run that shipped it:
 
 ```
-prepare: courier_qwen's left upper arm measures 0.20 of its run across
-  (5.9 cm through a 29.5 cm bone), under [fit] limb_radius_min_fraction
-  0.22; the right reads 0.21. A limb thinner than the bone it hangs on
-  animates as a sliver. This is the reference, not the lift: a posterized
-  picture with 25-pixel shins gives TRELLIS.2 no shading to lift volume
-  from. Redraw with the guide's volume sentences — a large head, big hands
-  and boots, limbs as wide as the neck, a baked key with occlusion painted
-  into the pits — or re-lift at another seed and look at the seven views.
+prepare: limb cross-sections (a note; nothing here refuses) — LeftArm->LeftForeArm 0.4338, RightArm->RightForeArm 0.4406, LeftForeArm->LeftHand 0.5396, RightForeArm->RightHand 0.3949, LeftUpLeg->LeftLeg 0.0887, RightUpLeg->RightLeg 0.0894, LeftLeg->LeftFoot 0.0851, RightLeg->RightFoot 0.136
 ```
+
+An arm under the floor adds a second line naming it — `NOTE <name> has arm
+runs under [fit] limb_radius_min_fraction 0.22: …`, with the centimetres and
+the bone they cross — and the door still exits 0. **So nothing stops a
+sliver here.** Read the seven views (step 3), and judge the strip on the real
+body (step 7): thickness is the one thing in this chain that only a picture
+answers.
 
 `--stature` is the height the top of the mesh is fitted to (profile default
 1.80 m; rig check accepts 1.4–2.2). Since the skeleton now fits the body, a
@@ -404,7 +444,9 @@ never from the rig record, so the sidecar's claim is re-derivable — and
 
 `assets-src/refs/characters/<name>.png` + `<name>.ref.json` +
 `<name>.lift.json` (+ `<name>.txt` if one exists); the `assets-src/SOURCES.md`
-row the door wrote; `assets-src/blender/<name>.blend` + `<name>.rig.json`;
+row the door wrote; `assets-src/blender/<name>.blend` + `<name>.rig.json` +
+`<name>.fit.json` + `<name>.map.json` (the rig record names the fit report,
+and a record naming a file nobody has is worth less than no record);
 `assets/bodies/<name>.glb` + `<name>.json`; `assets/library.json`.
 **Never** `*.blend1`, never `out/` (the lift, the prepare, the export and the
 sheets are derived and gitignored), never the PNG without its row.
@@ -413,7 +455,9 @@ sheets are derived and gitignored), never the PNG without its row.
 
 - **A reference that passes every gate can still lift to junk.** The import
   door cannot measure volume; `prepare`'s sliver check is the first place
-  thickness is a number, and the strip on the real body is the last word.
+  thickness is a number — a number and not a refusal, because the thinnest
+  arms measured on this disk belong to a body that walks — and the seven
+  views and the strip on the real body are what decide.
 - Face texel density: a full-body reference at 1024² gives a soft face. A
   closer reference is a different character, not a fix.
 - Emissive, gloss, metal: the register strips everything but the base colour

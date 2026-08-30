@@ -433,13 +433,36 @@ fn summary(payload: &Value) -> String {
     }
     if let Some(object) = payload.as_object() {
         for (key, value) in object {
-            if matches!(
-                key.as_str(),
-                "ok" | "record" | "outputs" | "elapsed_s" | "fake" | "records"
-            ) {
+            // `_`-prefixed keys are the Python layer's private channel to
+            // its own printer and never reach this line; skipped so they
+            // cannot start.
+            if key.starts_with('_')
+                || matches!(
+                    key.as_str(),
+                    "ok" | "record" | "outputs" | "elapsed_s" | "fake" | "records"
+                )
+            {
+                continue;
+            }
+            if let Value::Array(items) = value
+                && items.iter().all(Value::is_string)
+            {
+                for item in items.iter().filter_map(Value::as_str) {
+                    let _ = writeln!(out, "{key:<8} {item}");
+                }
                 continue;
             }
             match value {
+                // A table of aligned keys is for scalars. A door that
+                // renders a table of its own — a fit's runs — gets its own
+                // block, indented under its name, rather than a first line
+                // in the column and the rest against the margin.
+                Value::String(text) if text.contains('\n') => {
+                    let _ = writeln!(out, "{key}:");
+                    for line in text.lines() {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                }
                 Value::String(text) => {
                     let _ = writeln!(out, "{key:<8} {text}");
                 }

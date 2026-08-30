@@ -685,7 +685,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="cancel doctor export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs prepare_body promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status wait"
+    expected="cancel doctor export_body export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs prepare_body promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -720,9 +720,11 @@ mcp-check: _build
 # wait, inspect_audio, promote_audio, verify — plus the two negative legs
 # that rot silently: wait on an unknown job, and a second promote onto a
 # taken name. Then the character loop, on the fake tier: import_reference,
-# generate_mesh, wait, prepare_body, wait, skin_body, wait, promote_body,
-# render_model, verify — plus a second promote_body on the same name refused,
-# then accepted with overwrite.
+# generate_mesh, wait, prepare_body, wait, skin_body, wait, export_body,
+# wait, promote_body, render_model, verify — plus a second promote_body on
+# the same name refused, then accepted with overwrite. Every step of it is a
+# tool call: a gate that shells a missing verb in the middle of the loop it
+# is holding green proves the shell, not the surface.
 #
 # It runs against `env!("CARGO_BIN_EXE_forge")`, so the binary under test is
 # this build with no `just` step in front of it. No GPU, no display, no
@@ -815,15 +817,49 @@ ci-fake: _build mcp-check
     "$forge" init --project "$work" --name fake >/dev/null
     cd "$work"
     mkdir -p out/drawn
-    python3 - <<'PY'
-    import struct, zlib
-    def png(path, w, h, rgb):
-        raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
-        def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
-        with open(path, "wb") as f:
-            f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
-    png("out/drawn/box.png", 4, 4, (200, 200, 200))
-    png("out/drawn/figure.png", 4, 4, (200, 200, 200))
+    # Two pictures a person could have drawn, at the size the door demands:
+    # a T-posed figure and a prop clear of the frame. They are not
+    # placeholders — `ref import` needs no card, so on tier `fake` it keys
+    # and measures for real wherever Pillow, numpy and OpenCV are importable,
+    # and a 4x4 grey square would be refused for its long side (or, on a bare
+    # runner, filed with every measurement null and a note saying so). This
+    # is the caller drawing a reference, which is the only way one is ever
+    # made — the toolkit ships no image model.
+    FORGE_TOOLKIT="{{justfile_directory()}}" python3 - <<'PY'
+    import os, sys
+    sys.path.insert(0, os.path.join(os.environ["FORGE_TOOLKIT"], "python"))
+    from forge_gen.png import write_png
+
+    SIZE = 1024
+
+    def canvas():
+        return bytearray(SIZE * SIZE)
+
+    def box(flags, x0, y0, x1, y1):
+        for y in range(y0, y1):
+            flags[y * SIZE + x0:y * SIZE + x1] = b"\x01" * (x1 - x0)
+
+    def write(path, flags):
+        pixels = bytearray()
+        for value in flags:
+            pixels += b"\x80\x80\x80\xff" if value else b"\x00\x00\x00\x00"
+        write_png(path, SIZE, SIZE, bytes(pixels))
+
+    top, bottom, centre, heads = 100, 900, SIZE // 2, 6.0
+    height = bottom - top
+    half = height // 2
+    arm = top + int(round(height / heads))
+    figure = canvas()
+    box(figure, centre - 60, top, centre + 60, arm)                 # head and neck
+    box(figure, centre - half, arm, centre + half, arm + 70)        # the arms, straight out
+    box(figure, centre - 90, arm, centre + 90, top + int(height * 0.62))
+    box(figure, centre - 80, top + int(height * 0.62), centre - 10, bottom)
+    box(figure, centre + 10, top + int(height * 0.62), centre + 80, bottom)
+    write("out/drawn/figure.png", figure)
+
+    prop = canvas()
+    box(prop, 200, 300, 800, 700)                                   # clear of every edge
+    write("out/drawn/box.png", prop)
     PY
     echo "== ref-import: the door that writes the ledger row"
     jf ref-import out/drawn/box.png box prop "ci-fake placeholder"

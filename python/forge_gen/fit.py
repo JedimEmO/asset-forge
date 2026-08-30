@@ -120,6 +120,40 @@ robes close the gap between the legs entirely, and nothing on
 ``courier_qwen``, which has no gap to find. A number that ranges over 43 cm
 across four bodies of the same stature is a picture of their clothes.
 
+**The shoulder line comes from the weights, and the geometry is a
+cross-check.** The design this file implements said the root *and the
+shoulder line* would be anchored to geometry. Only the root is, and the
+record says ``"shoulder_line": "weights"`` because that is what happened.
+The reason is in ``fitgeom`` itself: ``shoulder_y`` is the median height of
+every vertex further out than 0.55 of the body's own half-span — the arm
+tube, chosen deliberately "narrow enough to leave the shoulders out of it".
+It is a statement about a **pose** (are the arms level?) and not a
+measurement of the joint where an arm leaves the torso. On ``ember_knight``
+that band starts at 50.5 cm from the mirror plane, past the elbow the fit
+puts at 42.2 cm, so the number is the outer arm's height and it reads
+1.3871 m against a shoulder joint the weights place at 1.5327 m.
+
+And there is no way to spend it that keeps the one invariant this file
+exists to keep. A run's whole freedom is **one positive scalar** along the
+contract's frozen direction, because a scalar cannot rotate a vector and
+the rest rotations are what every baked clip binds to. ``Spine3 → Arm``
+runs diagonally (0.191 out, 0.173 up on the humanoid), so anchoring its
+*height* to the arm tube means either rotating the segment — forbidden — or
+solving the scalar from the height alone, which on ``ember_knight`` would
+put the shoulder joint 8.7 cm from the mirror plane on a body whose
+fingertips are 91.7 cm out: an arm leaving the torso from inside the chest,
+to match a number that was never a measurement of that joint. The root can
+be anchored because the root has no parent segment and therefore no
+direction to break; the shoulder cannot, and saying so is cheaper than a
+record that claims it was.
+
+So ``shoulder_line`` in the report carries both numbers — where the weights
+put the joint, what the arm tube measures, and the gap — and places
+nothing. Measured: 14.6 cm apart on ``ember_knight`` (plate armour, a
+pauldron the skinner reads as shoulder), 6.5 cm on ``vex_runner``
+re-skinned, 1.7 cm on the witch of the original spike. Three bodies is not
+a threshold, so the gap is printed and never refused (2026-08-31).
+
 **Feet on the ground.** The measured leg joints are pinned to the mesh, and
 on a body in a long robe the bands ride up: the witch's ankle measures 15 cm
 above her own soles. A toe joint off the floor makes every contact frame in
@@ -529,7 +563,12 @@ def fit(points: np.ndarray, dense: np.ndarray, prof: profile_mod.Profile, *, min
         "profile": prof.name,
         "root": prof.root,
         "landmarks": list(landmark_names),
-        "sources": {"limbs": "weights", "root": "geometry", "shoulder_line": "geometry", "ground": "geometry"},
+        # What actually placed each thing, not what a design proposed. The
+        # shoulder line says `weights` because the weights are what moved it;
+        # `shoulder_line` below is the geometry cross-check beside it, which
+        # places nothing. See the module doc.
+        "sources": {"limbs": "weights", "root": "geometry", "shoulder_line": "weights", "ground": "geometry"},
+        "shoulder_line": _shoulder_line(runs, fitted, index_of, geometry),
         "geometry": geometry,
         "symmetrised": bool(symmetry),
         "grounded": bool(ground),
@@ -541,6 +580,39 @@ def fit(points: np.ndarray, dense: np.ndarray, prof: profile_mod.Profile, *, min
         "motion_scale": round(motion_scale, 4),
         "min_support": min_support,
         "vertices": int(len(points)),
+    }
+
+
+def _shoulder_line(runs: list[dict], fitted: np.ndarray, index_of: dict[str, int], geometry: dict) -> dict:
+    """Where the arms left the body, by the weights and by the geometry, side by side.
+
+    A **cross-check that places nothing**, the way the root's crotch and
+    weight-band lines are. The weights placed the shoulder joint; this says
+    how far that sits from the arm tube's own median height, so a reader of
+    the record can see the gap without opening a mesh. There is no threshold
+    on it: two bodies is not a calibration, and a gate nobody can calibrate
+    ships as a number and not a refusal.
+
+    The shoulder joints are the **starts** of the arm runs — the runs ending
+    on an arm landmark whose own start is not one — so a profile that names
+    other arm landmarks gets its own answer and nothing here knows what a
+    humanoid is beyond :data:`ARM_LANDMARKS`.
+    """
+    joints = sorted(
+        {
+            run["start"]
+            for run in runs
+            if run["end"] in ARM_LANDMARKS and run["start"] not in ARM_LANDMARKS and run["start"] in index_of
+        }
+    )
+    weights_y = float(np.mean([fitted[index_of[name]][1] for name in joints])) if joints else None
+    arm_tube = geometry.get("shoulder_y")
+    return {
+        "joints": joints,
+        "weights_m": None if weights_y is None else round(weights_y, 4),
+        "arm_tube_geometry_m": arm_tube,
+        "gap_m": None if weights_y is None or arm_tube is None else round(weights_y - float(arm_tube), 4),
+        "note": "the weights placed these joints; the arm tube's median height is a cross-check and places nothing",
     }
 
 
@@ -726,6 +798,26 @@ def gate(
 # ------------------------------------------------------------------ table --
 
 
+def shoulder_line_note(report: dict) -> str | None:
+    """One line saying where the arms left the body and what the geometry says.
+
+    Printed by both callers — this file's ``__main__`` and ``forge gen
+    skin`` — so the number a person reads and the number the record files are
+    the same number and come from one place. ``None`` when the body has no
+    arm run to measure, which is a body plan's business and not a fault.
+    """
+    line = report.get("shoulder_line") or {}
+    if line.get("weights_m") is None:
+        return None
+    tube = line.get("arm_tube_geometry_m")
+    if tube is None:
+        return f"shoulder line {line['weights_m']:.4f} m from the weights; the arm tube's median height is unknown"
+    return (
+        f"shoulder line {line['weights_m']:.4f} m from the weights, against an arm tube whose median height is "
+        f"{float(tube):.4f} m ({abs(line['gap_m']) * 100:.1f} cm apart) — a cross-check, not a gate"
+    )
+
+
 def run_table(report: dict) -> str:
     lines = [f"{'run':<34}{'ref cm':>7}{'fit cm':>7}{'meas':>7}{'used':>7}{'supp':>7}{'sq':>6}{'off cm':>7}"]
     for run in report["runs"]:
@@ -897,6 +989,9 @@ def run(argv: list[str]) -> int:
         print()
         root_row = report["bones"][[row["bone"] for row in report["bones"]].index(report["root"])]
         print(f"{TAG}: root {report['root']} at y {root_row['fitted_y_m']:.4f} m against the contract's {root_row['reference_y_m']:.4f} m ({root_row['support']:.0f} effective vertices)")
+        note = shoulder_line_note(report)
+        if note:
+            print(f"{TAG}: {note}")
         for side, values in report.get("grounding", {}).items():
             print(f"{TAG}: {side} leg grounded by {values['factor']:.3f} — toe {values['toe_before_m']:.3f} m -> {values['toe_after_m']:.3f} m, hip joint {values['hip_joint_m']:.3f} m")
         print(f"{TAG}: motion_scale {report['motion_scale']:.4f}")

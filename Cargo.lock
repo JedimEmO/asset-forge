@@ -2863,6 +2863,7 @@ dependencies = [
  "forge_audio",
  "forge_library",
  "forge_mcp",
+ "forge_raster",
  "forge_rig",
  "forge_serve",
  "forge_studio",

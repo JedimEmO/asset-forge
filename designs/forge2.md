@@ -314,7 +314,7 @@ downstream measures against it and a wrong image costs a lift:
 What the 2026-08-30 spike taught the door, kept as its gates: a picture
 that passes the fit gate can still lift to a sliver, because the fit gate
 measures reach and never volume — so a **sliver check** on the prepared
-mesh (limb cross-sections against the profile's bone lengths) refuses the
+mesh (limb cross-sections against the profile's bone lengths) measures the
 lift before a rig is attempted, and the description's proportion sentence
 asks for volume in so many words (a large head, big hands and boots,
 limbs as wide as the neck, a baked key with occlusion painted into the
@@ -555,7 +555,10 @@ the walk binding 27 of 27.
 **Phase 3 — the reference door (1 week).** `import_reference` (and
 `forge ref import`) with the format text above in its description; the
 keyer pre-check and its refusals by name; the sliver check on the
-prepared mesh; the `ref` record for imports; `forge verify`'s rule
+prepared mesh — **which shipped as a printed note and not a refusal**, the
+demotion `skin.md` pre-authorised, because the fifth body measured walks at
+0.218/0.160 and no number separates it from the sliver (`decisions.md`,
+2026-08-31); the `ref` record for imports; `forge verify`'s rule
 extended; the sample library's references given `.ref.json` records
 where the source is honestly known and rows where it is not. The image
 model group leaves `backends/comfy` — Qwen-Image, FLUX.1-schnell, both
@@ -590,7 +593,7 @@ commercial stance ever changes. A second, non-humanoid profile.
 | Node-result caching returns a stale output | a "re-roll" that never ran | `cached: true, same_as` on the job; the seed is always in the template |
 | A generate blocks an MCP call for minutes | every agent session | jobs; `wait` has a ceiling; `mcp-session` in CI |
 | An agent accepts a licence nobody read | every project | `setup` refuses without `accept`; `licences` returns the text; the receipt names who |
-| A brought reference lifts to junk | the reference door | the keyer pre-check and the sliver check before any GPU minute; the description says what a picture needs; the strip on the real body is the judge |
+| A brought reference lifts to junk | the reference door | the keyer pre-check refuses a floor band, a contact shadow, a flood-through hole and a silhouette with no torso in it, before any GPU minute; the description says what a picture needs; **the sliver check is a printed number and not a refusal** — the fifth body measured, `moss_witch_v4`, ships at 0.218/0.160, below every arm of the body that walked as a sliver, and no threshold separates them (`decisions.md`, 2026-08-31) — so past the arm-height gate the judge is the strip on the real body |
 | Two doors race for the card | terminal + agent | the daemon owns the lock; the CLI is its client when it is up |
 | The TUI becomes a second story about the library | staleness | it renders the daemon's job table and the sidecars; it holds nothing of its own |
 

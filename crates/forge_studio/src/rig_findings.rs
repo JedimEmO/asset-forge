@@ -513,7 +513,7 @@ pub fn check_contact_feet(
     let mut failed = 0;
     for foot in feet {
         let mine: Vec<&FootContact> = samples.iter().filter(|s| s.foot == foot).collect();
-        for sample in planted(&mine) {
+        for sample in planted(&mine, tolerance) {
             contacts += 1;
             if worst.is_none_or(|w| sample.lowest_y.abs() > w.lowest_y.abs()) {
                 worst = Some(sample);
@@ -542,20 +542,69 @@ pub fn check_contact_feet(
     }
 }
 
-/// The frames one foot is planted on: the [`CONTACT_FRACTION`] of its own
-/// frames it is slowest on, horizontally, and never fewer than one.
-fn planted<'s>(samples: &[&'s FootContact]) -> Vec<&'s FootContact> {
-    let mut by_speed = samples.to_vec();
-    by_speed.sort_by(|a, b| a.speed_mps.total_cmp(&b.speed_mps));
+/// The frames one foot is planted on: of the frames it is **not in the air**
+/// on, the [`CONTACT_FRACTION`] it is slowest on horizontally, and never
+/// fewer than one.
+///
+/// Slow alone is not planted, and the second half of this rule is what the
+/// first real Phase 2 run had to add. A foot's horizontal speed turns around
+/// twice per stride — once when it touches down and once at the apex of its
+/// swing — so the slowest quarter of an in-place walk holds both, and the
+/// second one is in the air. Measured 2026-08-30 on `moss_witch_v4_fitted`:
+/// the gate named `LeftFoot at 2.05 s` a contact frame 8.0 cm off the floor
+/// and refused the body over it, and the picture at that time
+/// (`out/p2run/witch_t205.png`) is a foot mid-swing, heel up and toe
+/// pointed. With this filter she measures +2.9 cm, which is the +3.0 cm the
+/// fitted-skeleton spike measured on the same body and that
+/// `contact_foot_tolerance_m` was written from.
+///
+/// **In the air** is `lowest_y > tolerance`, and the tolerance is the gate's
+/// own — no second number is introduced and nothing is calibrated here. It
+/// is one-sided on purpose: a foot *below* the floor is exactly the defect
+/// being measured and stays a candidate, while a foot held higher than the
+/// contract would ever call planted is not one. Nor can this rescue a body.
+/// A foot that never comes within the tolerance of the floor has no
+/// candidate frame at all, and then the frame it comes closest on is the
+/// one reported — which is outside the tolerance by construction, so the
+/// body is still refused, and refused with the number a reader can act on.
+///
+/// **What this can no longer catch, said out loud.** A foot that comes down
+/// to within the tolerance on *some* frame and hovers on the rest passes,
+/// because every frame that would have shown the hover is filtered out as
+/// airborne. `moss_witch_v4_fitted` reads +4.9 cm here — right at the edge
+/// — against the +8.0 cm the old rule found and the +3.0 cm the spike
+/// measured over the whole clip. The gate is therefore a **sinking-foot**
+/// gate with a floating-foot backstop, not a symmetric one, and a real
+/// hover detector wants the *stance duration* a contact-labelled clip would
+/// give it rather than a rank over an unlabelled one. That is a clip-side
+/// fact this body-side gate does not have. 2026-08-31.
+fn planted<'s>(samples: &[&'s FootContact], tolerance: f32) -> Vec<&'s FootContact> {
+    let mut grounded: Vec<&'s FootContact> = samples
+        .iter()
+        .copied()
+        .filter(|sample| sample.lowest_y <= tolerance)
+        .collect();
+    if grounded.is_empty() {
+        let mut closest = samples.to_vec();
+        closest.sort_by(|a, b| a.lowest_y.total_cmp(&b.lowest_y));
+        closest.truncate(1);
+        return closest;
+    }
+    // A quarter of the foot's OWN frames is the stance phase of a gait, so
+    // the fraction is of every frame and not of the grounded ones — capped
+    // there because a foot cannot be planted on a frame it is airborne on.
     #[expect(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a frame count is in the hundreds and the result is clamped to at least one"
     )]
-    let keep = (((by_speed.len() as f32) * CONTACT_FRACTION).round() as usize).max(1);
-    by_speed.truncate(keep);
-    by_speed
+    let keep = (((samples.len() as f32) * CONTACT_FRACTION).round() as usize)
+        .max(1)
+        .min(grounded.len());
+    grounded.sort_by(|a, b| a.speed_mps.total_cmp(&b.speed_mps));
+    grounded.truncate(keep);
+    grounded
 }
 
 /// Largest per-component gap between two quaternions naming the same
@@ -1570,6 +1619,62 @@ mod tests {
         assert!(
             failed[0].contains("within 0.050 m of the floor"),
             "the tolerance is quoted: {failed:?}"
+        );
+
+        // The frame that forced the grounded filter, kept as a case: a
+        // foot at the apex of its swing is *slow* — horizontal speed turns
+        // around there just as it does at touch-down — and 8 cm in the air.
+        // `moss_witch_v4_fitted` was refused over exactly this frame
+        // (`LeftFoot at 2.05 s`, `out/p2run/witch_t205.png`, a foot mid-swing
+        // with the heel up), and under a pure slowest-quarter rank this set
+        // fails the same way: the slowest LeftFoot frame is the airborne one.
+        let apex = vec![
+            contact("LeftFoot", 0.10, 0.02, 0.080),
+            contact("LeftFoot", 0.20, 0.03, -0.010),
+            contact("LeftFoot", 0.30, 1.40, 0.020),
+            contact("LeftFoot", 0.40, 1.50, 0.060),
+            contact("RightFoot", 0.10, 0.04, -0.008),
+            contact("RightFoot", 0.20, 1.30, 0.070),
+            contact("RightFoot", 0.30, 1.45, 0.090),
+            contact("RightFoot", 0.40, 1.20, 0.050),
+        ];
+        let mut out = Vec::new();
+        check_contact_feet(&contract, Some(&apex), None, &mut out);
+        assert!(
+            failures(&out).is_empty(),
+            "a slow frame 8 cm off the floor is a swing apex, not a contact:\n{:?}",
+            messages(&out)
+        );
+        let text = messages(&out).join("\n");
+        assert!(
+            text.contains("LeftFoot at 0.20 s") || text.contains("RightFoot at 0.10 s"),
+            "the contact named is a grounded frame, not the apex at 0.10 s:\n{text}"
+        );
+        assert!(
+            !text.contains("LeftFoot at 0.10 s"),
+            "the airborne apex must not be the frame this gate judges:\n{text}"
+        );
+
+        // And the backstop: a foot that never comes within the tolerance of
+        // the floor has no candidate frame at all. The frame it comes
+        // CLOSEST on is the one reported — not the slowest, which here is
+        // also the highest — and the body is still refused, because that
+        // frame is outside the tolerance by construction.
+        let hovering = vec![
+            contact("LeftFoot", 0.50, 0.01, 0.200),
+            contact("LeftFoot", 0.70, 1.20, 0.090),
+            contact("RightFoot", 0.50, 0.02, -0.004),
+            contact("RightFoot", 0.70, 1.10, 0.030),
+        ];
+        let mut out = Vec::new();
+        check_contact_feet(&contract, Some(&hovering), None, &mut out);
+        let failed = failures(&out);
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        assert!(
+            failed[0].starts_with(
+                "the planted foot's own lowest vertex reaches y = 0.090 m (LeftFoot at 0.70 s)"
+            ),
+            "the closest frame is the one reported, not the slowest one at 0.200 m: {failed:?}"
         );
 
         // Nothing to pose is a warning, not a failure of the mesh.

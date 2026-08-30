@@ -1,0 +1,55 @@
+{
+  "forge_record": 2,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-31",
+  "created_by": "unknown",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": "3.11.15",
+    "torch": "2.6.0+cu124",
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": "af44b45f2e35a493886929c6d786e563ec68364d",
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/characters/ember_knight.png",
+      "sha256": "sha256:7a3bd0e9354fa45d6a1e45d46b04e78eaef705b741ecbc491822dcc6715befba",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "attn_backend": "flash_attn",
+    "decimation_target_vertices": 25000,
+    "pipeline_type": "1024_cascade",
+    "preset": "character",
+    "prompt_from": null,
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 7,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/lifts/ember_knight.glb",
+      "sha256": "sha256:c81c47132bd657a8fc9edc871f4d9e32f9f34efacc08aec39c9d01b929877115",
+      "bytes": 3792988
+    }
+  ],
+  "measured": {
+    "images": 2,
+    "keyed_subject_fraction": 0.1859140396118164,
+    "triangles": 24901,
+    "vertices": 24507
+  },
+  "fake": false,
+  "note": null
+}

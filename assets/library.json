@@ -365,6 +365,13 @@
   },
   "bodies": [
     {
+      "name": "ember_knight",
+      "path": "bodies/ember_knight.glb",
+      "sha256": "sha256:249bb65f0071d11572a2adb624fbf6168ab673f85336fdee0f70fc3ccf8ff6ee",
+      "motion_scale": 1.0,
+      "tags": []
+    },
+    {
       "name": "vex_runner",
       "path": "bodies/vex_runner.glb",
       "sha256": "sha256:27f1b0cad645599396a2954651490db0a1bba2a9ee44f6d9b4d34ed4971526f2",
@@ -1467,6 +1474,14 @@
       "tags": [
         "sample"
       ]
+    },
+    {
+      "name": "tavern",
+      "path": "audio/music/tavern.ogg",
+      "sha256": "sha256:73c8749def1dfd83c492bc9eecdcc79a1c227a04044c144fb937b5fc05c34437",
+      "kind": "music",
+      "duration_s": 30.006666,
+      "tags": []
     },
     {
       "name": "warden_greeting",

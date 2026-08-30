@@ -219,6 +219,19 @@ class _Args:
         self.__dict__.update(fields)
 
 
+@pytest.fixture(autouse=True)
+def a_bare_runner(monkeypatch) -> None:
+    """Every `run_fake` test below is on a machine that cannot key a PNG.
+
+    Pinned rather than discovered: tier `fake` runs the real door wherever
+    Pillow, numpy and OpenCV are importable, so an unpinned test would
+    measure this developer's disk — green here, a different code path on the
+    runner. The tests that want the measuring half say so by name and skip
+    where the three are absent.
+    """
+    monkeypatch.setattr(reference, "measures_here", lambda: False)
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     (tmp_path / "assets-src").mkdir()
@@ -246,6 +259,9 @@ def test_the_fake_door_stores_the_original_bytes_and_writes_all_three_files(proj
 
     record = json.loads((project / "assets-src" / "refs" / "characters" / "ember_knight.ref.json").read_text())
     assert record["kind"] == "ref" and record["tool"] == "imported" and record["fake"] is True
+    assert "nothing about it was measured" in record["note"]
+    assert record["note"] in result["notes"], "the caller is told what the record says, not only the file"
+    assert "NOT been held to the format" in result["_text"]
     assert record["backend"]["executor"] is None
     assert record["params"]["stated_source"] == "xAI Grok, image_edit"
     assert record["outputs"][0]["sha256"] == records.sha256_file(stored)
@@ -256,6 +272,40 @@ def test_the_fake_door_stores_the_original_bytes_and_writes_all_three_files(proj
     assert "| `characters/ember_knight.png` |" in ledger
     assert ledger.index("| `characters/ember_knight.png` |") < ledger.index("**Licence posture.**")
     assert result["ledger_row"] == "added"
+
+
+def test_the_fake_tier_runs_the_real_door_where_the_keyer_can_run(project: Path, monkeypatch):
+    """A tier is a statement about the card, and this door never touches one.
+
+    Where the keyer's three libraries are importable, `--fake` is the real
+    import: measured, gated, and recorded with `fake: false`, because
+    nothing about that run is a placeholder. It is what makes `ci-fake` and
+    `mcp-session` exercise the keyer at all.
+    """
+    pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+    pytest.importorskip("PIL")
+    monkeypatch.setattr(reference, "measures_here", lambda: True)
+
+    drawn = project / "drawn.png"
+    figure(heads=6.0).write(drawn)
+    reference.run_fake(_Args(image=str(drawn), name="knight", kind="character", source="drawn here"))
+    record = json.loads((project / "assets-src" / "refs" / "characters" / "knight.ref.json").read_text())
+    assert record["fake"] is False and record["note"] is None
+    assert record["measured"]["heads"] == pytest.approx(6.0, abs=0.2)
+    assert record["measured"]["alpha_fraction"] is not None
+
+    # And the picture that should never be filed is not filed.
+    bad = project / "wide.png"
+    canvas = Canvas()
+    canvas.box(100, 400, 924, 600)
+    canvas.write(bad)
+    message = refusal(
+        reference.run_fake,
+        _Args(image=str(bad), name="slab", kind="character", source="drawn here"),
+    )
+    assert "wide as it is tall" in message
+    assert not (project / "assets-src" / "refs" / "characters" / "slab.png").exists()
 
 
 def test_a_taken_name_is_refused_and_overwrite_echoes_what_it_replaced(project: Path):

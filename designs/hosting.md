@@ -1324,3 +1324,65 @@ whose foot dips under 3 cm and is a comparison, not a skate measurement.
 armature 5 s, `export_contract` 1 s, prepare 1.7 s, SkinTokens 26.5 s,
 re-attach 5 s, export 1.7 s, `rig check` 2 s, each strip 2 s. The whole
 chain is about a minute, of which SkinTokens is half.
+
+## The first real Phase 2 + 3 run (2026-08-30/31)
+
+The whole chain on the real card, through the shipped doors and no spike
+script: a reference imported, a body lifted, prepared, skinned, exported,
+rig-checked and promoted; the shipped body re-skinned from its own lift; the
+music gain pinned; speech retried; the character loop driven over MCP
+streamable HTTP. Evidence under `out/p2run/`. What it cost and what it broke.
+
+**Timings, one 4090, nothing else resident.** TRELLIS.2 1024³ character lift
+(`ember_knight`, seed 7, 25 000 verts, 1024² texture): **108.4 s** wall,
+including model load. `forge gen prepare`: **3.2 s** on `vex_runner`, 6.3 s
+on `ember_knight`. `forge gen skin` end to end — skin, fit, build the
+armature, prepare again, skin again, re-attach: **54.2 s** on `vex_runner`,
+about 70 s on `ember_knight`, of which the two SkinTokens runs are most of
+it. `forge gen export`: 1.6–1.7 s. `forge rig check` with the CPU-skinned
+contact-feet pass: about 10 s. One music track through the ComfyUI graph,
+30 s of audio: **16–18 s** per render after the first (the first pays the
+model load). So a character from a PNG to a promoted body is **four
+minutes** of card time, and a re-render of a track is twenty seconds.
+
+**ACE-Step's gain knob is linear, and −3 is now measured.** `music.py`'s
+`DEFAULT_GAIN_DB` shipped as a **budget** with the pinning run named but not
+made; it has been made. One prompt, one seed ("warm lute and fiddle, 96 bpm,
+loop-friendly", seed 8899, 30 s, ogg), three renders, read with `forge audio
+inspect`:
+
+| `--gain-db` | `peak_dbfs` | full-scale samples |
+|---|---|---|
+| (no node, 2026-08-30) | **0.0** | 1711, longest run 84 |
+| −2 | −1.5 | 0 |
+| −3 | **−2.6** | 0 |
+| −4 | −3.5 | 0 |
+
+The offset from the nominal gain is a constant ~0.5 dB at all three, which is
+the vorbis encode's overshoot, so the knob is linear over this range and −3 is
+kept: it lands inside −2 ± 1 dBFS with the whole file clear of full scale.
+`assets/audio/music/tavern.ogg` is that render, promoted — the first music
+asset this toolkit has been able to ship, and the close of Phase 1's
+"music renders but does not promote".
+
+**Speech still cannot speak, and the notice is still right.** `forge gen
+speech --voice crypt_warden` on the running host, 2026-08-30: the graph
+completed, the door measured **peak −120.0 dBFS over 1.000 s** and refused it
+at the silence check with exit 5 and no record written. That is the
+`backends/moss_tts` notice's own prediction, reproduced, at the same pin. The
+honest refusal is the result; nothing was shipped and no shim was tried.
+
+**A 1024³ lift wants the ComfyUI unit stopped.** `systemctl --user stop
+forge-comfy` before `just character` and `systemctl --user start forge-comfy`
+after — the unit's idle CUDA context is 0.4 GB, which the 22 GB budget does
+not leave room for. Measured free VRAM: 23.9 GB stopped against 23.5 GB
+running. SkinTokens (3.3–4.4 GB) does not need it stopped and did not get it.
+
+**`forge ref import` has no inverse.** A reference imported by mistake leaves
+three things behind — the PNG, its `.ref.json` and a row in
+`assets-src/SOURCES.md` — and there is no `forge ref remove`. Undoing one
+means `rm` the two files and `git checkout -- assets-src/SOURCES.md`, which
+is only available because the ledger is tracked; in a project made by `forge
+init` and not under git, the only way back is typing in the one file the door
+insists nobody types in. Noticed while proving the pre-checks refuse a bad
+picture, 2026-08-31.

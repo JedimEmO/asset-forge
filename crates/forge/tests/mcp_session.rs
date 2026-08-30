@@ -41,9 +41,10 @@ use serde_json::{Value, json};
 /// The whole tool surface, sorted. `mcp-check` pins the same list against a
 /// raw handshake; this pins it against a real client, so the two cannot
 /// drift apart without one of them saying so.
-const TOOLS: [&str; 25] = [
+const TOOLS: [&str; 26] = [
     "cancel",
     "doctor",
+    "export_body",
     "export_bundle",
     "generate_audio",
     "generate_clips",
@@ -393,8 +394,7 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
 async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path) {
     // -- a reference, brought ---------------------------------------------
     let drawn = project.join("out/refs/hero.png");
-    std::fs::create_dir_all(drawn.parent().expect("a parent")).expect("out/refs");
-    std::fs::write(&drawn, PNG_1X1).expect("write the picture");
+    draw_a_reference(&drawn);
 
     let imported = ok(
         client,
@@ -442,6 +442,10 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
         ),
         ("prepare_body", json!({"glb": "out/lifts/hero.glb"})),
         ("skin_body", json!({"glb": "out/prepare/hero.glb"})),
+        (
+            "export_body",
+            json!({"blend": "assets-src/blender/hero.blend"}),
+        ),
     ] {
         let result = call(client, tool, arguments).await;
         let body = text(&result);
@@ -450,7 +454,8 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
                 body.contains("doctor")
                     || body.contains("no reference PNG")
                     || body.contains("no mesh at")
-                    || body.contains("no prepared mesh at"),
+                    || body.contains("no prepared mesh at")
+                    || body.contains("no rigged .blend at"),
                 "{tool} refused without naming what would have worked:\n{body}"
             );
         } else {
@@ -464,6 +469,10 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
     // -- a body, filed ----------------------------------------------------
     // Written through `forge rig fixture`, which builds the mannequin from
     // the profile itself: a real body on the real contract, with no card.
+    // This one is a *fixture*, not a step of the character path routed
+    // round — there is no tool that makes a mannequin and none is wanted;
+    // the path's own middle step is `export_body`, exercised above and
+    // driven end to end in `the_whole_character_loop_on_the_fake_tier`.
     let body = project.join("out/export/mannequin.glb");
     let wrote = Command::new(forge())
         .arg("--project")
@@ -534,15 +543,39 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
     );
 }
 
-/// One transparent pixel, as PNG bytes: something for the reference door to
-/// take hold of that is unmistakably not a drawing.
-const PNG_1X1: &[u8] = &[
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-    0x42, 0x60, 0x82,
-];
+/// A T-posed figure on transparent, 1024 square, written where the session
+/// says a reference was drawn.
+///
+/// Not a stand-in pixel. `import_reference` spends no card — it wants numpy
+/// and a PNG — so tier `fake` runs the real door wherever the keyer's
+/// libraries are importable, and the real door refuses anything under
+/// 1024 px on its long side before it looks at a thing. This is the shape
+/// the format text asks for and the pre-checks measure: head and neck above
+/// the arm line, arms straight out, one span as wide as the body is tall,
+/// two legs, nothing touching the frame.
+fn draw_a_reference(path: &Path) {
+    const SIZE: u32 = 1024;
+    let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+    let mut box_of = |x0: u32, y0: u32, x1: u32, y1: u32| {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let at = ((y * SIZE + x) * 4) as usize;
+                pixels[at..at + 4].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]);
+            }
+        }
+    };
+    let (top, bottom, centre) = (100u32, 900u32, SIZE / 2);
+    let height = bottom - top;
+    let half = height / 2;
+    let arm = top + height / 6; // six heads: the arm line is one head down
+    box_of(centre - 60, top, centre + 60, arm);
+    box_of(centre - half, arm, centre + half, arm + 70);
+    box_of(centre - 90, arm, centre + 90, top + height * 62 / 100);
+    box_of(centre - 80, top + height * 62 / 100, centre - 10, bottom);
+    box_of(centre + 10, top + height * 62 / 100, centre + 80, bottom);
+    std::fs::create_dir_all(path.parent().expect("a parent")).expect("the picture's directory");
+    forge_raster::save_png(SIZE, SIZE, &pixels, path).expect("write the picture");
+}
 
 /// The job id out of a frame, read the way an agent reads it: the frame is
 /// one JSON object and the id is under `job`, exactly as `designs/serve.md`
@@ -652,11 +685,13 @@ fn client_ref(client: &RunningService<RoleClient, ()>) -> &RunningService<RoleCl
 /// a picture in, a body in the library, and `verify` holding it to its own
 /// record.
 ///
-/// It runs `forge gen ref-import`, `prepare` and `skin` through the queue.
-/// Those three verbs landed with the reference door and the skinner, which
-/// is why this no longer carries an `#[ignore]`: every assertion below is on
-/// the frame text an agent reads, and nothing here had to change when the
-/// doors arrived.
+/// It runs `forge gen ref-import`, `prepare`, `skin` and `export` through
+/// the queue, and **every one of them is a tool call**. It used to shell
+/// `forge gen export` in the middle, because there was no `export_body` on
+/// the surface — which meant the one gate that claimed to hold the agent's
+/// character path green was itself stepping outside the protocol at exactly
+/// the point the path was broken (`decisions.md`, 2026-08-31). A loop that
+/// needs a terminal in the middle is not a loop an agent can run.
 #[tokio::test]
 async fn the_whole_character_loop_on_the_fake_tier() {
     let dir = scratch_project();
@@ -675,8 +710,7 @@ async fn the_whole_character_loop_on_the_fake_tier() {
     let project = dir.path();
 
     let drawn = project.join("out/refs/knight.png");
-    std::fs::create_dir_all(drawn.parent().expect("a parent")).expect("out/refs");
-    std::fs::write(&drawn, PNG_1X1).expect("write the picture");
+    draw_a_reference(&drawn);
 
     // reference → mesh → prepare → skin, each waited out: a fake tier writes
     // placeholders through the same doors and validators, so the chain is
@@ -710,6 +744,14 @@ async fn the_whole_character_loop_on_the_fake_tier() {
             json!({"glb": "out/prepare/knight.glb", "wait_s": 300}),
             "assets-src/blender/knight.blend",
         ),
+        // The step that was missing. It is a tool call like every other one
+        // here: the loop this test holds green is the one an agent with no
+        // shell can actually run.
+        (
+            "export_body",
+            json!({"blend": "assets-src/blender/knight.blend", "wait_s": 300}),
+            "out/export/knight.glb",
+        ),
     ] {
         let frame = ok(client_ref(&client), tool, arguments).await;
         assert!(frame.contains("done"), "{tool} did not finish:\n{frame}");
@@ -720,26 +762,6 @@ async fn the_whole_character_loop_on_the_fake_tier() {
     }
 
     // The body, filed behind the export gate and the rig check.
-    let export = Command::new(forge())
-        .arg("--project")
-        .arg(project)
-        .arg("gen")
-        .arg("export")
-        .arg("assets-src/blender/knight.blend")
-        .arg("--out")
-        .arg("out/export/knight.glb")
-        .arg("--record")
-        .arg("out/export/knight.export.json")
-        .env("FORGE_HOME", toolkit())
-        .env("FORGE_FAKE", "1")
-        .output()
-        .expect("forge gen export runs");
-    assert!(
-        export.status.success(),
-        "the export gate refused the fake body:\n{}",
-        String::from_utf8_lossy(&export.stderr)
-    );
-
     let filed = ok(
         client_ref(&client),
         "promote_body",

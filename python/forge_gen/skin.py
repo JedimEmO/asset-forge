@@ -766,6 +766,11 @@ def fit_block(report: dict, prof: profile_mod.Profile) -> dict:
         # `None` on a report written before the door named its sources:
         # unknown, which is what a record says when it does not know.
         "sources": report.get("sources"),
+        # Where the arms left the body by the weights, beside what the arm
+        # tube's own median height says — a cross-check that placed nothing
+        # (see `fit.py`'s module doc), carried here so a reader of the record
+        # can see the gap without opening the report.
+        "shoulder_line": report.get("shoulder_line"),
         "ratios": {row["bone"]: row["ratio"] for row in report["bones"]},
         "runs": [
             {
@@ -845,9 +850,14 @@ def _places(args, prof: profile_mod.Profile) -> dict:
         "prepared": prepared,
         "lift": _lift_of(args, prepared),
         "profile": prof,
-        "pass1": work / f"{name}.p1.skinned.glb",
-        "prepared2": work / f"{name}.p2.glb",
-        "prepare2_record": work / f"{name}.p2.prepare.json",
+        # The pass names are joined with an underscore, not a dot: step 4
+        # hands `prepared2` to `forge gen prepare`, whose own gate refuses an
+        # output stem that is not a library name — and `vex_runner.p2` is not
+        # one. A dot here made every real run of this door die at step 4 with
+        # "would write a stem 'vex_runner.p2'". Measured 2026-08-30.
+        "pass1": work / f"{name}_p1.skinned.glb",
+        "prepared2": work / f"{name}_p2.glb",
+        "prepare2_record": work / f"{name}_p2.prepare.json",
         "skinned": out,
         "work": work,
         "blend": blend,
@@ -918,6 +928,22 @@ def _abort_on_a_failed_skin(measured: dict, *, label: str) -> None:
         )
 
 
+def _fit_text(report: dict) -> str:
+    """The fit as a reader sees it: the run table, then the shoulder line.
+
+    The same two things the log carries, rendered once here so the frame an
+    agent reads and the lines a terminal scrolls past are the same text.
+    """
+    from forge_gen import fit as fit_mod
+
+    lines = [fit_mod.run_table(report)]
+    shoulder = fit_mod.shoulder_line_note(report)
+    if shoulder:
+        lines.append(shoulder)
+    lines.append(f"motion_scale {report['motion_scale']:.4f}")
+    return "\n".join(lines)
+
+
 def _fit_once(places: dict, skinned: Path, report_path: Path) -> dict:
     """Step 2: read the weights, measure every run, refuse an untrustworthy fit."""
     from forge_gen import fit as fit_mod
@@ -946,6 +972,9 @@ def _fit_once(places: dict, skinned: Path, report_path: Path) -> dict:
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for line in fit_mod.run_table(report).splitlines():
         log(line)
+    shoulder = fit_mod.shoulder_line_note(report)
+    if shoulder:
+        log(shoulder)
     log(f"motion_scale {report['motion_scale']:.4f}, report {report_path}")
     for warning in warnings:
         log(f"WARN {warning}")
@@ -1066,6 +1095,10 @@ def run(args) -> dict:
         "outputs": [os.fspath(path) for path in outputs],
         "fit_report": os.fspath(places["fit_report"]),
         "motion_scale": spec["fit"]["motion_scale"],
+        # The run table and the shoulder cross-check go in the payload and
+        # not only in the log: a caller with no shell reads the frame, and
+        # the fit is what this door was called for.
+        "fit_table": _fit_text(report),
         "measured": measured,
     }
 

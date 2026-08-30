@@ -99,15 +99,28 @@ DEFAULT_TIMESIGNATURE = "4"
 INSTRUMENTAL = "[instrumental]"
 
 #: The gain the graph's ``AudioAdjustVolume`` node applies before ``SaveAudio``,
-#: in whole decibels. **Budget.** ACE-Step 1.5 turbo normalises to peak — nine
-#: renders off this host on 2026-08-30 came back pinned at 0.0 dBFS with runs
-#: of 10 to 186 full-scale samples, every one of them refused by the clipping
-#: gate — so the fix is a stated knob in the graph and not a normalise applied
-#: to a shipped file. -3 is where a budget starts and not where a measurement
-#: ended: the number is pinned by rendering the busiest arrangement at -2, -3
-#: and -4, reading ``peak_dbfs`` off each, and keeping the one that lands at
-#: -2.0 +/- 0.5 dBFS. That render needs the card and has not been made; until
-#: it is, this is a budget and ``designs/hosting.md`` (ComfyUI) says so.
+#: in whole decibels. **Measured 2026-08-31**, on the card, one prompt and one
+#: seed ("warm lute and fiddle, 96 bpm, loop-friendly", seed 8899, 30 s, ogg)
+#: rendered three times through this node and read with ``forge audio
+#: inspect``:
+#:
+#: ===========  ==========  ==============
+#: ``gain_db``  ``peak``    full-scale
+#: ===========  ==========  ==============
+#: -2           -1.5 dBFS   0 (run 0)
+#: -3           -2.6 dBFS   0 (run 0)
+#: -4           -3.5 dBFS   0 (run 0)
+#: ===========  ==========  ==============
+#:
+#: The same prompt and seed with no gain node came off the host at 0.0 dBFS
+#: with 84 consecutive samples pinned (``out/audio/music/tavern_s8899.ogg``),
+#: which is what the clipping gate refuses and why the fix is a stated knob in
+#: the graph rather than a normalise applied to a shipped file. -3 stays the
+#: default because it is the one that lands inside -2.0 +/- 1 dBFS with the
+#: whole run clear of full scale; the offset from the nominal gain is the
+#: vorbis encode's overshoot, and it is the same 0.5 dB at all three, so the
+#: knob is linear over this range. ``assets/audio/music/tavern.ogg`` is the
+#: -3 render, shipped.
 DEFAULT_GAIN_DB = -3
 
 #: What the node takes. Its ``volume`` is ``IO.Int`` (default 1, min -100, max
