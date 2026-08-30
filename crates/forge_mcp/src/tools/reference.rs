@@ -172,15 +172,30 @@ impl ForgeServer {
             String::from(kind),
             String::from("--source"),
             source,
-            String::from("--out"),
-            out.display().to_string(),
-            String::from("--record"),
-            record.display().to_string(),
+            // The door derives all three paths — the PNG, the record and the
+            // ledger row's key — from one directory, so that is what it is
+            // given. Naming the PNG and the record separately would let this
+            // caller put a file somewhere the row it writes does not point.
+            String::from("--sources"),
+            project.sources.display().to_string(),
             String::from("--created-by"),
             String::from(ACTOR),
         ];
 
-        let spec = forge_serve::spec::spec_for(&argv, &project.root, ACTOR);
+        // The door derives every path it writes from one directory, so the
+        // command line names none of them and `outputs_claimed` would come
+        // back empty — the queue would hold no lease on the one door that
+        // owns writes under assets-src/. This caller already knows both
+        // paths: it refused a taken name with them a dozen lines up. So it
+        // states the claim rather than leaving it unstated.
+        let mut spec = forge_serve::spec::spec_for(&argv, &project.root, ACTOR);
+        let claim = |path: &std::path::Path| {
+            project
+                .rel_to_root(path)
+                .unwrap_or_else(|| path.display().to_string())
+        };
+        spec.record = Some(claim(&record));
+        spec.outputs_claimed = vec![claim(&out), claim(&record)];
         let job = match self.queue.submit(spec) {
             Ok(job) => job,
             Err(err) => return self.queue_refusal(&err),

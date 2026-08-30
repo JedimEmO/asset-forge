@@ -63,8 +63,13 @@ pub(crate) enum Command {
     /// The rig profile: export its contract, write its fixture mannequin
     #[command(subcommand)]
     Rig(RigCommand),
-    /// Run a generator through the Python layer: mesh, prop, rig, export,
-    /// rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor
+    /// The reference images a lift starts from: bring one in, checked and
+    /// recorded. Nothing here paints one
+    #[command(subcommand)]
+    Ref(RefCommand),
+    /// Run a generator through the Python layer: mesh, prop, ref-import,
+    /// prepare, skin, export, rig-build, motion sweep|keys|review, sfx,
+    /// music, speech, voice, doctor
     Gen(GenArgs),
     /// What this machine can do: project, profile drift, library counts, host
     /// tools, every backend probed in its own environment
@@ -629,6 +634,45 @@ pub(crate) struct AudioInspectArgs {
 pub(crate) struct AudioListArgs {
     /// The directory to walk. Default: the project's assets/audio.
     pub(crate) dir: Option<PathBuf>,
+}
+
+/// `forge ref`.
+#[derive(Debug, Subcommand)]
+pub(crate) enum RefCommand {
+    /// Bring one drawn PNG under assets-src/refs/ with its record and its
+    /// SOURCES.md row, after the format, the keyer and the silhouette
+    /// pre-checks that would otherwise cost a lift
+    Import(RefImportArgs),
+}
+
+/// `forge ref import <png>`.
+///
+/// Every flag is the importer's own, because this door composes no command
+/// line of its own: it submits `forge gen ref-import` with what it was
+/// given, which is the same line `just ref-import` and the MCP
+/// `import_reference` submit. One door, three ways in.
+#[derive(Debug, Args)]
+pub(crate) struct RefImportArgs {
+    /// The PNG as it was drawn, wherever it is now. It is copied, not
+    /// moved, and its ORIGINAL bytes are what land under assets-src/refs/.
+    pub(crate) png: PathBuf,
+    /// The library name: `assets-src/refs/<kind>s/<name>.png`, and the name
+    /// the lift and the body then carry.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) name: String,
+    /// Which register the picture is for: a character is held to a T-pose,
+    /// a prop to a three-quarter view inside its frame.
+    #[arg(long, value_name = "KIND", default_value = "character")]
+    pub(crate) kind: String,
+    /// Where it came from, in your own words — the model, the tool, the
+    /// artist, the licence. It is written into the record and into the
+    /// SOURCES.md row verbatim, and it is the only provenance a brought
+    /// picture has.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) source: String,
+    /// Replace a reference of this name; the record it replaces is echoed.
+    #[arg(long)]
+    pub(crate) overwrite: bool,
 }
 
 /// `forge rig`.

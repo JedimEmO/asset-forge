@@ -50,8 +50,10 @@ SCHEMA_MIN = 1
 #: ``prepare`` is the normalised mesh plus a bare skeleton that ``forge gen
 #: skin`` then hashes as its ``mesh`` input, so the chain from a lift to a
 #: body is ``lift -> prepare -> rig`` by hash and nothing in it is a claim
-#: about a file nobody can name.
-KINDS = ("lift", "prop", "prepare", "rig", "export", "take", "sfx", "music", "speech", "voice")
+#: about a file nobody can name. ``ref`` is the first link: the drawn PNG a
+#: lift starts from, brought through ``forge gen ref-import`` and never made
+#: here.
+KINDS = ("ref", "lift", "prop", "prepare", "rig", "export", "take", "sfx", "music", "speech", "voice")
 
 #: Top-level keys, in the Rust field order. ``write`` refuses a record that
 #: has any other key or lacks any of these.

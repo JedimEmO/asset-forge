@@ -91,6 +91,7 @@ fn run(cli: &Cli) -> Outcome {
         Command::Promote(door) => commands::promote::run(&project(cli)?, door),
         Command::Audio(args) => commands::audio::run(cli, args),
         Command::Rig(args) => commands::rig::run(cli, args),
+        Command::Ref(args) => commands::reference::run(&project(cli)?, args),
         Command::Gen(args) => match project(cli) {
             Ok(project) => commands::generate::run(&project, args),
             // `--help` needs no library: print the Python layer's help from

@@ -43,11 +43,18 @@ pub const RECORD_SCHEMA_MIN: u64 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordKind {
+    /// A reference import: a drawn PNG in, the same bytes under
+    /// `assets-src/refs/` out. Nothing generated it; it was brought.
+    Ref,
     /// A TRELLIS.2 lift: PNG in, raw textured mesh out.
     Lift,
     /// A prop normalize: raw lift in, metres-and-matte prop out.
     Prop,
-    /// An auto-rig: raw lift in, rigged `.blend` out.
+    /// A prepare: raw lift in, normalised mesh plus a bare skeleton out,
+    /// which `forge gen skin` then hashes as its `mesh` input.
+    Prepare,
+    /// A skin: prepared glb in, rigged `.blend` on a skeleton fitted to
+    /// this body out.
     Rig,
     /// A body export: rigged `.blend` in, self-contained `.glb` out.
     Export,
@@ -69,8 +76,10 @@ impl RecordKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Ref => "ref",
             Self::Lift => "lift",
             Self::Prop => "prop",
+            Self::Prepare => "prepare",
             Self::Rig => "rig",
             Self::Export => "export",
             Self::Take => "take",

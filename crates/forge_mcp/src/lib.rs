@@ -198,10 +198,21 @@ pub(crate) mod testing {
             .join(relative)
     }
 
-    /// An empty project with the humanoid profile installed.
+    /// An empty project with the humanoid profile installed, and **no
+    /// backends**.
+    ///
+    /// The backends directory is pinned inside the tempdir and never
+    /// created, so `Backends::discover` reads the same empty machine here as
+    /// on a runner. Left unpinned it falls through to the toolkit
+    /// checkout's own `backends/`, where a developer who has adopted
+    /// TRELLIS.2 carries a `.checkout` — and every "this door is off, call
+    /// doctor" assertion then passes on CI and fails on the machine that
+    /// installed the backend, which is a test measuring the developer's
+    /// disk instead of the door.
     pub(crate) fn empty_project() -> (tempfile::TempDir, Project) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let project = Project::init(dir.path(), "mcp_test").expect("init");
+        let mut project = Project::init(dir.path(), "mcp_test").expect("init");
+        project.backends_dir = Some(dir.path().join("backends-none"));
         project
             .install_profile(&toolkit("rigs/humanoid"))
             .expect("install the profile");

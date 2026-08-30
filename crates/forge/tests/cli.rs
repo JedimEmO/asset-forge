@@ -185,7 +185,7 @@ fn no_project_is_a_refusal_naming_the_search_start() {
 /// `forge mcp` driven the way a client drives it: newline-delimited JSON-RPC
 /// on stdin, frames and nothing else on stdout, the banner on stderr. The
 /// tool surface is pinned here by name — it is what the skills are written
-/// against — and it holds no promote for a mesh.
+/// against — and since Phase 3 that surface includes the mesh doors.
 #[test]
 fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
     use std::io::Write as _;

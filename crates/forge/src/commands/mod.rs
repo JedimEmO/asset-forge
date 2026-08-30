@@ -16,6 +16,7 @@ pub(crate) mod look;
 pub(crate) mod manifest;
 pub(crate) mod mcp;
 pub(crate) mod promote;
+pub(crate) mod reference;
 pub(crate) mod rig;
 pub(crate) mod serve;
 pub(crate) mod setup;

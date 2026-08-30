@@ -41,6 +41,15 @@ not.
   `forge doctor` prints a `warn env:<KEY> …` row for every ambient value
   that shadows a remaining plain `[env]` one. A backend variable the run
   cannot work without belongs in `[env.force]`, not `[env]`. 2026-08-23.
+- **An adopted backend in the checkout's own `backends/` is visible to the
+  toolkit's tests.** With no `$FORGE_BACKENDS_HOME` and no `[backends] dir`,
+  `Backends::discover` falls through to the toolkit root's `backends/`, and an
+  install adopted there leaves a `.checkout` and a `.env` that a `git
+  worktree` does not carry. So a machine that has adopted TRELLIS.2 reads it
+  as installed in every unit test that builds a scratch project — and every
+  "this door is off, call doctor" assertion passes on a runner and fails
+  there. Unit tests now pin `project.backends_dir` inside their tempdir; if
+  you write one that asserts a backend is missing, pin it too. 2026-08-30.
 
 ## TRELLIS.2 (`backends/trellis2`, conda, commit `75fbf018`)
 

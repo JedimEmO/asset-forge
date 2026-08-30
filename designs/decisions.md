@@ -1024,3 +1024,75 @@ with "unknown recipe", which names nothing a person can do next, and the
 command line they typed is the only evidence of what they were trying to do.
 It is the courtesy `backends/comfy/install.sh` already gives `--models`, and
 it costs four lines. 2026-08-30.
+
+**A gate that cannot see the thing it is named for is not a gate.** `forge rig
+check` gained two findings and lost none, and each replaced a different kind of
+absence. `check_rest_directions` replaces the exporter's 0.1 mm rest-translation
+rule, which was the only rule in the toolkit about where a bone sits and which
+refused the fitted witch with 55 problems, worst 252.33 mm — for a skeleton that
+was right. It is now a **direction** rule at one degree, with the length
+unchecked: a clip carries rotation curves and one root track, so a shorter bone
+plays every clip correctly and a turned bone binds perfectly and animates
+wrongly, which is the failure nothing else can see. Measured drift on the
+spike's whole fitted skeleton was 0.0000°, so a degree is a generous ceiling on
+a quantity that moved by nothing. `check_contact_feet` replaces nothing, which
+is the point: rig check passed the fitted witch 10 of 10 with joints a quarter
+of a metre off, because none of its checks moves when a bone changes length. It
+binds the profile's reference clip, CPU-skins it frame by frame, and measures
+**the planted foot's own lowest vertex** — not the mesh's, which a trailing hand
+or a hem answers instead, and the spike measured the two 8 cm apart on one body.
+The whole-clip figure stays beside it as a note so the two are never read as one
+number. **What the implementation had to correct:** a foot is planted on the
+quarter of frames it is *slowest* on, by rank rather than by any threshold in
+metres — the library bakes locomotion in place, so a planted foot travels
+backwards at stride speed while the root stands still, and a fraction of the
+swing foot's peak called 296 of the shipped walk's 310 frames a contact. A rank
+is scale-free; a threshold in m/s calls every frame of an idle a contact and
+none of a sprint. 2026-08-30.
+
+**A schema-1 body's `motion_scale` is 1.0 because that is what those bodies were
+made at, not because 1.0 is the identity.** Every body in a schema-1 library was
+scaled to the profile before it was skinned. The bones beside it are re-derived
+from each shipped `.glb`, never copied from the contract — a body legitimately
+0.09 mm off the contract is shippable under the old exporter's rule and would
+fail verify's own 0.1 mm re-derivation on the first run, with no door to fix it
+that is not a hand edit. 2026-08-30.
+
+**A test that reads the developer's disk measures the disk, not the door.**
+`each_mesh_tool_refuses_by_naming_the_door_that_fixes_it` asserts that
+`generate_mesh` on a machine without TRELLIS.2 refuses by naming doctor. It
+passed on every runner and in every worktree, and failed in the checkout that
+had actually adopted TRELLIS.2 — because `Backends::discover` falls through to
+the toolkit's own `backends/`, where an adopted install leaves a `.checkout` a
+worktree does not carry. The fix is one line in the test helper: the project's
+`backends_dir` is pinned inside its tempdir and never created, so the unit tests
+see one empty machine everywhere. **Why it matters:** a green suite that depends
+on what the author has installed is a suite that says "works here", and the
+gates in this toolkit exist to say more than that. 2026-08-30.
+
+**One artefact, one generator.** The reference format text has one home
+(`FORMAT` + `FORMAT_AMENDMENT` in `python/forge_gen/reference.py`) and the MCP
+tool's description is generated from it — but two mechanisms arrived to generate
+that one copy: a `crates/forge_mcp/build.rs` that reads the constants at build
+time, and a `just ref-format rust` that printed a const for somebody to paste.
+Only the build step has a consumer, and only the build step cannot go stale, so
+the printer was deleted and a pytest now refuses to let a `rust` renderer come
+back. **Why:** "the copies are generated" is a property of the artefact, not of
+the code that can generate it; two generators is one source and one fixture
+waiting to drift, which is exactly what the one-home rule was written against.
+`just ref-format` still prints the text and the skill's markdown block, neither
+of which is checked in anywhere. 2026-08-30.
+
+**A door that derives its own destination has to be given the directory, not the
+files.** `import_reference` was submitting `--out` and `--record` to a reference
+importer that takes neither: it derives the PNG's path, the record beside it and
+the ledger row's key from one sources directory, so that the row it writes
+always names the file it wrote. The caller now passes `--sources` and states the
+two paths it knows as the job's own claim, so the queue still holds a lease on
+them. **The same shape, in the other door:** `skin_body` was writing the rig
+record to `out/skin/`, where `promote_body` does not look — the rigged `.blend`
+and its record are source, not intermediate, and they live beside each other
+under `assets-src/blender/`. Both were caught by the character loop over MCP the
+moment the three doors were in one tree, which is the argument for that test
+existing at all: three implementers each held a correct half of a path contract.
+2026-08-30.

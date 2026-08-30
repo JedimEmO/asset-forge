@@ -652,15 +652,12 @@ fn client_ref(client: &RunningService<RoleClient, ()>) -> &RunningService<RoleCl
 /// a picture in, a body in the library, and `verify` holding it to its own
 /// record.
 ///
-/// **Ignored until the generators' own doors land.** It runs `forge gen
-/// ref-import`, `prepare` and `skin` through the queue, and those three
-/// verbs arrive with the reference door and the skinner; until then this
-/// would be a red test on a green branch, which is worse than a named gap.
-/// Remove the `#[ignore]` in the commit that lands them — nothing else here
-/// has to change, because every assertion below is on the frame text an
-/// agent reads.
+/// It runs `forge gen ref-import`, `prepare` and `skin` through the queue.
+/// Those three verbs landed with the reference door and the skinner, which
+/// is why this no longer carries an `#[ignore]`: every assertion below is on
+/// the frame text an agent reads, and nothing here had to change when the
+/// doors arrived.
 #[tokio::test]
-#[ignore = "needs `forge gen ref-import`, `prepare` and `skin`; un-ignore in the commit that lands them"]
 async fn the_whole_character_loop_on_the_fake_tier() {
     let dir = scratch_project();
     let mut command = tokio::process::Command::new(forge());

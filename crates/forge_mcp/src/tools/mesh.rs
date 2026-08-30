@@ -315,13 +315,25 @@ impl ForgeServer {
             return util::refuse(format!("cannot create {}: {err}", dir.display()));
         }
         let out = dir.join(format!("{name}.skinned.glb"));
-        let record = dir.join(format!("{name}.rig.json"));
+        // The rigged `.blend` and its record are source, not intermediate:
+        // they live beside each other under assets-src/blender/, which is
+        // where `just promote-body` and `promote_body` read the rig record
+        // from and where the door itself defaults. Both are stated rather
+        // than defaulted so the job's claim names the files it writes.
+        let blend_dir = project.sources.join("blender");
+        if let Err(err) = std::fs::create_dir_all(&blend_dir) {
+            return util::refuse(format!("cannot create {}: {err}", blend_dir.display()));
+        }
+        let blend = blend_dir.join(format!("{name}.blend"));
+        let record = blend_dir.join(format!("{name}.rig.json"));
 
         let mut argv = vec![
             String::from("skin"),
             glb.display().to_string(),
             String::from("--out"),
             out.display().to_string(),
+            String::from("--blend"),
+            blend.display().to_string(),
             String::from("--record"),
             record.display().to_string(),
             String::from("--name"),

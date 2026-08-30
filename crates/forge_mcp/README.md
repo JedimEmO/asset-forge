@@ -23,11 +23,14 @@ its own call next turn. An `Err(ErrorData)` would be rendered opaquely by the
 client and teach it nothing.
 
 **The server never decides what ships without a human.** There is no review
-queue: `promote_clip` and `promote_audio` write the library directly, and so
-they refuse a name that is already taken unless told `overwrite`. There is
-no promote for a mesh at all — a body or a model goes through the genart
-skills, where a human looks at the lift, the rig and the views before
-anything is filed.
+queue: `promote_clip`, `promote_audio`, `promote_body` and `promote_model`
+write the library directly, and so they refuse a name that is already taken
+unless told `overwrite`. The mesh doors opened in Phase 3, because what
+protects the library was never the missing doorman: it is the export gate,
+`forge rig check` and the refused taken name, and `promote_body` runs all
+three. The human is in the loop through the harness that issues every
+command — and the skills still say to look at the lift, the fit table and
+the views before anything is filed.
 
 ## The renderer is this binary
 

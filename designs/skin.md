@@ -58,7 +58,19 @@ lesson dated in `decisions.md`.
 | geometry: heads | `ref import` | below **4.0** heads refuses; 4.0–7.0 is a **note** | measured: the four-head witch now ships | the format text's "seven heads or more" predates Phase 2's answer, and the door says so |
 | silence, clipping | `gen speech`, `gen music` | unchanged: peak ≤ −60 dBFS, or 0.0 dBFS with a run of pinned samples | shipped | the gate that caught 1.000 s of digital zeros |
 
-Three refusals, written out, because they are the design:
+**Three of the reference door's numbers moved when the pictures were measured
+(2026-08-30, after this table was written).** The implementer ran the shipped
+gates over all 21 reference PNGs on disk and `designs/decisions.md` — which
+wins over any spec, this one included — carries the reasons:
+
+| row above | what ships | why |
+|---|---|---|
+| heads: below **4.0** refuses, 4.0–7.0 notes | below **3.0** refuses, 3.0–7.0 notes | the four-head witch measures **3.37** from a silhouette that counts her hat; 4.0 refuses the body Phase 2 exists to ship |
+| retained alpha `[0.15, 0.85]` | `[0.10, 0.85]` | measured 0.123 (`courier_v2_42`) to 0.278 (`barrel`); 0.15 refuses two references that lifted |
+| subject fill, a refusal | a printed **note**, never a refusal | measured 0.634–0.95 with a character that lifted at 0.69 — it does not separate, and this document's own rule says such a gate ships as a note |
+
+Everything else in the table is what shipped. Three refusals, written out,
+because they are the design:
 
 ```
 prepare: <name>'s arm tips sit 0.29 m below its own shoulder line (tips at
