@@ -758,6 +758,11 @@ loud when it fires, and never silent about what it could not prove:
 4. Not back → `systemctl --user restart <[server] unit>`, wait for
    `/system_stats` up to `ready_timeout_s`, re-read. Log a warning quoting
    both numbers; the row records `card.restarted: true`.
+   A host that does **not answer at all** is a different case and stops the
+   ladder at step 1: nothing was measured, so nothing is restarted and no
+   lease is withheld — a withholding on an unreachable service would block
+   every card job, an `env` lift included, until a human ran `forge gpu
+   --free`, which cannot answer either while the service is down.
 5. Still not back → **the lease is not released to another card job.**
    `card.json` gets `{"holder": "foreign", "note": "…"}`, `status` reports
    it, the next card job sits `blocked` with `blocked_by: "comfy"`, and

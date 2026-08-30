@@ -1,14 +1,16 @@
 //! `forge gpu`: who holds the card, and whether the largest backend fits.
 //!
-//! One 24 GB card, and the generators do not share it: TRELLIS.2 at 1024³
-//! wants ~22 GB, ARDY ~16, the ACE-Step server sits at ~8 until it is
-//! stopped. The question before any generate is not "is the GPU there" but
-//! "is enough of it free", and the honest threshold is the largest peak any
-//! described backend declares (`vram_gb` in its `backend.toml`). Exit 1
-//! when the free memory is under that, with the processes holding the card
-//! named — by pid, by the command, and by the backend whose interpreter it
-//! is when that can be told — so the fix (`forge gen music --stop-server`,
-//! close the studio window, wait for the sweep) is the next line.
+//! One 24 GB card, and the generators do not share it: TRELLIS.2's budget
+//! is 22 GB, ARDY's 16, and what the `ComfyUI` host last loaded stays on
+//! the card — 9.1 GB after an effect, measured. The question before any
+//! generate is not "is the GPU there" but "is enough of it free", and the
+//! honest threshold is the largest peak any described backend declares
+//! (`vram_gb` in its `backend.toml`, a budget and never a measurement).
+//! Exit 1 when the free memory is under that, with the processes holding
+//! the card named — by pid, by the command, and by the backend whose
+//! interpreter it is when that can be told — so the fix (`forge gpu
+//! --free`, and for the MOSS pack `systemctl --user restart forge-comfy`;
+//! close the studio window; wait for the sweep) is the next line.
 //!
 //! Everything comes from `nvidia-smi`: the card's name and memory, and the
 //! compute apps. No nvidia-smi is a refusal, not a pass.
@@ -185,21 +187,33 @@ fn free(project: &Project) {
         (_, Some(after)) => println!("free      {after:.1} GB free"),
         _ => println!("free      {url} did not answer /system_stats"),
     }
-    if let Some(floor) = release.floor_gb {
-        println!("floor     {floor:.1} GB is what this card shows with nothing loaded");
-    } else {
-        println!(
+    match (release.floor_gb, release.after_gb) {
+        (Some(floor), _) => {
+            println!("floor     {floor:.1} GB is what this card shows with nothing loaded");
+        }
+        (None, Some(_)) => println!(
             "floor     unknown — /system_stats did not say how big the card is, so this is the \
              weaker check: did this call give back what it took"
-        );
+        ),
+        (None, None) => {
+            println!("floor     unknown — the host did not answer, so nothing was measured");
+        }
     }
     let state = forge_serve::state_dir(&project.root);
-    if release.returned {
-        // A card that is provably back clears a withholding: this is the
-        // one door that can say so, because it just measured it against the
-        // floor.
+    if release.returned && release.floor_gb.is_some() {
+        // A card that is **provably** back clears a withholding: this is
+        // the one door that can say so, because it just measured free VRAM
+        // against the card's idle floor. Provably is the word that matters
+        // — a host that did not answer proves nothing, and clearing a
+        // withholding on no measurement is the same lie in the other
+        // direction.
         forge_serve::release_withhold(&state);
         println!("free      the card is back; any withheld lease is cleared");
+    } else if release.returned {
+        println!(
+            "free      nothing was measured, so nothing is claimed: any withheld lease stays \
+             until a host that answers proves the card is free"
+        );
     } else if let Some(note) = release.note {
         let _ = forge_serve::withhold(&state, &note);
         println!("free      {note}");

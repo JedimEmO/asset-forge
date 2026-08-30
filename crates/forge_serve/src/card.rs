@@ -518,9 +518,27 @@ pub fn release_comfy_with(
     mut say: impl FnMut(&str),
 ) -> CardRelease {
     let base = base_url.trim_end_matches('/');
-    // The floor is read once, from the same endpoint the free number comes
-    // from, and it is a property of the card rather than of this job.
-    let floor = idle_floor_gb(comfy_vram_gb(base).and_then(|(_, total)| total));
+    // One read before anything: is the host there at all, and how big is
+    // the card? The floor is a property of the card, not of this job.
+    let Some((_, total)) = comfy_vram_gb(base) else {
+        // **A host that does not answer is not evidence that the card is
+        // held.** Withholding here would block every card job — including
+        // an `env` one that never touches the host — until a human ran
+        // `forge gpu --free`, which cannot answer either while the service
+        // is down. `vram_after_gb` stays null, which is what unknown means.
+        say(&format!(
+            "{base} did not answer GET /system_stats, so nothing was measured: no restart, and \
+             no lease is withheld. `systemctl --user status forge-comfy` says whether it is up."
+        ));
+        return CardRelease {
+            after_gb: None,
+            floor_gb: None,
+            restarted: false,
+            returned: true,
+            note: None,
+        };
+    };
+    let floor = idle_floor_gb(total);
     let back = move |free: Option<f64>| match (free, floor) {
         (Some(now), Some(floor)) => now + BACK_WITHIN_GB >= floor,
         // A floor nobody could compute is not evidence either way, so the

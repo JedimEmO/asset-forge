@@ -148,6 +148,41 @@ fn a_model_an_earlier_job_left_is_seen_and_the_card_is_withheld() {
     );
 }
 
+/// A host that does not answer is not evidence that the card is held.
+///
+/// Withholding on an unreachable service would block every card job — an
+/// `env` lift that never touches the host included — until a human ran
+/// `forge gpu --free`, which cannot answer either while the service is
+/// down. Nothing is measured, nothing is claimed, nothing is restarted.
+#[test]
+fn a_host_that_does_not_answer_withholds_nothing() {
+    let restarts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&restarts);
+    let mut restart = move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        true
+    };
+    let mut said = Vec::new();
+    let release = release_comfy_with(
+        // A port nothing is listening on.
+        "http://127.0.0.1:9",
+        "forge-comfy.service",
+        &mut restart,
+        Some(22.4),
+        1,
+        |line| said.push(line.to_owned()),
+    );
+    assert_eq!(restarts.load(Ordering::SeqCst), 0, "nothing to restart");
+    assert!(release.after_gb.is_none(), "null means unknown");
+    assert!(release.floor_gb.is_none());
+    assert!(release.note.is_none(), "no note means no withholding");
+    assert!(release.returned, "and no claim that the card is held");
+    assert!(
+        said.join("\n").contains("did not answer"),
+        "it says what happened: {said:?}"
+    );
+}
+
 /// The happy path: `/free` gives the card back, and nothing is restarted.
 /// This is what both spike runs measured, and it is the one that must not
 /// become noisy.
