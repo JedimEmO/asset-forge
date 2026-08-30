@@ -826,3 +826,22 @@ in four of four, so the prefix says "a large head"; and a faint contact
 shadow still passes the keyer as a detached island above the 0.025 m dust
 threshold and rides a foot bone, so the keyer pre-check on the drawn PNG is
 a gate, not a convenience. 2026-08-30.
+
+**The reference image stays brought.** The first entry in this ledger said
+a reference PNG is input, not output; the second-shape review argued the
+other way (make it here, in the project's style, so the fit gate's
+"re-proportion the reference" becomes a re-roll), and the 2026-08-30 spike
+built it: Qwen-Image under pose conditioning held the T-pose in 4 of 4 and
+the style line in 4 of 4. The picture that passed then lifted to a sliver,
+a re-roll with volume in the prompt lifted correctly, and the sum was
+weighed: two minutes of the whole 24 GB card per picture, a gate that
+cannot see what matters in one, and a person's eye still needed on every
+seed — the same eye that paints one in Grok in less time, at no cost to the
+card. **Why:** the toolkit's value is downstream of the PNG, and a
+generator that is worse than the tool the user already has is a second
+path that rots. The reference comes through one door, `import_reference`,
+which holds it to a stated format, keys it, pre-checks it and records its
+stated source; the maintainers make the sample library's references in
+Grok and say so in `SOURCES.md`. The image models, their ControlNets and
+their templates leave the host; the spike's `hosting.md` entries stay as
+the record of what was measured. 2026-08-30.

@@ -69,14 +69,20 @@ wheels; SkinTokens packs are weeks old; ARDY has no node at all; one of
 three HY-Motion packs already 404s. **Lesson:** ComfyUI is worth having
 for what it hosts well and is not worth being the scheduler.
 
-**Image models for references.** Qwen-Image (Apache-2.0, ComfyUI-native,
-20B — fp8 fits 24 GB, GGUF for 16 GB) and FLUX.1-schnell (Apache-2.0,
-~12 GB fp8). Pose conditioning exists for both (ControlNet-Union
-variants). Which one lands a strict T-pose most reliably is a spike, not a
-guess. Neither is bit-reproducible across GPUs, so the reference keeps
-claiming integrity; what changes is that its provenance becomes
-`recorded` (model hash, seed, workflow hash, prompt) instead of a stranger
-with a `SOURCES.md` row.
+**Image models for references — evaluated and set aside.** Qwen-Image
+(Apache-2.0, ComfyUI-native, fp8 23.3 GB peak, 114 s an image) and
+FLUX.1-schnell (Apache-2.0, 23.0 GB, 31 s) were both run under pose
+conditioning on 2026-08-30. Qwen held the T-pose in 4 of 4 and obeyed the
+style line; the picture that won every gate then lifted to a body that
+walked as a sliver on a slab, and a re-roll with the guide's volume
+sentences lifted correctly. The chain was fine; the local model was not
+worth the card. It wants the whole 24 GB for two minutes an image, the fit
+gate cannot see what matters in the picture, and the picture still needs a
+person's eye — which is the eye that already paints one in Grok in less
+time. **The reference stays brought** — `decisions.md`'s first entry was
+right — and the toolkit's value is downstream of the PNG. What the spike
+bought is kept: the format text, the keyer pre-check, and the knowledge of
+what a lift needs from a picture.
 
 ## The decisions made
 
@@ -84,8 +90,8 @@ with a `SOURCES.md` row.
    and a second motion source (HY-Motion, video-to-motion) are a later
    plan that starts with an SMPL-family profile; noted, not scheduled.
 2. **`forge serve` owns the queue and the card.** Not ComfyUI. Two
-   executors behind one queue: `comfy` for ACE-Step, MOSS and the image
-   model; `env` for TRELLIS.2, ARDY, SkinTokens and Blender — the
+   executors behind one queue: `comfy` for ACE-Step and MOSS; `env` for
+   TRELLIS.2, ARDY, SkinTokens and Blender — the
    per-backend launcher that exists today, driven by the daemon instead of
    by a shell. Every UX property (jobs, status, remote card, never two
    generates) belongs to the daemon and does not depend on a node pack
@@ -106,12 +112,16 @@ with a `SOURCES.md` row.
    it; their clips play because the skeleton is theirs. Our ARDY clips do
    not play on it — a retarget is its own later door, never a silent
    layer.
-6. **The reference image is made here, and may still be brought.**
-   `generate_reference` draws it in the project's style with pose
-   conditioning; `import_reference` takes a PNG the user made and holds it
-   to the same format. Both write `assets-src/refs/<name>.png` with a
-   `<name>.ref.json` beside it and the `SOURCES.md` row. The fit gate's
-   "re-proportion the reference" becomes a re-roll.
+6. **The reference image is brought, through one door.** The user makes
+   it wherever they make pictures (the maintainers use Grok for the sample
+   library); `import_reference` takes the PNG, holds it to the format its
+   own description states, keys it, pre-checks the silhouette, hashes it,
+   and writes `assets-src/refs/<name>.png`, a `<name>.ref.json` naming the
+   stated source, and the `SOURCES.md` row. No image model runs in the
+   host: the plan's first draft had `generate_reference`, the spike proved
+   the model could hold a pose and not a body, and the review's argument
+   for it (a re-roll instead of a trip to another tool) cost the whole
+   card for two minutes a picture and still needed the eye.
 7. **The monitor is a TUI.** `forge top`, a ratatui client of the daemon:
    the card, the queue, jobs with a log tail, the library, a record's
    chain, doctor. Text is what a monitor shows; images already have two
@@ -136,7 +146,7 @@ with a `SOURCES.md` row.
                           executor "env"      │         │      executor "comfy"  (HTTP)
                  ┌────────────────────────────┴──┐   ┌──┴─────────────────────────────┐
                  │ TRELLIS.2 · ARDY · SkinTokens  │   │ ComfyUI (systemd --user, :8188)│
-                 │ Blender: prepare · prop · build│   │ ACE-Step · MOSS ×3 · Qwen-Image│
+                 │ Blender: prepare · prop · build│   │ ACE-Step · MOSS ×3             │
                  └───────────────────────────────┘   └────────────────────────────────┘
    Bevy (in-process): headless sheets, strips, rig check, the studio window
 ```
@@ -154,19 +164,19 @@ level; `env` backends keep `[env]`, `python`, `cuda`, `install.sh` and
 `probe.py` exactly as today. A `comfy` backend has no interpreter:
 
 ```toml
-name = "qwen_image"
-role = "reference"
+name = "acestep"
+role = "music"
 executor = "comfy"
-license = "Apache-2.0 (Qwen-Image); ControlNet-Union: Apache-2.0"
-vram_gb = 24                           # a budget: fp8 measured at 23.3 GB, Q4 GGUF at 16.2 on lean
+license = "MIT (code and weights)"
+vram_gb = 14                           # a budget: measured 13.1 GB on 2026-08-30
 [comfy]
 packs = []                             # native; a pack entry is { repo, commit }
-workflows = ["reference.api.json"]     # inputs patched: prompt, style_prefix, seed, pose_image
+workflows = ["music.api.json"]         # inputs patched: prompt, lyrics, duration, seed, …
 unload_node = null                     # native models honour /free
 [[models]]
-id = "Comfy-Org/Qwen-Image_ComfyUI"
-store = "comfy:models/diffusion_models"
-license = "Apache-2.0"
+id = "Comfy-Org/ace_step_1.5_ComfyUI_files"
+store = "comfy:models/checkpoints"
+license = "MIT"
 ```
 
 Doctor renders the same words per backend, `ok | partial | missing |
@@ -179,9 +189,9 @@ only while a *chosen* kind is not `ok`.
 `forge_record: 2` — `backend` gains `executor`, and for `comfy`:
 `comfyui_commit`, `workflow_sha256`, `packs {repo: commit}`; the six
 existing keys keep their meaning. A new record `kind: "ref"`, tool
-`qwen_image | imported`, written beside the PNG: prompt, style prefix,
-seed, pose conditioning, model hash; or for an import, `source` as the
-user stated it. `forge verify` holds every reference to either its
+`imported`, written beside a PNG that came through `import_reference`:
+the `source` as the user stated it, the keyer's measurements, the
+pre-check's verdict, the file's hash. `forge verify` holds every reference to either its
 `.ref.json` (output hash = the PNG) or a `SOURCES.md` row — the same rule
 a designed voice already lives under. A rig record names its `skinner`
 and the encoder licence note, the way a lift record names its
@@ -198,8 +208,8 @@ what card you have, never as model names.
 
 ```toml
 [make]
-props = true          # trellis2 + qwen_image
-characters = true     # trellis2 + skintokens + qwen_image
+props = true          # trellis2
+characters = true     # trellis2 + skintokens
 clips = true          # ardy
 sfx = false           # moss_sfx
 music = false         # acestep
@@ -216,8 +226,8 @@ says the same thing with `executor =`):
 
 | you choose | it needs | executor |
 |---|---|---|
-| `props` | `trellis2`, `qwen_image` | env, comfy |
-| `characters` | `trellis2`, `skintokens`, `qwen_image` | env, env, comfy |
+| `props` | `trellis2` | env |
+| `characters` | `trellis2`, `skintokens` | env, env |
 | `clips` | `ardy` | env |
 | `sfx` | `moss_sfx` | comfy |
 | `music` | `acestep` | comfy |
@@ -243,14 +253,13 @@ The receipt is `$FORGE_BACKENDS_HOME/licences.json` — beside the installs,
 because the install is what is licensed, and never in `forge.toml`, which is
 hand-edited and would let an acceptance be *typed* rather than *given*.
 
-Tiers change registers and variants, not features: lean runs the image
-model quantised (Qwen-Image Q4_K_M GGUF) and MOSS-TTS 1.7B. Fake is
+Tiers change registers and variants, not features: lean runs MOSS-TTS
+1.7B. Fake is
 `FORGE_FAKE=1` made a first-class answer. **Lean lifts at 1024³ like the
 full tier** — the Phase 0 spike measured a 1024³ lift at 4.7 GB, so a
 16 GB card has three quarters of itself spare during one, and 512³ turned
 out to be a speed knob (16 s saved, the face and the fingers lost), not a
-memory one. The lean tier's real constraint is motion and the reference
-image, and it always was.
+memory one. The lean tier's real constraint is motion, and it always was.
 
 `forge setup` prints, before a byte downloads, every licence fact the
 chosen kinds carry — nvdiffrast (non-commercial), the DINOv3 gated login,
@@ -267,23 +276,22 @@ certificate that a real 16 GB part is enough — such a part has roughly
 
 | you make | backends | full (24 GB) | lean (16 GB) | weights on disk | needs your yes |
 |---|---|---|---|---|---|
-| props | trellis2, qwen_image | 1024³ **4.7 GB**; image fp8 **23.3 GB** — alone | 1024³ **4.7 GB**; image Q4 GGUF **16.2 GB** — alone | TRELLIS.2-4B + DINOv3 (measure); Qwen-Image 20.4 GB fp8 or 13.1 GB Q4 GGUF | nvdiffrast NC; DINOv3 login |
+| props | trellis2 | 1024³ **4.7 GB** | 1024³ **4.7 GB** | TRELLIS.2-4B + DINOv3 (measure) | nvdiffrast NC; DINOv3 login |
 | characters | + skintokens | + **3.3–4.4 GB** | + **3.3–4.4 GB** | + 1.6 GB | as props; skinner note is a warning |
 | clips | ardy | **15.4 GB** | **15.4 GB** — marginal on a real 16 GB part | core + Llama-3/LLM2Vec encoder | Llama 3 notice |
 | sfx | moss_sfx | ~6–8 GB (budget) | same | ~11 GB | none |
 | music | acestep | ~8 GB (budget) | same | ~7.5 GB | none |
 | voice | moss_tts | 4B ~12 GB (budget) | 1.7B ~5 GB (budget, not run) | ~8 GB + 4 GB | none |
 
-The image model is the only thing here that wants the whole card, on
-either tier; the lift, which every table in this repo had at ~22 GB for a
-week, is the cheapest GPU step of the three.
+Nothing here wants the whole card any more — the image models did, and
+they are gone; the lift, which every table in this repo had at ~22 GB for
+a week, is the cheapest GPU step of the three.
 
 ### The reference door
 
-`generate_reference` and `import_reference` are the two ways a PNG gets
-under `assets-src/refs/`. The tool descriptions carry the format, because
-the fit gate downstream measures against it and a wrong image costs a
-lift:
+`import_reference` is the one way a PNG gets under `assets-src/refs/`.
+The tool's description carries the format, because the fit gate
+downstream measures against it and a wrong image costs a lift:
 
 > A reference is one PNG, 1024 px or more on its long side, of one
 > subject on a flat, uniform background: no floor, no shadow, no gradient,
@@ -300,24 +308,32 @@ lift:
 > state, and runs the silhouette pre-check the fit gate would otherwise
 > fail after a lift.
 
-`generate_reference` prefixes the prompt with the project's style guide
-line, conditions the pose on the profile's T-pose skeleton rendered as a
-pose image, and returns a job whose result is the PNG and a contact of
-the four seeds it drew, so the agent picks one and the others are
-discarded. The record names the seed kept.
+What the 2026-08-30 spike taught the door, kept as its gates: a picture
+that passes the fit gate can still lift to a sliver, because the fit gate
+measures reach and never volume — so a **sliver check** on the prepared
+mesh (limb cross-sections against the profile's bone lengths) refuses the
+lift before a rig is attempted, and the description's proportion sentence
+asks for volume in so many words (a large head, big hands and boots,
+limbs as wide as the neck, a baked key with occlusion painted into the
+pits); a faint contact shadow passes the keyer as a detached island above
+the dust threshold and rides a foot bone, so the **keyer pre-check** on the
+drawn PNG runs before any GPU minute and refuses a floor band or a
+contact shadow by name. The importer's reply names what it measured, and
+the strip on the real body is the judge of the door, never a rest-pose
+sheet.
 
 ### The MCP surface, whole
 
 Fully usable from a client with no shell. Every step is a tool; `just`
 recipes and skills are the same doors with a terminal in front, and each
-skill names which door a step uses. Thirty-two tools in five groups;
+skill names which door a step uses. Thirty-one tools in five groups;
 `mcp-check` pins the list.
 
 | group | tools | notes |
 |---|---|---|
 | looking | `list_models` `list_clips` `list_audio` `list_runs` `list_backends` `inspect_record` `render_model` `render_clip_strip` `inspect_audio` `status` | `list_runs` walks `out/` and `assets-src/refs` reading the record beside each output: prompt, seed, when, promoted or not. `status`: free VRAM and who holds it, the queue, jobs in flight with a log tail |
 | setting up | `init_project` `licences` `setup` `doctor` | `setup` refuses a gated kind unless `accept` names its licence; the receipt records who accepted. The DINOv3 login is a token only a human holds; the tool says so and stops |
-| making | `generate_reference` `import_reference` `generate_mesh` `prepare_body` `skin_body` `generate_clips` `generate_audio` `design_voice` `import_rig` | every one writes under `out/` or `assets-src/` and **returns a job**. `generate_clips` takes ARDY's keyframes and presets as arguments (what `motion keys` does today) |
+| making | `import_reference` `generate_mesh` `prepare_body` `skin_body` `generate_clips` `generate_audio` `design_voice` `import_rig` | every one writes under `out/` or `assets-src/` and **returns a job**. `generate_clips` takes ARDY's keyframes and presets as arguments (what `motion keys` does today) |
 | jobs | `wait` `cancel` | `wait(job, max_s)` returns the result, or `{running, position, elapsed, eta}`; results served from ComfyUI's node cache say `cached: true, same_as` |
 | shipping | `promote_body` `promote_model` `promote_clip` `promote_audio` `verify` `audit` `manifest_check` | the same gates as the CLI; a taken name refused unless `overwrite`; what was replaced echoed; the manifest rewritten |
 
@@ -348,7 +364,9 @@ reference model is Qwen-Image:** given the style guide's line and pose
 conditioning on the profile's rest pose, it held the arms within 1.6° of
 horizontal in 4 of 4 and drew the project's flat, posterized look in 4 of 4,
 while FLUX.1-schnell drooped to 6.4° and drew a photograph every time; the
-fit gate passed both, so the eye chose, not the gate. **The lean column is
+fit gate passed both, so the eye chose, not the gate — and the same eye,
+on the walk strip that evening, set the whole idea aside (see "Image
+models for references"). **The lean column is
 measured:** props, characters and clips carry sampled peaks, 1024³ lifts on
 both tiers, and Q4_K_M GGUF is lean's one substitution. Two things the spikes
 also bought: the keyer, not the prompt, decides whether a drawn reference is
@@ -398,14 +416,14 @@ directions.
 **What did not ship, said plainly.** The two audio verbs above: speech makes
 no line at this pin, music renders and cannot promote. The MCP `setup` gates
 and plans rather than installing, so there is no install executor. The tool
-surface is **eighteen**, not the thirty-two the table above lists:
+surface is **eighteen**, not the thirty-one the table above lists:
 `inspect_record`, `list_backends`, `design_voice`, `import_rig`, `audit`
 and `manifest_check` are Phases 2 to 4, and `mcp-check` is pinned at
 eighteen until they land. No mesh moved: `generate_mesh`, `prepare_body`,
 `skin_body`, `promote_body` and `promote_model` are Phase 2, and SkinTokens is still only the Phase 0 spike
-with its checkout, patches and probe committed. No reference is drawn here
-yet — `backends/qwen_image` is Phase 3, and every reference in the sample
-library still lives on a `SOURCES.md` row. `forge top` does not exist. And
+with its checkout, patches and probe committed. No reference comes through a
+door yet — `import_reference` is Phase 3, and every reference in the
+sample library still lives on a `SOURCES.md` row. `forge top` does not exist. And
 nothing under `assets/` was rebaked, which is the promise this plan opened
 with.
 
@@ -441,20 +459,22 @@ grows the character loop. Delete the rescue ladder, `_auto_weights` and
 Gate: `vex_runner` and one plated body re-skinned, `check-bodies` green,
 the walk binding 27 of 27.
 
-**Phase 3 — references (1–2 weeks).** `backends/qwen_image/` (or
-schnell) in the `comfy` executor; the pose image rendered from the
-profile's rest pose; the style prefix read from the project's style
-guide; `generate_reference` and `import_reference` with the format text
-above; the `ref` record; `forge verify`'s rule extended; the sample
-library's references given `.ref.json` records where they can be honestly
-`reconstructed` and rows where they cannot. Gate: describe → reference →
-lift → prepare → skin → promote for one new character, no tool outside
-the toolkit touched.
+**Phase 3 — the reference door (1 week).** `import_reference` (and
+`forge ref import`) with the format text above in its description; the
+keyer pre-check and its refusals by name; the sliver check on the
+prepared mesh; the `ref` record for imports; `forge verify`'s rule
+extended; the sample library's references given `.ref.json` records
+where the source is honestly known and rows where it is not. The image
+model group leaves `backends/comfy` — Qwen-Image, FLUX.1-schnell, both
+ControlNets and the three reference templates — with the spike's
+`hosting.md` entries kept as the record of why. Gate: a reference drawn
+in Grok → import → lift → prepare → skin → promote for one new character,
+the pre-check refusing a deliberately bad picture on the way.
 
 **Phase 4 — the monitor and the rest (1–2 weeks).** `forge top`; the
 remaining tools (`design_voice`, `list_backends`, `inspect_record`,
 `audit`, `manifest_check`, `generate_clips` as a job with keyframes);
-`mcp-check` re-pinned to thirty-two; the six skills rewritten with log
+`mcp-check` re-pinned to thirty-one; the six skills rewritten with log
 lines captured from real runs, each step naming its door. `just studio`
 unchanged. Gate: a stranger's session from the README to a promoted
 character and a promoted clip, from Claude Code alone.
@@ -477,7 +497,7 @@ commercial stance ever changes. A second, non-humanoid profile.
 | Node-result caching returns a stale output | a "re-roll" that never ran | `cached: true, same_as` on the job; the seed is always in the template |
 | A generate blocks an MCP call for minutes | every agent session | jobs; `wait` has a ceiling; `mcp-session` in CI |
 | An agent accepts a licence nobody read | every project | `setup` refuses without `accept`; `licences` returns the text; the receipt names who |
-| The image model will not hold a T-pose | the reference door | pose conditioning plus the fit gate as the judge; four seeds per draw; `import_reference` is always there |
+| A brought reference lifts to junk | the reference door | the keyer pre-check and the sliver check before any GPU minute; the description says what a picture needs; the strip on the real body is the judge |
 | Two doors race for the card | terminal + agent | the daemon owns the lock; the CLI is its client when it is up |
 | The TUI becomes a second story about the library | staleness | it renders the daemon's job table and the sidecars; it holds nothing of its own |
 
@@ -486,5 +506,8 @@ commercial stance ever changes. A second, non-humanoid profile.
 `backends/acestep/` and the `moss_*` venvs and probes; `audio/music.py`'s
 server half; `blender/rig.py`'s weights ladder and both rescue functions;
 the "no promote for a mesh" rule in `forge_mcp` and its `mcp-check` line;
-the studio-only assumption in `forge gpu`. Nothing under `assets/` moves.
+the studio-only assumption in `forge gpu`; the image-model group in
+`backends/comfy` (Qwen-Image, FLUX.1-schnell, both ControlNets, the three
+reference templates) and the ~60 GB of weights it fetched. Nothing under
+`assets/` moves.
 Each deletion is its own commit with its reason in `decisions.md`.
