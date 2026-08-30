@@ -11,36 +11,53 @@ call; ``--batch-file`` (one ``name|seconds|prompt`` per line, into
 
 Every render is seeded, and the seed is recorded. The seven sfx that shipped
 before this could not be regenerated at all: nothing seeded the sampler and
-nothing wrote a record, so the files are all that is left of them. The seed
-goes to the pipeline's own ``seed=`` — its noise initialiser — and to
-torch's global RNG; the predecessor set only the latter, and the pipeline's
-default of 0 quietly governed every render it made.
+nothing wrote a record, so the files are all that is left of them.
 
-The outer half (``run``) validates, resolves the backend and execs the inner
-half under the backend's venv; the inner half (``main_inner``) imports
-torch. ``build_record`` is pure — the record for a rendered effect from its
-numbers — so the schema can be checked without the DiT resident.
+**It runs on the ComfyUI host**, through the TTS-Audio-Suite pack, so there
+is no venv here and no inner half that imports torch: the whole of it is
+load ``backends/moss_sfx/workflows/sfx.api.json``, patch the knobs this run
+states into it, ``POST /prompt``, poll, fetch. The graph's own
+``enable_audio_cache`` is off in the template — it is the pack's in-memory
+cache, and it would hand back an earlier render as a re-roll, which is the
+one thing ``cached`` exists to observe rather than infer.
+
+``SaveAudio`` writes FLAC (ComfyUI v0.34.2 has no WAV save node), so the
+effect is transcoded to 16-bit PCM here before anything measures it; ffmpeg
+is a dependency this verb did not have when it wrote the WAV itself with
+soundfile, and a missing one is exit 6 **before** the card is leased.
+
+``build_record`` is pure — the record for a rendered effect from its
+numbers — so the schema can be checked with nothing running.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import platform
 import random
-import subprocess
 import sys
 import tempfile
 import wave
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
-from forge_gen import launcher, placeholders, records
+from forge_gen import comfy, placeholders, records
+from forge_gen.audio import ffmpeg_bin, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
 #: The backend directory this command runs through.
 BACKEND = "moss_sfx"
+
+#: The tracked graph this command runs, under ``backends/moss_sfx/workflows/``.
+WORKFLOW = "sfx.api.json"
+
+#: Seconds between ``/history`` polls.
+POLL_S = 2.0
+
+#: How long one effect may take end to end. The DiT ``torch.compile``s
+#: itself on first use and can spend several minutes doing it — the pack
+#: says so in its own tooltip, and the venv's ``TORCHDYNAMO_DISABLE`` died
+#: with the venv (designs/hosting.md, ComfyUI, 2026-08-30).
+GENERATE_TIMEOUT_S = 1800.0
 
 #: The record's ``tool``, as the sidecar's generator block names it
 #: (``forge_library::schema::Generator::tool``) — not the backend's name.
@@ -80,6 +97,11 @@ def build_record(
     python: str | None = None,
     torch: str | None = None,
     model_revision: str | None = None,
+    executor: str = "comfy",
+    comfyui_commit: str | None = None,
+    workflow_sha256: str | None = None,
+    packs: dict | None = None,
+    workflow: str | None = None,
     fake: bool = False,
 ) -> dict:
     """The record for one rendered effect.
@@ -97,10 +119,13 @@ def build_record(
     """
     if fake:
         rec = placeholders.fake_record("sfx", TOOL, backend=BACKEND, created_by=created_by, model=model)
+        rec["backend"]["executor"] = executor
     else:
         rec = records.new_record("sfx", TOOL, created_by=created_by)
         rec["backend"] = records.backend_block(
-            name=BACKEND, commit=commit, python=python, torch=torch, model=model, model_revision=model_revision
+            name=BACKEND, commit=commit, python=python, torch=torch, model=model,
+            model_revision=model_revision, executor=executor, comfyui_commit=comfyui_commit,
+            workflow_sha256=workflow_sha256, packs=packs,
         )
     records.add_input(rec, "prompt", prompt=prompt)
     rec["params"] = {
@@ -110,6 +135,8 @@ def build_record(
         "steps": int(steps),
         "cfg": float(cfg),
     }
+    if workflow:
+        rec["params"]["workflow"] = workflow
     records.add_output(rec, out_path)
     rec["measured"] = measure_wav(out_path)
     return rec
@@ -155,6 +182,7 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--batch-file", metavar="FILE", help='one "name|seconds|prompt" per line; # comments; into --out-dir')
     parser.add_argument("--out-dir", metavar="DIR", help="where a batch's <name>.wav and <name>.json go")
     parser.add_argument("--model", default=None, metavar="ID", help=f"weights (default ${MODEL_ENV} or {DEFAULT_MODEL})")
+    parser.add_argument("--timeout", type=float, default=GENERATE_TIMEOUT_S, metavar="S", help=f"seconds one effect may take (default {GENERATE_TIMEOUT_S:g}; the first of a session compiles the DiT)")
 
 
 def parse_batch_file(path: str | os.PathLike) -> list[tuple[str, float, str]]:
@@ -267,45 +295,113 @@ def _success(spec: dict, rendered: list[dict]) -> dict:
     }
 
 
-# --------------------------------------------------------------------- outer --
+# ---------------------------------------------------------------- the graph --
 
 
-def checkout_commit(backend: backends_mod.Backend) -> str | None:
-    """HEAD of the upstream checkout the inner half will run from, or ``None`` when git will not say."""
-    checkout = backend.checkout
-    if not checkout.exists():
-        return None
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(checkout), "rev-parse", "--verify", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if done.returncode != 0:
-        return None
-    return done.stdout.strip() or None
+def _say(text: str) -> None:
+    """One progress line on stderr, so the JSON last line stays the last line."""
+    sys.stderr.write(f"[sfx] {text}\n")
+    sys.stderr.flush()
+
+
+def _progress(seconds: float, entry) -> None:
+    """A line every half minute: the first effect of a session compiles the DiT."""
+    if seconds >= 30 and int(seconds) % 30 == 0:
+        _say(f"{seconds:.0f}s on the host (the first render of a session compiles the DiT)")
+
+
+def template_inputs(spec: dict, job: dict, *, prefix: str) -> dict:
+    """Every knob ``sfx.api.json`` marks, filled from a checked spec.
+
+    All of them, always: the template refuses a marker nobody fills, which
+    is "a recipe states every knob" said in a place a graph can enforce.
+    """
+    return {
+        "prompt": job["prompt"],
+        "seconds": float(job["seconds"]),
+        "seed": int(spec["seed"]),
+        "steps": int(spec["steps"]),
+        "cfg": float(spec["cfg"]),
+        "filename_prefix": prefix,
+    }
 
 
 def run(args) -> dict:
-    """Validate, resolve the backend (exit 3 before any GPU work), render under its venv."""
+    """Validate, load the tracked graph, render every job on the host, record each.
+
+    A batch is a graph per job at one seed, the same as it was a call per
+    job at one seed: re-rendering one line of a batch on its own gives back
+    the sound it gave inside the batch.
+    """
     spec = plan(args)
     backend = backends_mod.load_backend(BACKEND)
-    launcher.resolve_interpreter(backend)
-    spec["commit"] = checkout_commit(backend)
-    with tempfile.TemporaryDirectory(prefix="forge-sfx-") as scratch:
-        spec_path = Path(scratch) / "spec.json"
-        spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
-        result = launcher.run_inner_checked(backend, "audio.sfx", ["--spec", str(spec_path)])
-    rendered = result.get("jobs") or []
-    if not rendered:
-        from forge_gen.exit_codes import BackendFailed
+    if spec["model"] != DEFAULT_MODEL:
+        raise InputRejected(
+            f"the host's sound-effect node offers only {DEFAULT_MODEL}, not {spec['model']!r}",
+            hint=f"unset ${MODEL_ENV}, or add a template for the other weights",
+        )
+    # Everything that can be refused before the card is leased: a missing
+    # ffmpeg (6), a template that cannot be built or patched (3).
+    ffmpeg = ffmpeg_bin()
+    host = comfy.host_backend(backend)
+    base = comfy.base_url(backend, records.project())
+    graph, template_sha = comfy.load_template(backend, WORKFLOW)
+    where = str(backend.workflow(WORKFLOW))
+    points = comfy.patch_points(graph, where)
+    facts = {
+        "executor": "comfy",
+        "comfyui_commit": comfy.host_commit(host),
+        "workflow_sha256": template_sha,
+        "packs": comfy.packs_block(backend),
+    }
 
-        raise BackendFailed("the inner half returned no rendered jobs")
-    return _success(spec, rendered)
+    rendered = []
+    comfy_blocks = []
+    for job in spec["jobs"]:
+        out = Path(job["out"])
+        inputs = template_inputs(spec, job, prefix=comfy.output_prefix(out.stem))
+        patched = comfy.patch(graph, inputs, where)
+        _say(f"{job['seconds']:g} s, {spec['steps']} steps, cfg {spec['cfg']:g}, seed {spec['seed']}: {job['prompt']}")
+        prompt_id = comfy.submit(base, patched, comfy.client_id())
+        entry = comfy.wait_for(base, prompt_id, timeout=float(getattr(args, "timeout", GENERATE_TIMEOUT_S)), poll=POLL_S, on_progress=_progress)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="forge-sfx-") as scratch:
+            saved = comfy.fetch(base, entry, Path(scratch))
+            transcode_wav(ffmpeg, saved[0], out)
+        rec = build_record(
+            prompt=job["prompt"],
+            seconds=job["seconds"],
+            seed=spec["seed"],
+            steps=spec["steps"],
+            cfg=spec["cfg"],
+            out_path=out,
+            model=spec["model"],
+            created_by=spec["created_by"],
+            workflow=WORKFLOW,
+            **facts,
+        )
+        records.write(rec, job["record"])
+        _say(f"OK {out} (seed {spec['seed']})")
+        rendered.append({"out": str(out), "record": job["record"]})
+        comfy_blocks.append(
+            {
+                "template": f"backends/{BACKEND}/workflows/{WORKFLOW}",
+                "template_sha256": template_sha,
+                "inputs": inputs,
+                "comfyui_commit": facts["comfyui_commit"],
+                "packs": facts["packs"],
+                "prompt_id": prompt_id,
+                "cached": comfy.was_cached(entry, points["filename_prefix"][0]),
+            }
+        )
+    summary = _success(spec, rendered)
+    # One job, one block — the shape the daemon copies into the row. A batch
+    # is several graphs, and the row is about the job it ran, so the first
+    # is the one it names and the rest travel beside it.
+    summary["comfy"] = comfy_blocks[0]
+    if len(comfy_blocks) > 1:
+        summary["comfy_batch"] = comfy_blocks
+    return summary
 
 
 def run_fake(args) -> dict:
@@ -334,123 +430,3 @@ def run_fake(args) -> dict:
         records.write(rec, job["record"])
         rendered.append({"out": job["out"], "record": job["record"]})
     return _success(spec, rendered)
-
-
-# --------------------------------------------------------------------- inner --
-
-
-def _snapshot_revision(model: str) -> str | None:
-    """The hub revision the cached snapshot is, for ``backend.model_revision``; ``None`` for a local dir or offline."""
-    if os.path.isdir(model):
-        return None
-    try:
-        from huggingface_hub import snapshot_download
-
-        path = snapshot_download(model, local_files_only=True)
-    except Exception:  # noqa: BLE001 - a revision is a nicety; the model id is the fact
-        return None
-    revision = os.path.basename(os.path.normpath(path))
-    return revision if len(revision) == 40 else None
-
-
-def main_inner(argv: list[str]) -> int:
-    """Render every job in the spec under the backend's venv; torch is imported here and nowhere above.
-
-    Prints progress lines and, last, one JSON object ``{"ok": true, "jobs":
-    [{"out", "record"}]}``. A missing model, a CUDA fault, a pipeline
-    ``ValueError`` — anything the pipeline raises — is a backend failure (5)
-    with the traceback on stderr; the launcher carries the tail out.
-    """
-    parser = argparse.ArgumentParser(prog="forge_gen.audio.sfx --inner", add_help=True)
-    parser.add_argument("--spec", required=True)
-    args = parser.parse_args(argv)
-    spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    if spec.get("project"):
-        records.set_project(spec["project"])
-    # Opt back in by exporting TORCHDYNAMO_DISABLE=0; backend.toml sets 1 as a default.
-    os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
-
-    import soundfile
-    import torch
-    from moss_soundeffect_v2 import MossSoundEffectPipeline
-
-    model = spec["model"]
-    seed = int(spec["seed"])
-    print(f"[sfx] loading {model}", flush=True)
-    pipe = MossSoundEffectPipeline.from_pretrained(model, torch_dtype=torch.bfloat16, device="cuda")
-    revision = _snapshot_revision(model)
-
-    rendered = []
-    for job in spec["jobs"]:
-        # Re-seeded per job rather than once per run, so that re-rendering one
-        # line of a batch gives back the same sound it gave inside the batch.
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        print(f"[sfx] {job['seconds']:g} s, {spec['steps']} steps, cfg {spec['cfg']:g}, seed {seed}: {job['prompt']}", flush=True)
-        audio = pipe(
-            prompt=job["prompt"],
-            seconds=job["seconds"],
-            num_inference_steps=spec["steps"],
-            cfg_scale=spec["cfg"],
-            seed=seed,
-        )
-        out_path = Path(job["out"])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        # pipe.save_audio -> torchaudio.save -> torchcodec, whose ffmpeg libs
-        # collide with system glib here; soundfile writes the wav fine.
-        # PCM_16 on purpose: the stdlib wave module measures it, and a game
-        # engine decodes it without a float-WAV path.
-        wav = audio[0].detach().float().cpu().numpy().T
-        soundfile.write(os.fspath(out_path), wav, pipe.sample_rate, subtype="PCM_16")
-        rec = build_record(
-            prompt=job["prompt"],
-            seconds=job["seconds"],
-            seed=seed,
-            steps=spec["steps"],
-            cfg=spec["cfg"],
-            out_path=out_path,
-            model=model,
-            created_by=spec.get("created_by"),
-            commit=spec.get("commit"),
-            python=platform.python_version(),
-            torch=torch.__version__,
-            model_revision=revision,
-        )
-        records.write(rec, job["record"])
-        print(f"[sfx] OK {out_path} (seed {seed})", flush=True)
-        rendered.append({"out": str(out_path), "record": job["record"]})
-    sys.stdout.write(json.dumps({"ok": True, "jobs": rendered}) + "\n")
-    sys.stdout.flush()
-    return 0
-
-
-def _inner_entry(argv: list[str]) -> int:
-    """``main_inner`` with a refusal turned into its exit code and JSON line, so the outer relays it unchanged."""
-    import traceback
-
-    from forge_gen import exit_codes
-    from forge_gen.exit_codes import ForgeGenError
-
-    try:
-        return main_inner(argv)
-    except ForgeGenError as err:
-        sys.stderr.write(f"forge-gen: {err.error}: {err.message}\n")
-        sys.stdout.write(json.dumps(err.payload(), ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return err.code
-    except KeyboardInterrupt:
-        return 130
-    except Exception as err:  # noqa: BLE001 - anything the model raises is a backend failure, with its traceback
-        traceback.print_exc()
-        payload = {"ok": False, "error": "backend_failed", "message": f"{err.__class__.__name__}: {err}"}
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return exit_codes.BACKEND_FAILED
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--inner":
-        sys.exit(_inner_entry(sys.argv[2:]))
-    sys.stderr.write("run me through forge-gen: python3 python/forge_gen sfx ...\n")
-    sys.exit(2)

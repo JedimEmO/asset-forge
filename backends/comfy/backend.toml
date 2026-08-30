@@ -49,11 +49,15 @@ manager_version = "4.2.2"
 frontend = "1.49.6"                        # comfyui-frontend-package, pinned by requirements.txt
 snapshot = "snapshot.json"                 # `GET /api/manager/snapshot/get_current`, committed beside this file
 base_directory = "data"                    # relative to $PREFIX: models/, input/, output/, user/, custom_nodes/
-# One custom node pack, and only one: everything the fp8 templates need is
-# native to v0.34.2, but the lean tier's reference image is a Q4_K_M GGUF and
-# only ComfyUI-GGUF can load it. Each entry is { repo, commit, dir, pips }:
-# `dir` is the directory name under $PREFIX/data/custom_nodes/, `pips` what
-# the pack needs in the comfy venv beyond ComfyUI's own requirements.
+# Two custom node packs. Everything the fp8 image templates and ACE-Step 1.5
+# need is native to v0.34.2; the lean tier's Q4_K_M GGUF needs ComfyUI-GGUF,
+# and the three MOSS models come through TTS-Audio-Suite. Each entry is
+# { repo, commit, dir, pips, nodes }: `dir` is the directory name under
+# $PREFIX/data/custom_nodes/, `pips` what the pack needs in the comfy venv
+# beyond ComfyUI's own requirements. A pack lives in four places or nowhere
+# — here, in install.sh (cloned at its pin *before* the unit starts, because
+# packs are scanned once at startup), in snapshot.json (re-fetched from the
+# Manager, never hand-edited) and in hosting.md's pins row.
 [[comfy.packs]]
 repo = "https://github.com/city96/ComfyUI-GGUF"
 commit = "6ea2651e7df66d7585f6ffee804b20e92fb38b8a"   # 2026-01-12
@@ -62,6 +66,30 @@ license = "Apache-2.0"
 pips = ["gguf==0.19.0", "protobuf==7.36.0"]
 nodes = ["UnetLoaderGGUF"]
 note = "loads qwen-image-Q4_K_M.gguf for reference_qwen_gguf.api.json — the lean tier's image model. The fp8 templates do not touch it."
+
+[[comfy.packs]]
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
+dir = "TTS-Audio-Suite"
+license = "MIT"
+# Empty, and measured so: its requirements.txt asks for numpy<2.3.0, which
+# would downgrade the host's 2.5.2 under every image template — and no pip
+# was needed. Each node registers behind its own try/except, so all 58
+# registered on the first restart with torch 2.13.0, torchaudio 2.11.0 and
+# numpy 2.5.2 exactly as they were (2026-08-30). The Manager's
+# allow_pip_install is False, which is why adding the clone could not run
+# the pack's install.py behind anyone's back.
+pips = []
+# The six the three audio templates use, of the 58 it registers.
+nodes = [
+    "MossSoundEffectV2EngineNode",
+    "UnifiedSoundEffectsNode",
+    "MossTTSEngineNode",
+    "UnifiedTTSTextNode",
+    "UnifiedVoiceDesignerNode",
+    "CharacterVoicesNode",
+]
+note = "the three MOSS models — SoundEffect v2, TTS and VoiceGenerator — behind moss_sfx and moss_tts. It registers no unload node at this pin, so POST /free is the only lever the card has."
 
 # The models the host holds, in the ComfyUI folder each lives in under
 # $PREFIX/<base_directory>/models/. `store = "comfy:models/<dir>"` is what

@@ -34,8 +34,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 import wave
@@ -43,7 +41,8 @@ from pathlib import Path
 
 from forge_gen import backends as backends_mod
 from forge_gen import comfy, placeholders, records
-from forge_gen.exit_codes import BackendFailed, InputRejected, MissingTool, UsageError
+from forge_gen.audio import ffmpeg_bin, transcode_ogg, transcode_wav
+from forge_gen.exit_codes import InputRejected, UsageError
 
 #: The backend directory this command runs through.
 BACKEND = "acestep"
@@ -96,14 +95,8 @@ DEFAULT_BPM = 120
 DEFAULT_KEYSCALE = "C major"
 DEFAULT_TIMESIGNATURE = "4"
 
-#: How many trailing lines of a failed transcode a refusal carries.
-LOG_TAIL = 40
-
 #: What the server is told when the track has no words.
 INSTRUMENTAL = "[instrumental]"
-
-#: Vorbis quality for the ogg transcode (~192 kb/s).
-VORBIS_QUALITY = "6"
 
 
 # ---------------------------------------------------------------- parser --
@@ -113,7 +106,7 @@ def add_parser(subparsers) -> None:
     """Register ``music``."""
     parser = subparsers.add_parser(
         "music",
-        help="One track from a prompt (ACE-Step; the server stays resident)",
+        help="One track from a prompt (ACE-Step 1.5, as a graph on the ComfyUI host)",
         description=__doc__,
     )
     parser.add_argument("--out", metavar="FILE", help="where the track goes: .ogg or .wav")
@@ -209,14 +202,6 @@ def check_inputs(args) -> dict:
         "out": Path(args.out).resolve(),
         "record": Path(args.record).resolve(),
     }
-
-
-def ffmpeg_bin() -> Path:
-    """``ffmpeg`` on PATH, or :class:`MissingTool` (exit 6)."""
-    found = shutil.which("ffmpeg")
-    if not found:
-        raise MissingTool("ffmpeg is not on PATH", tool="ffmpeg", hint="install ffmpeg, or ask for --format wav")
-    return Path(found)
 
 
 # ------------------------------------------------------------- the record --
@@ -341,45 +326,6 @@ def _progress(seconds: float, entry) -> None:
     """What ``wait_for`` prints while the host works — a first load is minutes."""
     if int(seconds) % 30 == 0 and seconds >= 30:
         _say(f"{seconds:.0f}s on the host")
-
-
-def transcode_wav(ffmpeg: Path, source: Path, out: Path) -> Path:
-    """Whatever the graph saved → 16-bit PCM WAV.
-
-    ``SaveAudio`` writes FLAC — ComfyUI v0.34.2 has no WAV save node — and
-    the library's audio is PCM: the stdlib ``wave`` module is what
-    :func:`measure_wav` reads, and a game engine decodes 16-bit PCM with no
-    float-WAV path. FLAC is lossless, so nothing is lost between the card
-    and the file except what 16 bits cannot hold.
-    """
-    out.parent.mkdir(parents=True, exist_ok=True)
-    done = subprocess.run(
-        [str(ffmpeg), "-y", "-loglevel", "error", "-i", str(source), "-c:a", "pcm_s16le", str(out)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise BackendFailed(
-            f"ffmpeg exited {done.returncode} decoding {source.name} to PCM",
-            log_tail=done.stderr.splitlines()[-LOG_TAIL:],
-        )
-    return out
-
-
-def transcode_ogg(ffmpeg: Path, wav: Path, out: Path, *, comment: str | None = None) -> Path:
-    """WAV → Ogg Vorbis through the ffmpeg CLI (``-q:a 6``); ``comment`` lands as a vorbis tag."""
-    out.parent.mkdir(parents=True, exist_ok=True)
-    metadata = ["-metadata", f"comment={comment}"] if comment else []
-    done = subprocess.run(
-        [str(ffmpeg), "-y", "-loglevel", "error", "-i", str(wav), "-c:a", "libvorbis", "-q:a", VORBIS_QUALITY, *metadata, str(out)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise BackendFailed(f"ffmpeg exited {done.returncode} transcoding {wav.name}", log_tail=done.stderr.splitlines()[-LOG_TAIL:])
-    return out
 
 
 def backend_facts(

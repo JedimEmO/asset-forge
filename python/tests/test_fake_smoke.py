@@ -191,6 +191,56 @@ def test_the_music_graph_is_built_and_patched_without_a_host(tmp_path, repo_root
         music.check_inputs(args)
 
 
+def test_every_audio_verb_states_exactly_the_knobs_its_template_marks(tmp_path, repo_root):
+    """The contract between a module and its graph, checked on the shipped files.
+
+    A template that marks a knob the verb does not fill would run at
+    whatever it was saved with; a verb that states a knob the template does
+    not mark would have it silently dropped. Both are refusals inside
+    `comfy.patch`, and this is what makes them fail here — in a test with no
+    host and no card — instead of in front of someone with the card leased.
+    """
+    from forge_gen import backends, comfy
+    from forge_gen.audio import music, sfx, speech, voice
+
+    tree = repo_root / "backends"
+    ref = placeholders.placeholder_wav(tmp_path / "voices" / "warden" / "ref.wav", seconds=8.0)
+
+    cases = [
+        ("acestep", music, lambda spec: music.template_inputs(spec, seed=1, prefix="p")),
+        ("moss_sfx", sfx, lambda spec: sfx.template_inputs(spec, spec["jobs"][0], prefix="p")),
+        ("moss_tts", speech, lambda spec: speech.template_inputs(spec, spec["jobs"][0], reference_name="r.wav", prefix="p")),
+        ("moss_tts", voice, lambda spec: voice.template_inputs(spec, prefix="p")),
+    ]
+    specs = {
+        music: music.check_inputs(argparse.Namespace(
+            out=str(tmp_path / "t.wav"), record=str(tmp_path / "t.json"), prompt="taiko",
+            lyrics_file=None, duration=30.0, seed=1, bpm=None, keyscale=None,
+            timesignature=None, thinking=True, format=None, stop_server=False)),
+        sfx: sfx.plan(argparse.Namespace(
+            prompt="a door", out=str(tmp_path / "d.wav"), record=None, seconds=1.0, seed=1,
+            steps=100, cfg=4.0, batch_file=None, out_dir=None, model=None)),
+        speech: speech.plan(argparse.Namespace(
+            text="Stand down.", out=str(tmp_path / "l.wav"), record=None, voice=str(ref),
+            voice_text=None, language="en", backend="moss_tts", seed=1, lines_file=None,
+            out_dir=None, model=None)),
+        voice: voice.plan(argparse.Namespace(
+            name="warden", describe="deep, slow, grave", line=None, seed=1,
+            out_dir=str(tmp_path / "designed"), overwrite=False, model=None,
+            temperature=None, top_p=None, top_k=None, rep_penalty=None)),
+    }
+    for backend_name, module, fill in cases:
+        backend = backends.load_backend(backend_name, tree)
+        graph, _ = comfy.load_template(backend, module.WORKFLOW)
+        marked = set(comfy.patch_points(graph, module.WORKFLOW))
+        stated = set(fill(specs[module]))
+        assert stated == marked, (
+            f"{module.WORKFLOW}: the verb states {sorted(stated)} and the template marks {sorted(marked)}"
+        )
+        # And the patch itself goes through, which is the real proof.
+        comfy.patch(graph, fill(specs[module]), module.WORKFLOW)
+
+
 def test_a_music_record_from_a_comfy_run_says_what_ran(tmp_path):
     """build_record still takes a result and a backend block; both halves are new."""
     from forge_gen.audio import music

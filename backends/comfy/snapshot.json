@@ -4,6 +4,10 @@
     "https://github.com/city96/ComfyUI-GGUF.git": {
       "hash": "6ea2651e7df66d7585f6ffee804b20e92fb38b8a",
       "disabled": false
+    },
+    "https://github.com/diodiogod/TTS-Audio-Suite.git": {
+      "hash": "fab00263fbdcdaddd4c721d1b560e1a08b6025ea\n",
+      "disabled": false
     }
   },
   "cnr_custom_nodes": {},

@@ -29,33 +29,46 @@ the cloner wants — chosen to show pitch, pace and texture without asking for
 an emotion the description did not name. ``--line`` replaces it; the record
 carries whichever was spoken.
 
-The outer half (``run``) validates, resolves the ``moss_tts`` backend (the
-same checkout and venv MOSS-TTS runs in; exit 3 before any GPU work) and
-execs the inner half under it; the inner half (``main_inner``) imports
-torch. ``build_record`` is pure so the schema can be checked with nothing
-resident.
+**It runs on the ComfyUI host**, through the TTS-Audio-Suite pack, whose
+"Voice Design 1.7B" variant is ``OpenMOSS-Team/MOSS-VoiceGenerator`` — the
+same weights this command recorded before the move, so a voice designed
+after it is the same kind of thing as one designed before. (Its *cloning*
+half is not: see ``speech.py``, which now runs a different MOSS-TTS
+checkpoint.) The graph is ``backends/moss_tts/workflows/voice.api.json``,
+its sampler preset is Custom so the knobs the record names are the knobs
+that ran, and ``SaveAudio`` writes FLAC, which is transcoded to the PCM WAV
+the record measures.
+
+``build_record`` is pure so the schema can be checked with nothing resident.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import platform
 import random
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
-from forge_gen import launcher, placeholders, records
+from forge_gen import comfy, placeholders, records
+from forge_gen.audio import ffmpeg_bin, transcode_wav
 from forge_gen.audio.speech import REFERENCE_GOOD_S, measure_wav
-from forge_gen.exit_codes import BackendFailed, InputRejected, UsageError
+from forge_gen.exit_codes import InputRejected
 
-#: The backend directory this command runs through: the MOSS-TTS env hosts both models.
+#: The backend directory this command runs through: one host, two graphs.
 BACKEND = "moss_tts"
+
+#: The tracked graph, under ``backends/moss_tts/workflows/``.
+WORKFLOW = "voice.api.json"
+
+#: The variant the tracked graph states for the designer.
+MODEL_VARIANT = "Voice Design 1.7B"
+
+#: Seconds between ``/history`` polls, and how long one design may take.
+POLL_S = 2.0
+GENERATE_TIMEOUT_S = 1800.0
 
 #: The record's ``tool`` — the generator's name, as distinct from the backend's.
 TOOL = "moss_voice_generator"
@@ -133,6 +146,11 @@ def build_record(
     python: str | None = None,
     torch: str | None = None,
     model_revision: str | None = None,
+    executor: str = "comfy",
+    comfyui_commit: str | None = None,
+    workflow_sha256: str | None = None,
+    packs: dict | None = None,
+    workflow: str | None = None,
     fake: bool = False,
 ) -> dict:
     """The record for one designed voice: no inputs, every knob in ``params``.
@@ -144,10 +162,13 @@ def build_record(
     """
     if fake:
         rec = placeholders.fake_record("voice", TOOL, backend=BACKEND, created_by=created_by, model=model)
+        rec["backend"]["executor"] = executor
     else:
         rec = records.new_record("voice", TOOL, created_by=created_by)
         rec["backend"] = records.backend_block(
-            name=BACKEND, commit=commit, python=python, torch=torch, model=model, model_revision=model_revision
+            name=BACKEND, commit=commit, python=python, torch=torch, model=model,
+            model_revision=model_revision, executor=executor, comfyui_commit=comfyui_commit,
+            workflow_sha256=workflow_sha256, packs=packs,
         )
     params = {
         "name": name,
@@ -157,6 +178,8 @@ def build_record(
         "seed": int(seed),
     }
     params.update(sampling or dict(SAMPLING))
+    if workflow:
+        params["workflow"] = workflow
     rec["params"] = params
     records.add_output(rec, out_path)
     measured = measure_wav(out_path)
@@ -256,43 +279,89 @@ def _success(spec: dict, rendered: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------- outer --
+# ---------------------------------------------------------------- the graph --
 
 
-def checkout_commit(backend: backends_mod.Backend) -> str | None:
-    """HEAD of the upstream checkout the inner half runs from, or ``None`` when git will not say."""
-    checkout = backend.checkout
-    if not checkout.exists():
-        return None
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(checkout), "rev-parse", "--verify", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if done.returncode != 0:
-        return None
-    return done.stdout.strip() or None
+def _say(text: str) -> None:
+    sys.stderr.write(f"[voice] {text}\n")
+    sys.stderr.flush()
+
+
+def _progress(seconds: float, entry) -> None:
+    if seconds >= 30 and int(seconds) % 30 == 0:
+        _say(f"{seconds:.0f}s on the host")
+
+
+def template_inputs(spec: dict, *, prefix: str) -> dict:
+    """Every knob ``voice.api.json`` marks: the description, the line, the seed and the sampler."""
+    sampling = spec["sampling"]
+    return {
+        "instruction": spec["instruction"],
+        "text": spec["text"],
+        "seed": int(spec["seed"]),
+        "audio_temperature": float(sampling["audio_temperature"]),
+        "audio_top_p": float(sampling["audio_top_p"]),
+        "audio_top_k": int(sampling["audio_top_k"]),
+        "audio_repetition_penalty": float(sampling["audio_repetition_penalty"]),
+        "filename_prefix": prefix,
+    }
 
 
 def run(args) -> dict:
-    """Validate, resolve the backend (exit 3 before any GPU work), design under its venv."""
+    """Validate, run the design graph on the host, write the audition clip and its record."""
     spec = plan(args)
     backend = backends_mod.load_backend(BACKEND)
-    launcher.resolve_interpreter(backend)
-    spec["commit"] = checkout_commit(backend)
+    if spec["model"] != DEFAULT_MODEL:
+        raise InputRejected(
+            f"the host's designer node is {MODEL_VARIANT} ({DEFAULT_MODEL}), not {spec['model']!r}",
+            hint=f"unset ${MODEL_ENV}, or add a template that states another variant",
+        )
+    ffmpeg = ffmpeg_bin()
+    host = comfy.host_backend(backend)
+    base = comfy.base_url(backend, records.project())
+    graph, template_sha = comfy.load_template(backend, WORKFLOW)
+    where = str(backend.workflow(WORKFLOW))
+    points = comfy.patch_points(graph, where)
+    out = Path(spec["out"])
+    inputs = template_inputs(spec, prefix=comfy.output_prefix(f"{spec['name']}_ref"))
+    patched = comfy.patch(graph, inputs, where)
+
+    _say(f"designing {spec['name']} at seed {spec['seed']}: {spec['instruction'][:70]}")
+    prompt_id = comfy.submit(base, patched, comfy.client_id())
+    entry = comfy.wait_for(base, prompt_id, timeout=float(getattr(args, "timeout", GENERATE_TIMEOUT_S)), poll=POLL_S, on_progress=_progress)
+    out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="forge-voice-") as scratch:
-        spec_path = Path(scratch) / "spec.json"
-        spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
-        result = launcher.run_inner_checked(backend, "audio.voice", ["--spec", str(spec_path)])
-    rendered = result.get("voice")
-    if not rendered:
-        raise BackendFailed("the inner half returned no designed voice")
-    return _success(spec, rendered)
+        saved = comfy.fetch(base, entry, Path(scratch))
+        transcode_wav(ffmpeg, saved[0], out)
+
+    rec = build_record(
+        name=spec["name"],
+        instruction=spec["instruction"],
+        text=spec["text"],
+        out_path=out,
+        model=spec["model"],
+        seed=spec["seed"],
+        sampling=spec["sampling"],
+        created_by=spec["created_by"],
+        executor="comfy",
+        comfyui_commit=comfy.host_commit(host),
+        workflow_sha256=template_sha,
+        packs=comfy.packs_block(backend),
+        workflow=WORKFLOW,
+    )
+    records.write(rec, spec["record"])
+    _say(f"OK {out} (seed {spec['seed']})")
+    summary = _success(spec, {"out": str(out), "record": spec["record"]})
+    summary["comfy"] = {
+        "template": f"backends/{BACKEND}/workflows/{WORKFLOW}",
+        "template_sha256": template_sha,
+        "inputs": inputs,
+        "comfyui_commit": rec["backend"]["comfyui_commit"],
+        "packs": rec["backend"]["packs"],
+        "prompt_id": prompt_id,
+        "cached": comfy.was_cached(entry, points["filename_prefix"][0]),
+    }
+    return summary
 
 
 def run_fake(args) -> dict:
@@ -321,157 +390,3 @@ def run_fake(args) -> dict:
     )
     records.write(rec, spec["record"])
     return _success(spec, {"out": spec["out"], "record": spec["record"]})
-
-
-# --------------------------------------------------------------------- inner --
-
-
-def _snapshot_revision(model: str) -> str | None:
-    """The hub revision the cached snapshot is, for ``backend.model_revision``; ``None`` for a local dir or offline."""
-    if os.path.isdir(model):
-        return None
-    try:
-        from huggingface_hub import snapshot_download
-
-        path = snapshot_download(model, local_files_only=True)
-    except Exception:  # noqa: BLE001 - a revision is a nicety; the model id is the fact
-        return None
-    revision = os.path.basename(os.path.normpath(path))
-    return revision if len(revision) == 40 else None
-
-
-def _attn_implementation(torch, device: str, dtype) -> str:
-    """flash-attn when it is installed and the card is Ampere or newer; SDPA on CUDA otherwise; eager on CPU."""
-    import importlib.util
-
-    if device == "cuda" and importlib.util.find_spec("flash_attn") is not None and dtype in (torch.float16, torch.bfloat16):
-        major, _ = torch.cuda.get_device_capability()
-        if major >= 8:
-            return "flash_attention_2"
-    return "sdpa" if device == "cuda" else "eager"
-
-
-def main_inner(argv: list[str]) -> int:
-    """Design the voice in the spec under the backend's venv; torch is imported here and nowhere above.
-
-    Prints progress lines and, last, one JSON object ``{"ok": true, "voice":
-    {"out", "record"}}``. Anything the model raises is a backend failure (5)
-    with the traceback on stderr; the launcher carries the tail out.
-    """
-    parser = argparse.ArgumentParser(prog="forge_gen.audio.voice --inner", add_help=True)
-    parser.add_argument("--spec", required=True)
-    args = parser.parse_args(argv)
-    spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    if spec.get("project"):
-        records.set_project(spec["project"])
-
-    import soundfile
-    import torch
-    from transformers import AutoModel, AutoProcessor
-
-    torch.backends.cuda.enable_cudnn_sdp(False)  # broken kernel, per model card
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(True)
-    torch.backends.cuda.enable_math_sdp(True)
-
-    model_name = spec["model"]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    attn = _attn_implementation(torch, device, dtype)
-    print(f"[voice] loading {model_name} on {device} ({attn})", flush=True)
-    # normalize_inputs: the processor tidies punctuation in the text and the
-    # instruction the way the model was trained to see them.
-    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True, normalize_inputs=True)
-    processor.audio_tokenizer = processor.audio_tokenizer.to(device)
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn, torch_dtype=dtype).to(device)
-    model.eval()
-    revision = _snapshot_revision(model_name)
-    sample_rate = int(processor.model_config.sampling_rate)
-
-    seed = int(spec["seed"])
-    sampling = spec.get("sampling") or dict(SAMPLING)
-    torch.manual_seed(seed)
-    if device == "cuda":
-        torch.cuda.manual_seed_all(seed)
-    conversation = [processor.build_user_message(text=spec["text"], instruction=spec["instruction"])]
-    batch = processor([conversation], mode="generation")
-    print(f"[voice] {spec['name']} seed {seed}: {spec['instruction']}", flush=True)
-    print(f"[voice] line: {spec['text']}", flush=True)
-    with torch.no_grad():
-        outputs = model.generate(
-            input_ids=batch["input_ids"].to(device),
-            attention_mask=batch["attention_mask"].to(device),
-            max_new_tokens=MAX_NEW_TOKENS,
-            audio_temperature=float(sampling["audio_temperature"]),
-            audio_top_p=float(sampling["audio_top_p"]),
-            audio_top_k=int(sampling["audio_top_k"]),
-            audio_repetition_penalty=float(sampling["audio_repetition_penalty"]),
-        )
-    messages = [message for message in processor.decode(outputs) if message is not None]
-    if not messages or not messages[0].audio_codes_list:
-        raise BackendFailed(f"the model produced no audio for {spec['text']!r}")
-    audio = messages[0].audio_codes_list[0]
-    out_path = Path(spec["out"])
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    # soundfile, as speech.py: torchaudio.save goes through torchcodec here.
-    # PCM_16 so the stdlib wave module — and the cloner's length gate —
-    # can read it.
-    wav = audio.detach().float().cpu().numpy()
-    soundfile.write(os.fspath(out_path), wav.T if wav.ndim > 1 else wav, sample_rate, subtype="PCM_16")
-    rec = build_record(
-        name=spec["name"],
-        instruction=spec["instruction"],
-        text=spec["text"],
-        out_path=out_path,
-        model=model_name,
-        seed=seed,
-        sampling=sampling,
-        created_by=spec.get("created_by"),
-        commit=spec.get("commit"),
-        python=platform.python_version(),
-        torch=torch.__version__,
-        model_revision=revision,
-    )
-    records.write(rec, spec["record"])
-    seconds = rec["measured"]["duration_s"]
-    low, high = REFERENCE_GOOD_S
-    if seconds is not None and not low <= seconds <= high:
-        sys.stderr.write(
-            f"forge-gen: voice: the audition is {seconds:.1f} s; {low:g}–{high:g} s clones best — "
-            f"another --seed, or a longer/shorter --line\n"
-        )
-    print(f"[voice] OK {out_path} ({seconds} s at {sample_rate} Hz)", flush=True)
-    sys.stdout.write(json.dumps({"ok": True, "voice": {"out": str(out_path), "record": spec["record"]}}) + "\n")
-    sys.stdout.flush()
-    return 0
-
-
-def _inner_entry(argv: list[str]) -> int:
-    """``main_inner`` with a refusal turned into its exit code and JSON line, so the outer relays it unchanged."""
-    import traceback
-
-    from forge_gen import exit_codes
-    from forge_gen.exit_codes import ForgeGenError
-
-    try:
-        return main_inner(argv)
-    except ForgeGenError as err:
-        sys.stderr.write(f"forge-gen: {err.error}: {err.message}\n")
-        sys.stdout.write(json.dumps(err.payload(), ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return err.code
-    except KeyboardInterrupt:
-        return 130
-    except Exception as err:  # noqa: BLE001 - anything the model raises is a backend failure, with its traceback
-        traceback.print_exc()
-        payload = {"ok": False, "error": "backend_failed", "message": f"{err.__class__.__name__}: {err}"}
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return exit_codes.BACKEND_FAILED
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--inner":
-        sys.exit(_inner_entry(sys.argv[2:]))
-    sys.stderr.write("run me through forge-gen: python3 python/forge_gen voice ...\n")
-    sys.exit(2)
