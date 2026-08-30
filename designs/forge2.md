@@ -474,6 +474,34 @@ every child, giant and squat body plan, on one profile. Until it is
 decided, the mesh fits the skeleton and the witch is a second profile's
 problem.
 
+**Phase 2, the answer proposed (2026-08-30, late): the skeleton fits the
+mesh, and the weights are the fit.** Freeze what the clips need — names,
+hierarchy, rest *rotations* — and let bone *lengths* belong to the body.
+The lengths come from SkinTokens' own weights: every bone owns a vertex
+cloud, the joint between parent and child is where the clouds meet,
+projected onto the bone's frozen direction; skin → fit → re-skin, two
+passes, the second moving nothing, with a geometry-only cross-check on
+the T-posed tubes. (Skin-only SkinTokens does *not* move joints: measured
+~1 cm on every body including the witch, so the fit is ours.) What
+changes: the contract holds each bone's direction within a few degrees
+and records its length per body in the sidecar (`bones[55]`, a bump to
+say more) with a `motion_scale` (leg-length ratio) the manifest carries
+and the consumer applies to the Hips translation track — our sheet and
+studio renderers apply it too, so the strip shows what the game will;
+sockets become fractions of bone length; the export gate and rig check
+trade the 0.1 mm translation rule for a direction rule plus a new numeric
+gate, the walk bound to *this* body keeping its feet within tolerance of
+the ground on contact frames; the fit gate stops measuring span and
+requires only a T-pose relative to the body's own shoulders. Unchanged:
+the bake, the clips, the ≤ 1 mm audit on the fixture mannequin, no
+retarget, no hand edit. Costs: contact poses (a two-handed grip) overshoot
+on long arms and fall short on short ones, which is every shared-animation
+game's price and a later IK pass's job; one consumer-facing manifest bump.
+**Spike before building:** fit the witch's skeleton from her existing
+weights (`out/grok/moss_witch_v4/`), re-skin, rig-check with the direction
+rule, walk her with the Hips track scaled — a day, and it either puts her
+shoulders where they are or says what is wrong with the idea.
+
 **Phase 2 — rigging (2 weeks).** `backends/skintokens/` in the `env`
 executor with the issue-#8 and SDPA patches under `patches/`. `forge gen
 prepare` (Blender: normalise, fit gate, dust, budget, armature in) →
