@@ -49,8 +49,10 @@ rustfft = "6"
 clap = { version = "4", features = ["derive"] }
 # rmcp's #[tool_router]/#[tool_handler] macros churn between minors; every rmcp
 # type stays inside forge_mcp so a bump is one crate's problem.
-rmcp = { version = "=1.8.0", features = ["server", "macros", "transport-io"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "io-std"] }
+rmcp = { version = "=1.8.0", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+# `signal` is how ^C on a followed job becomes a cancel rather than a
+# detached child holding the card.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "io-std", "signal", "net"] }
 schemars = "1.0"
 base64 = "0.22"
 # std's mpsc Receiver is !Sync, so it cannot live in a Bevy Resource; this can.

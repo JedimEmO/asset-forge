@@ -151,6 +151,7 @@ fn a_foreign_holder_blocks_rather_than_ooms() {
             outputs_claimed: Vec::new(),
             record: None,
             created_by: String::from("agent:test"),
+            fake: None,
         })
         .expect("admitted");
     let blocked = common::until(queue.as_ref(), &job.id, "blocked", 15, |job| {

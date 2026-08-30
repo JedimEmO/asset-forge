@@ -10,6 +10,12 @@
 //! `sheet`, `views`, `gen` or `doctor`, so an agent's picture and a human's
 //! cannot disagree.
 //!
+//! The queue it serves is found the same way `forge gen` finds one: a
+//! daemon's if `forge serve` is up for this project, else a `LocalQueue`
+//! in this process — a queue of one, taking the same `card.lock` as every
+//! other door. The server never learns which it holds, which is what makes
+//! a stranger's first session and a busy machine's tenth one code path.
+//!
 //! From the moment `serve` is called, stdout is the JSON-RPC stream and
 //! nothing else. The one thing printed here is the failure line, and it
 //! goes to stderr through the usual exit path.
@@ -29,12 +35,13 @@ pub(crate) fn run(cli: &Cli) -> Outcome {
         Some(dir) if cli.project.is_none() && !dir.is_empty() => crate::load_root(Path::new(&dir))?,
         _ => crate::project(cli)?,
     };
+    let queue = crate::commands::generate::queue_for(&project)?;
     let config = Config::for_project(project).map_err(|e| Failure::refused(e.to_string()))?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(|e| Failure::failed(format!("cannot start the async runtime: {e}")))?;
     runtime
-        .block_on(forge_mcp::serve(config))
+        .block_on(forge_mcp::serve(config, queue))
         .map_err(|e| Failure::failed(e.to_string()))
 }

@@ -271,6 +271,18 @@ pub struct JobSpec {
     pub record: Option<String>,
     /// `human`, `agent:claude`, `cli` — who asked.
     pub created_by: String,
+    /// Whether this run is to be a `--fake` one, when the door that asked
+    /// knows.
+    ///
+    /// `None` — what every door normally passes — leaves it to the queue,
+    /// which reads `[hardware] tier` and `FORGE_FAKE`. It is stated when
+    /// the asking process's own environment says `FORGE_FAKE=1` and the
+    /// queue is a daemon's: the daemon's environment is not the caller's,
+    /// and a shell that asked for a placeholder must not get a real
+    /// four-minute run because the daemon was started from another
+    /// terminal.
+    #[serde(default)]
+    pub fake: Option<bool>,
 }
 
 impl JobSpec {
@@ -284,6 +296,7 @@ impl JobSpec {
             outputs_claimed: Vec::new(),
             record: None,
             created_by: created_by.into(),
+            fake: None,
         }
     }
 }
@@ -356,6 +369,14 @@ pub struct Job {
     pub hint: Option<String>,
     /// What the card cost, when this job took the lease.
     pub card: Option<CardFacts>,
+    /// Whether the door that asked stated a `--fake` run.
+    ///
+    /// `null` means it did not say, and the queue decides from
+    /// `[hardware] tier` and its own `FORGE_FAKE`; it is not a claim that
+    /// the run was real. What the run *was* is the record's word, which is
+    /// written by the generator.
+    #[serde(default)]
+    pub fake: Option<bool>,
     /// The child's `comfy` block, copied verbatim from its JSON last line.
     pub comfy: Option<Value>,
     /// The child's JSON last line, whole.
@@ -404,6 +425,7 @@ impl Job {
             message: None,
             hint: None,
             card: None,
+            fake: spec.fake,
             comfy: None,
             payload: None,
         }

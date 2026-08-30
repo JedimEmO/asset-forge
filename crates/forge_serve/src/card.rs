@@ -395,7 +395,9 @@ pub struct CardRelease {
     pub after_gb: Option<f64>,
     /// Whether the unit was restarted. Loud on purpose.
     pub restarted: bool,
-    /// Whether the card came back within [`BACK_WITHIN_GB`].
+    /// Whether the card came back within half a gigabyte of what it started
+    /// with — the tolerance that keeps the creeping resident floor (1.09 to
+    /// 1.53 GB over seven model swaps, measured) from tripping the ladder.
     pub returned: bool,
     /// What to say in the log and, when it did not come back, in
     /// `card.json`.
@@ -452,7 +454,7 @@ const DEFAULT_UNIT: &str = "forge-comfy.service";
 /// The ladder itself, with the restart and the patience handed in.
 ///
 /// Production passes `systemctl --user restart <unit>` and
-/// [`FREE_POLL_S`]; the crate's own test passes a closure that counts and
+/// [`FREE_POLL_S`] seconds of patience; the crate's own test passes a closure that counts and
 /// one second, because what has to be proved is "once, and then the lease
 /// is withheld" — not that `systemctl` can be shadowed on `PATH`, and not
 /// that a test runner can wait three quarters of a minute for it.

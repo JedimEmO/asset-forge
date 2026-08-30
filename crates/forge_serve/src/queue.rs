@@ -519,7 +519,7 @@ impl LocalQueue {
             )
             .trim()
             .to_owned(),
-            fake: self.is_fake(),
+            fake: job.fake.unwrap_or_else(|| self.is_fake()),
         }
     }
 

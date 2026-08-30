@@ -5,9 +5,9 @@
 //! 2. `<project>/out/serve/daemon.json` — its pid is alive **and** its
 //!    `/proc` start time equals the recorded one **and** `GET /v1/health`
 //!    answers within 300 ms with a matching project. → a
-//!    [`RemoteQueue`](crate::RemoteQueue).
+//!    [`crate::RemoteQueue`].
 //! 3. Otherwise the file is removed when its pid is dead, and the queue is a
-//!    [`LocalQueue`](crate::LocalQueue) in this process — a queue of one,
+//!    [`crate::LocalQueue`] in this process — a queue of one,
 //!    taking the same `card.lock`.
 //!
 //! `FORGE_NO_DAEMON=1` forces (3), and every child this crate spawns has it,

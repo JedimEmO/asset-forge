@@ -26,6 +26,9 @@
 //! forge bones <clip> [--body]               which bones a clip drives, no GPU
 //! forge studio [--model] [--audio] …        the viewer window
 //! forge mcp                                 serve the MCP tools over stdio, for an agent
+//! forge serve [--foreground] [--port N]      the queue for this project, MCP at /mcp
+//! forge jobs | job show|log|cancel <id>      what the queue holds, and one row of it
+//! forge stop                                 end the daemon serving this project
 //! ```
 //!
 //! # Exit codes
@@ -101,6 +104,14 @@ fn run(cli: &Cli) -> Outcome {
         Command::Bones(args) => commands::look::bones(&project(cli)?, args),
         Command::Studio(args) => commands::studio::run(&project(cli)?, args),
         Command::Mcp => commands::mcp::run(cli),
+        Command::Serve(args) => commands::serve::run(&project(cli)?, args),
+        Command::Jobs(args) => commands::jobs::list(&project(cli)?, args),
+        Command::Job { what } => match what {
+            cli::JobCommand::Show(args) => commands::jobs::show(&project(cli)?, args),
+            cli::JobCommand::Log(args) => commands::jobs::log(&project(cli)?, args),
+            cli::JobCommand::Cancel(args) => commands::jobs::cancel(&project(cli)?, args),
+        },
+        Command::Stop => commands::serve::stop(&project(cli)?),
     }
 }
 

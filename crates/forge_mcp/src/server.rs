@@ -6,6 +6,9 @@
 //! between files without anything here changing, and what keeps a
 //! 900-line `impl` from reappearing by accretion.
 
+use std::sync::Arc;
+
+use forge_serve::Queue;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{ServerHandler, tool_handler};
@@ -13,20 +16,26 @@ use rmcp::{ServerHandler, tool_handler};
 use crate::config::Config;
 use crate::tools;
 
-/// The MCP server: the configuration, and every tool.
+/// The MCP server: the configuration, the queue, and every tool.
 #[derive(Clone)]
 pub(crate) struct ForgeServer {
     /// Where the project is and what renders.
     pub(crate) config: Config,
+    /// The queue every generate goes through — a daemon's if one is up,
+    /// else this process's own. The server never learns which, which is
+    /// what makes a stranger's first session and a busy machine's tenth
+    /// the same code path.
+    pub(crate) queue: Arc<dyn Queue>,
     /// Every tool, summed from the per-file routers.
     tool_router: ToolRouter<Self>,
 }
 
 impl ForgeServer {
-    /// Assemble the server.
-    pub(crate) fn new(config: Config) -> Self {
+    /// Assemble the server over a queue.
+    pub(crate) fn new(config: Config, queue: Arc<dyn Queue>) -> Self {
         Self {
             config,
+            queue,
             tool_router: tools::router(),
         }
     }
@@ -92,7 +101,15 @@ impl ForgeServer {
              \n\
              MAKING — writes only under out/, never the library: generate_clips draws motion \
              takes from a prompt and hands back a review sheet of every take; generate_audio \
-             draws a sound, a track or a spoken line. {generation}\n\
+             starts a sound, a track or a spoken line and hands back a JOB. {generation}\n\
+             \n\
+             WAITING — a generate takes minutes and one card is shared by every door, so a \
+             generate is queued: generate_audio returns a job id and the literal wait call to \
+             make next; wait returns the finished job (and, for a sound, its measurements and \
+             plot) or a successful \"still running\" frame you call again; cancel stops one and \
+             gives the card back; status says who holds the card, what is queued and what is \
+             running; list_runs is everything the generators have left under out/, with \
+             whether each has been promoted.\n\
              \n\
              SHIPPING — direct writes: promote_clip bakes one take with a recipe you state in \
              full into the library; promote_audio copies the sound you auditioned. Both REFUSE \

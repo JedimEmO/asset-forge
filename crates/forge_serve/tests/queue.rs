@@ -23,6 +23,7 @@ fn two_jobs_for_one_output_path_are_refused() {
         outputs_claimed: vec![format!("out/audio/sfx/{name}.wav")],
         record: Some(format!("out/audio/sfx/{name}.json")),
         created_by: String::from("cli"),
+        fake: None,
     };
     let first = queue.submit(spec("door")).expect("the first is admitted");
     let refusal = queue
@@ -76,6 +77,7 @@ print(json.dumps({{"ok": True, "fake": True, "outputs": [], "no_daemon": os.envi
         outputs_claimed: vec![format!("out/audio/sfx/{name}.wav")],
         record: None,
         created_by: String::from("cli"),
+        fake: None,
     };
     let first = queue.submit(spec("one")).expect("admitted");
     let second = queue.submit(spec("two")).expect("admitted");
@@ -155,6 +157,7 @@ fn a_missing_backend_is_refused_with_exit_three_before_the_queue() {
             outputs_claimed: Vec::new(),
             record: None,
             created_by: String::from("agent:test"),
+            fake: None,
         })
         .expect("a refusal is a row, not an error");
     assert_eq!(job.state, JobState::Refused);

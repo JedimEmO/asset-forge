@@ -30,6 +30,12 @@ forge_studio = { workspace = true }
 # The MCP server, as a library: a `Config` and a `serve`. Every rmcp type
 # stays behind that door, so the SDK's pin is forge_mcp's problem alone.
 forge_mcp = { workspace = true }
+# The queue every generate goes through, and the daemon `forge serve` runs.
+# The binary composes it with forge_mcp: forge_mcp depends on forge_serve
+# and not the other way round, which is the only direction with no cycle.
+forge_serve = { workspace = true }
+# The daemon's router, nested with the MCP service at /mcp.
+axum = { workspace = true }
 # The runtime `serve` is awaited on. Multi-threaded because a tool that
 # blocks on a bake must not stop the server answering the next frame.
 tokio = { workspace = true }

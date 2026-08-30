@@ -176,7 +176,7 @@ pub(crate) fn resolve_sound(
 ///
 /// Returns the report and the plot that was written, or the message to
 /// refuse with.
-fn inspect(
+pub(crate) fn inspect(
     project: &Project,
     target: &SoundTarget,
     plot: Option<&Path>,

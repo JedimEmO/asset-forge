@@ -53,6 +53,7 @@ mod job;
 mod logs;
 mod queue;
 mod runs;
+pub mod spec;
 mod store;
 mod wire;
 

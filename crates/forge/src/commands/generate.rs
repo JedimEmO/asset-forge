@@ -1,27 +1,46 @@
-//! `forge gen <cmd> [args…]`: the Python layer, run whole.
+//! `forge gen <cmd> [args…]`: the Python layer, run whole — now through the
+//! queue.
 //!
 //! The binary knows nothing about a generator's flags and wants to know
 //! nothing: the command line after `gen` is handed to `python3
 //! <toolkit>/python/forge_gen` verbatim, with `--project <root>` appended so
 //! the record it writes carries paths relative to this project, and
-//! `--json` so its last stdout line is one object this side can read. The
-//! lines before it — progress, the fit lines, the "keyed background" line —
-//! stream through as they arrive; stderr is the child's own and is not
-//! touched.
-//!
-//! On success the object is summarised (record, outputs) unless `--json` was
+//! `--json` so its last stdout line is one object this side can read. On
+//! success the object is summarised (record, outputs) unless `--json` was
 //! among the arguments, in which case the object itself is the last stdout
-//! line here too — the MCP server and a skill that parses read the same line
-//! either way. On a refusal the exit code is relayed unchanged: 3 install
-//! something, 4 fix the input, 5 read the log, 6 put a tool on PATH. The
-//! toolkit not being findable is a 6 of this side's own — the tool that is
-//! missing is `python/forge_gen`, and the hint names `FORGE_HOME`.
+//! line here too. On a refusal the exit code is relayed unchanged: 3
+//! install something, 4 fix the input, 5 read the log, 6 put a tool on
+//! PATH.
+//!
+//! # What changed when the queue arrived, and what did not
+//!
+//! What did not: the words, the exit codes, the last-line rule, and every
+//! `just` recipe. **No recipe is rewritten — that is the acceptance test.**
+//!
+//! What did: the child is spawned by a *queue* rather than by this
+//! function. With a daemon up, this submits and follows the job's log; with
+//! none, a `LocalQueue` in this process runs it, takes the same
+//! `card.lock`, and **writes a job row anyway** so `status` and `list_runs`
+//! see it later. Either way the card is held by one lock, so a `just sfx`
+//! in a second terminal waits instead of racing.
+//!
+//! `^C` **cancels**, as it always did. A human who interrupts a
+//! 111-second image expects the card back, and leaving it held by a job the
+//! user believes they stopped is a silent divergence. `forge job log <id>`
+//! is there for someone who wanted to keep watching.
+//!
+//! Two command lines never become jobs: `--help`, which argparse answers
+//! without a library, and `doctor`, which describes the machine rather than
+//! generating anything and has no output to lease.
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::time::Duration;
 
 use forge_library::Project;
 use forge_library::backends::{Backends, GenExit, HOME_ENV};
+use forge_serve::{Job, JobId, JobState, LocalQueueOptions, Queue, discovery, spec};
 use serde_json::Value;
 
 use crate::cli::GenArgs;
@@ -78,20 +97,147 @@ pub(crate) fn help(args: &GenArgs) -> Outcome {
     }
 }
 
+/// The queue for this project: a daemon's if one answers, else one of our
+/// own — and neither this function nor anything above it knows which.
+pub(crate) fn queue_for(project: &Project) -> Result<Arc<dyn Queue>, Failure> {
+    discovery::queue_with(project, options())
+        .map_err(|e| Failure::failed(format!("the queue would not open: {e}")))
+}
+
+/// What a queue in this process needs to know.
+fn options() -> LocalQueueOptions {
+    LocalQueueOptions {
+        forge: std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge")),
+        ..LocalQueueOptions::default()
+    }
+}
+
 /// Run one generator command and relay its verdict.
 pub(crate) fn run(project: &Project, args: &GenArgs) -> Outcome {
     let wants_json = args.rest.iter().any(|a| a == "--json");
-    let command_line: Vec<&str> = args
+    let command_line: Vec<String> = args
         .rest
         .iter()
-        .map(String::as_str)
         .filter(|a| *a != "--json")
+        .cloned()
         .collect();
     // `forge gen doctor` with no --json is a person asking: the Python
-    // table is the answer, and there is no object to summarise. Every other
-    // command gets --json so the last line can be read back here.
-    let is_doctor = command_line.first().copied() == Some("doctor");
-    let result = spawn_with(project, &command_line, true, wants_json || !is_doctor)?;
+    // table is the answer, there is no object to summarise, and there is
+    // nothing to queue — it describes the machine rather than using it.
+    if command_line.first().map(String::as_str) == Some("doctor") {
+        let borrowed: Vec<&str> = command_line.iter().map(String::as_str).collect();
+        return relay(
+            spawn_with(project, &borrowed, true, wants_json)?,
+            wants_json,
+        );
+    }
+
+    let queue = queue_for(project)?;
+    let spec = spec::spec_for(&command_line, &project.root, "cli");
+    let job = queue.submit(spec).map_err(crate::commands::jobs::failure)?;
+    if !job.state.is_terminal() {
+        // ^C means "give the card back", not "detach": the child is in its
+        // own process group, so the terminal's signal reaches this process
+        // and this process cancels the job by its recorded pid.
+        cancel_on_interrupt(Arc::clone(&queue), job.id.clone());
+        if job.state == JobState::Queued
+            && let Ok(status) = queue.status()
+            && let Some(position) = status
+                .jobs
+                .iter()
+                .find(|row| row.id == job.id)
+                .and_then(|row| row.position)
+            && position > 0
+        {
+            println!("queued behind {position} job(s) — forge jobs says what is ahead");
+        }
+    }
+    let job = follow(queue.as_ref(), &job)?;
+    verdict(&job, wants_json)
+}
+
+/// Print the job's log as it arrives and hand back the finished row.
+fn follow(queue: &dyn Queue, job: &Job) -> Result<Job, Failure> {
+    let mut at = 0;
+    loop {
+        at = crate::commands::jobs::follow(queue, &job.id, at, false)?;
+        let current = queue
+            .get(&job.id)
+            .map_err(crate::commands::jobs::failure)?
+            .ok_or_else(|| Failure::failed(format!("the row for {} went missing", job.id)))?;
+        if current.state.is_terminal() {
+            // One last read, for whatever landed between the two calls.
+            let _ = crate::commands::jobs::follow(queue, &job.id, at, false)?;
+            return Ok(current);
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+}
+
+/// Cancel the job when the terminal interrupts this process.
+fn cancel_on_interrupt(queue: Arc<dyn Queue>, id: JobId) {
+    std::thread::spawn(move || {
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        runtime.block_on(async {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                eprintln!("\nforge: cancelling {id} — the card comes back with it");
+                let _ = queue.cancel(&id);
+            }
+        });
+    });
+}
+
+/// Turn a finished row into this process's own exit code and last line.
+fn verdict(job: &Job, wants_json: bool) -> Outcome {
+    let payload = job.payload.clone();
+    match job.state {
+        JobState::Done => {
+            if let Some(payload) = &payload {
+                if wants_json {
+                    println!("{payload}");
+                } else {
+                    print!("{}", summary(payload));
+                }
+            }
+            Ok(())
+        }
+        JobState::Refused | JobState::Failed => {
+            if wants_json && let Some(payload) = &payload {
+                println!("{payload}");
+            }
+            let exit = job
+                .exit
+                .and_then(GenExit::from_code)
+                .unwrap_or(GenExit::BackendFailed);
+            Err(Failure::from_gen(exit, refusal(exit, payload.as_ref())))
+        }
+        JobState::Cancelled => Err(Failure::refused(format!(
+            "{} was cancelled{}",
+            job.id,
+            job.message
+                .as_deref()
+                .map_or_else(String::new, |note| format!(" — {note}"))
+        ))),
+        JobState::Interrupted => Err(Failure::failed(format!(
+            "{} was interrupted: {}",
+            job.id,
+            job.message.as_deref().unwrap_or("the daemon restarted")
+        ))),
+        // follow() only returns terminal rows.
+        JobState::Queued | JobState::Blocked | JobState::Running => Err(Failure::failed(format!(
+            "{} is still {}",
+            job.id, job.state
+        ))),
+    }
+}
+
+/// Relay a directly-spawned run (today's path, kept for `doctor`).
+fn relay(result: GenResult, wants_json: bool) -> Outcome {
     match result.exit {
         Some(GenExit::Ok) => {
             if let Some(payload) = &result.payload {
@@ -148,8 +294,10 @@ pub(crate) fn run(project: &Project, args: &GenArgs) -> Outcome {
 /// stream its stdout through (holding the last line back), and return what
 /// it exited with and the object on that last line.
 ///
-/// With `relay` off nothing is printed: what `doctor` wants, since its
-/// `--json` output is the one line.
+/// The one caller left is `doctor`, which is not a job: it takes no card,
+/// writes no output and is asked for as often as a person is curious.
+/// Every generate goes through the queue, whose executor is the same spawn
+/// in `forge_serve::executor::env`.
 pub(crate) fn spawn(project: &Project, argv: &[&str], relay: bool) -> Result<GenResult, Failure> {
     spawn_with(project, argv, relay, true)
 }
@@ -174,6 +322,9 @@ fn spawn_with(
     if std::env::var_os("FORGE_RIG_PROFILE").is_none() {
         command.env("FORGE_RIG_PROFILE", project.rig_dir());
     }
+    // Every child of this binary, job or not: a re-entered `forge gen`
+    // must never rediscover the daemon and recurse.
+    command.env(forge_serve::NO_DAEMON_ENV, "1");
     if json {
         command.arg("--json");
     }
@@ -382,5 +533,24 @@ mod tests {
         assert!(text.contains("log tail:"));
         assert!(text.ends_with("    b"));
         assert!(refusal(GenExit::BackendFailed, None).contains("no JSON line"));
+    }
+
+    #[test]
+    fn a_cancelled_job_is_a_refusal_and_not_an_exit_code_from_nowhere() {
+        let mut job = Job::admitted(
+            JobId::from("j-20260830-141207-3f9a"),
+            &forge_serve::JobSpec::new("generate_audio.sfx", vec![String::from("sfx")], "cli"),
+            forge_serve::ExecutorKind::Env,
+            String::from("out/serve/logs/j.log"),
+            JobState::Queued,
+        );
+        job.finish(JobState::Cancelled, None);
+        job.message = Some(String::from("SIGTERM to pid 1"));
+        let failure = verdict(&job, false).expect_err("a cancel is not a success");
+        assert!(
+            failure.message().contains("cancelled"),
+            "{}",
+            failure.message()
+        );
     }
 }

@@ -85,6 +85,97 @@ pub(crate) enum Command {
     /// Serve the MCP tools over stdio for an agent: lists, contact sheets,
     /// audio plots, doctor, the generators, and the two direct promote doors
     Mcp,
+    /// Run the queue for this project: one FIFO, one worker, one card lock,
+    /// and the MCP tools over HTTP at /mcp
+    Serve(ServeArgs),
+    /// What the queue holds: every job, newest first
+    Jobs(JobsArgs),
+    /// One job: its row, its log, or a cancel
+    Job {
+        #[command(subcommand)]
+        what: JobCommand,
+    },
+    /// Stop the daemon serving this project
+    Stop,
+}
+
+/// `forge serve`.
+#[derive(Debug, Args)]
+pub(crate) struct ServeArgs {
+    /// Stay in the foreground and log to stderr. The default when stdout is
+    /// a terminal.
+    #[arg(long)]
+    pub(crate) foreground: bool,
+    /// The port to listen on. Default 0: the kernel picks one and
+    /// out/serve/daemon.json records it.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) port: u16,
+    /// Exit after this many seconds with an empty queue. A daemon a
+    /// stranger starts by accident should not outlive the session.
+    #[arg(long, value_name = "SECONDS")]
+    pub(crate) idle_exit: Option<u64>,
+    /// Serve the queue only: no MCP tools at /mcp.
+    #[arg(long)]
+    pub(crate) no_mcp: bool,
+    /// Stop the daemon that is serving this project.
+    #[arg(long)]
+    pub(crate) stop: bool,
+    /// Say whether a daemon is up, and what it is doing.
+    #[arg(long)]
+    pub(crate) status: bool,
+}
+
+/// `forge jobs`.
+#[derive(Debug, Args)]
+pub(crate) struct JobsArgs {
+    /// Only jobs in this state: queued, blocked, running, done, refused,
+    /// failed, cancelled, interrupted.
+    #[arg(long, value_name = "STATE")]
+    pub(crate) state: Option<String>,
+    /// Only jobs whose kind starts with this: `generate_audio`,
+    /// `generate_audio.sfx`.
+    #[arg(long, value_name = "KIND")]
+    pub(crate) kind: Option<String>,
+    /// How many rows. Default 20.
+    #[arg(long, default_value_t = 20, value_name = "N")]
+    pub(crate) limit: usize,
+    /// One JSON array instead of the table.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+/// `forge job <what> <id>`.
+#[derive(Debug, Subcommand)]
+pub(crate) enum JobCommand {
+    /// The row: state, timings, outputs, and why it stopped
+    Show(JobIdArgs),
+    /// The job's log, from the top or from where you left off
+    Log(JobLogArgs),
+    /// Stop a job: SIGTERM to its process group, SIGKILL after 10 s
+    Cancel(JobIdArgs),
+}
+
+/// A job by id.
+#[derive(Debug, Args)]
+pub(crate) struct JobIdArgs {
+    /// The job id, as `forge jobs` prints it.
+    pub(crate) id: String,
+    /// One JSON object instead of the lines.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+/// `forge job log <id>`.
+#[derive(Debug, Args)]
+pub(crate) struct JobLogArgs {
+    /// The job id.
+    pub(crate) id: String,
+    /// Keep printing until the job is over.
+    #[arg(long)]
+    pub(crate) follow: bool,
+    /// Start at this byte offset rather than the top.
+    #[arg(long, default_value_t = 0, value_name = "BYTE")]
+    pub(crate) from: u64,
 }
 
 /// `forge audit`.
@@ -256,6 +347,11 @@ pub(crate) struct GpuArgs {
     /// One JSON object instead of the lines.
     #[arg(long)]
     pub(crate) json: bool,
+    /// Give the card back: ask the `ComfyUI` host to unload its models, and
+    /// clear a withheld lease once it has. Replaces `forge gen music
+    /// --stop-server`, which went with the resident server.
+    #[arg(long)]
+    pub(crate) free: bool,
 }
 
 /// `forge init`.

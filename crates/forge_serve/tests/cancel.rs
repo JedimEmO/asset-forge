@@ -39,6 +39,7 @@ time.sleep(300)
             outputs_claimed: vec![String::from("out/audio/music/theme.ogg")],
             record: None,
             created_by: String::from("human"),
+            fake: None,
         })
         .expect("admitted");
     let running = common::until(queue.as_ref(), &job.id, "started", 20, |job| {

@@ -19,6 +19,14 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
+# The queue: one Arc<dyn Queue> the server holds, whether it is a daemon's
+# or one of this process's own. forge_mcp depends on forge_serve and never
+# the other way round — that is the direction with no cycle, and it keeps
+# rmcp's pin out of the daemon's build.
+forge_serve = { workspace = true }
+# The tools over streamable HTTP are a tower service the binary nests at
+# /mcp; handing back an axum Router keeps every rmcp type inside this crate.
+axum = { workspace = true }
 # The library: project, catalog, sidecars, the metrics cache, the promote
 # doors, the backend table.
 forge_library = { workspace = true }

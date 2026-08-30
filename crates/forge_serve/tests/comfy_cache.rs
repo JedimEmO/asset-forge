@@ -79,6 +79,7 @@ fn a_cached_result_says_so() {
         outputs_claimed: vec![format!("out/audio/sfx/{name}.wav")],
         record: None,
         created_by: String::from("agent:test"),
+        fake: None,
     };
     let first = queue.submit(spec("door")).expect("admitted");
     let first = common::finished(queue.as_ref(), &first.id, 30);
