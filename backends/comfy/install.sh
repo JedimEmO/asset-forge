@@ -71,6 +71,20 @@ GGUF_PACK_PIPS=(gguf==0.19.0 protobuf==7.36.0)
 TTS_PACK_URL="https://github.com/diodiogod/TTS-Audio-Suite"
 TTS_PACK_COMMIT="fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
 TTS_PACK_DIR="TTS-Audio-Suite"
+# What MOSS-SoundEffect v2 imports and the host had not got, measured on the
+# first real sfx run (2026-08-30). Unpinned on purpose: what is pinned is the
+# pack, and these are the versions its imports resolve against — the versions
+# that ran are in every record's `backend` block. diffusers 0.40.0, ftfy 6.3.1
+# on this machine.
+TTS_PACK_PIPS=(diffusers ftfy flatten-dict julius soundfile ffmpy importlib-resources tensorboard randomname)
+# descript-audiotools requires protobuf>=3.9.2,<3.20 and would drag the host's
+# 7.36.0 (ComfyUI-GGUF's pin) down with it, so it alone comes in with
+# --no-deps and the seven modules its import chain actually reaches are the
+# tail of the list above — flatten_dict, julius, soundfile, ffmpy,
+# importlib_resources, tensorboard (audiotools.ml imports it; nothing here
+# trains anything) and randomname, each added by running the import until it
+# stopped failing and each checked for what it would move first.
+TTS_PACK_PIPS_NO_DEPS=(descript-audiotools)
 GGUF_WEIGHTS_REPO="city96/Qwen-Image-gguf"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 DEFAULT_PREFIX="$HOME/.cache/asset-forge/backends/comfy"
@@ -130,16 +144,29 @@ log "pack pips: ${GGUF_PACK_PIPS[*]}"
 pip_install "$ENV_DIR" "${GGUF_PACK_PIPS[@]}"
 
 # TTS-Audio-Suite: the three MOSS models (SoundEffect v2, TTS, VoiceGenerator)
-# behind moss_sfx and moss_tts. **No pips, on purpose and by measurement.**
-# Its requirements.txt asks for numpy<2.3.0, which would downgrade the host's
-# 2.5.2 under every image template; installing none of it turned out to cost
-# nothing, because the pack registers each node behind its own try/except and
-# all 58 registered on the first restart with the venv untouched (2026-08-30).
-# The Manager's allow_pip_install is False, so adding the clone cannot run the
-# pack's own install.py behind your back. If a later pin needs a pip, that is
-# a decision to weigh against the image templates and to date in hosting.md.
+# behind moss_sfx and moss_tts. Registration is free — all 58 classes come up
+# with the venv untouched, which is why this row said "no pips" until a sound
+# was actually asked for — but **MOSS-SoundEffect v2 does not load without
+# these**, measured on the first real `forge gen sfx` (2026-08-30): the engine
+# imports diffusers (AutoencoderOobleck, ConfigMixin, ModelMixin), ftfy (the
+# WAN prompter) and audiotools (the DAC VAE), each of them a hard import that
+# fails at POST /prompt with the card already leased.
+#
+# Two rules hold this list together, and both are the reason it is not just
+# `pip install -r requirements.txt`:
+#   - the pack's own requirements.txt asks for numpy<2.3.0, which would
+#     downgrade the host's 2.5.2 under every image template;
+#   - descript-audiotools caps protobuf<3.20, which would downgrade the
+#     7.36.0 ComfyUI-GGUF pins above — so it goes in with --no-deps and the
+#     seven modules its import chain actually reaches follow one by one.
+# With those two avoided, nothing moved: torch 2.13.0+cu130, torchaudio
+# 2.11.0, transformers 5.16.1, numpy 2.5.2, protobuf 7.36.0 are exactly what
+# they were before. designs/hosting.md, "ComfyUI", 2026-08-30.
 clone_pinned "$TTS_PACK_URL" "$TTS_PACK_COMMIT" "$DATA/custom_nodes/$TTS_PACK_DIR"
-log "pack pips: none for $TTS_PACK_DIR (its numpy pin would downgrade the host's)"
+log "pack pips: ${TTS_PACK_PIPS[*]}"
+pip_install "$ENV_DIR" "${TTS_PACK_PIPS[@]}"
+log "pack pips (--no-deps, its protobuf cap would downgrade the host's): ${TTS_PACK_PIPS_NO_DEPS[*]}"
+pip_install "$ENV_DIR" --no-deps "${TTS_PACK_PIPS_NO_DEPS[@]}"
 
 # ----------------------------------------------------------------- service --
 

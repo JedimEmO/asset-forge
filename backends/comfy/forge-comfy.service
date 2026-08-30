@@ -36,6 +36,18 @@ WorkingDirectory=%h/.cache/asset-forge/backends/comfy/ComfyUI
 Environment=PYTHONNOUSERSITE=1
 Environment=PYTHONUNBUFFERED=1
 Environment=HF_HOME=%h/.cache/huggingface
+# TORCHDYNAMO_DISABLE=1 is the host's answer to a crash, not a preference.
+# MOSS-SoundEffect v2's DiT calls torch.compile on itself, and the compiled
+# path runs under inductor's cudagraph trees, which call
+# torch._C._cuda_checkPoolLiveAllocations — unsupported by the
+# cudaMallocAsync allocator ComfyUI runs with on this host, so every effect
+# died after ~60 s of compiling with "cudaMallocAsync does not yet support
+# checkPoolLiveAllocations" (measured 2026-08-30, designs/hosting.md).
+# The other lever, --disable-cuda-malloc, would change the allocator under
+# the image templates too, whose 23.3 GB peak on a 24 GB card was measured
+# with this one; so the compile goes and the allocator stays. This is the
+# same value backends/moss_sfx carried as an [env] key before the move.
+Environment=TORCHDYNAMO_DISABLE=1
 ExecStart=%h/.cache/asset-forge/backends/comfy/venv/bin/python main.py \
     --listen 127.0.0.1 \
     --port 8188 \

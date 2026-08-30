@@ -470,3 +470,67 @@ def test_object_info_is_fetched_once_per_run_and_shared(comfy_tree, monkeypatch)
     assert len([url for url in calls if url.endswith("/object_info")]) == 1, calls
     assert len([url for url in calls if url.endswith("/system_stats")]) == 1, calls
     assert {report["backends"][name]["status"] for name in ("tts", "tts2", "tts3")} == {"partial"}
+
+
+# A comfy backend whose weights are a whole hub snapshot rather than one
+# file, in the `[[models]]` form with a `comfy:` store: what TTS-Audio-Suite
+# writes for the three MOSS models.
+COMFY_DIR_TOML = """
+name = "tts"
+role = "speech"
+upstream = "https://github.com/OpenMOSS/MOSS-TTS"
+commit = "58b20a0d35989d71cd17ff2895fdc735097b92d1"
+license = "Apache-2.0"
+executor = "comfy"
+host = "comfy"
+entry = "speech"
+resident = false
+
+[comfy]
+nodes = ["MossTTSNode"]
+workflows = ["speech.api.json"]
+
+[[models]]
+id = "OpenMOSS-Team/MOSS-VoiceGenerator"
+store = "comfy:models/TTS/moss_tts"
+local = "MOSS-VoiceGenerator"
+license = "Apache-2.0"
+gb = 3.95
+"""
+
+
+def test_a_comfy_model_may_be_a_directory(comfy_tree):
+    """A weight a node pack downloads is a snapshot, not a file.
+
+    TTS-Audio-Suite writes `models/TTS/moss_tts/MOSS-VoiceGenerator/` — a
+    directory — and a file check read that as absent for ever: the row said
+    `partial` on a machine where the voice designer had just spoken, and
+    doctor offered a download the installer cannot do (2026-08-30). Empty is
+    still absent, because a directory the download half-made is not weights.
+    """
+    (comfy_tree.root / "tts" / "backend.toml").write_text(COMFY_DIR_TOML)
+    snapshot = comfy_tree.base / "models" / "TTS" / "moss_tts" / "MOSS-VoiceGenerator"
+    info = {"MossTTSNode": {}, "SaveAudio": {}}
+    with _comfy_service(_stats(comfy_tree.base), info) as port:
+        comfy_tree.describe(port)
+        report = doctor.diagnose(host=False, chosen=["tts"], only="tts")
+        weight = next(
+            check for check in report["backends"]["tts"]["checks"] if check["name"].startswith("model:")
+        )
+        assert not weight["ok"]
+        assert "3.95 GB to fetch" in weight["detail"]
+
+        # An empty directory is not weights either.
+        snapshot.mkdir(parents=True)
+        report = doctor.diagnose(host=False, chosen=["tts"], only="tts")
+        assert report["backends"]["tts"]["status"] == "partial"
+
+        # With the snapshot in it, the row is ok and names the directory.
+        (snapshot / "model.safetensors").write_text("weights")
+        report = doctor.diagnose(host=False, chosen=["tts"], only="tts")
+        weight = next(
+            check for check in report["backends"]["tts"]["checks"] if check["name"].startswith("model:")
+        )
+        assert weight["ok"], weight
+        assert str(snapshot) in weight["detail"]
+        assert report["backends"]["tts"]["status"] == "ok"

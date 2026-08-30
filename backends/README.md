@@ -156,9 +156,14 @@ lift record, and keep the Llama 3 notice in `ardy/backend.toml`.
 ## VRAM and co-residency
 
 One 24 GB card with a desktop resident (~0.8 GB). Approximate peaks; two
-rows never share the card. `just gpu` before any generate, and `forge gpu
---free` or `systemctl --user stop forge-comfy` before a lift — the audio
-models are the host's now, and it is the host that holds them. Doctor says who is holding the card
+rows never share the card. `just gpu` before any generate, and give the
+card back before a lift — the audio models are the host's now, and it is
+the host that holds them. **`forge gpu --free` is the door; for the MOSS
+pack only `systemctl --user restart forge-comfy` returns the card
+(measured 2026-08-30, 4.4 s):** `POST /free` unloads native models —
+ACE-Step gives its card back with no intervention at all — and does
+nothing at all for what TTS-Audio-Suite loaded. There is no unload node
+in the pack at this pin. Doctor says who is holding the card
 (`GPU busy: pid … 8.1 GB`); believe it. The measured figures and how they
 were sampled are in `designs/hosting.md` § GPU co-residency.
 
@@ -167,10 +172,10 @@ were sampled are in `designs/hosting.md` § GPU co-residency.
 | `trellis2` at 1024³ | **4.7 GB measured** (2026-08-30) — the ~22 GB this row carried for a week was a budget nobody had sampled | no |
 | `trellis2` at 512³ | **3.1 GB measured** (2026-08-30) | no |
 | `ardy` sweep | **15.4 GB measured** (2026-08-30; one model load covers a batch) | no |
-| ACE-Step 1.5 in the host | ~8 GB (budget, unmeasured) | held by the host until `POST /free` or the unit stops |
-| `moss_tts` (Local-Transformer 1.7B, in the host) | budget, unmeasured — the 4B figure was the venv's model, which the pack does not offer | held by the host until `POST /free` or the unit stops |
-| `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | ~12 GB measured at the peak of a 7 s audition — the generation loop, not the weights | no |
-| `moss_sfx` (in the host) | ~6–8 GB (budget, unmeasured) | held by the host until `POST /free` or the unit stops |
+| ACE-Step 1.5 in the host (`acestep`) | **13.1 GB measured** (2026-08-30, a 30 s track at 96 bpm); `vram_gb = 14` | **no** — 22.8 → 22.6 GB free with no intervention; native models honour ComfyUI's own manager |
+| `moss_tts` speech (Local-Transformer 1.7B, in the host) | **7.1 GB measured** (2026-08-30) *with the designer's 5.4 GB already on the card*; `vram_gb = 13` is the pair | **yes, 7.3 GB** — `POST /free` does nothing for it; `systemctl --user restart forge-comfy` |
+| `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | **5.3 GB measured** (2026-08-30, a 6 s audition) | **yes, 5.4 GB** — same lever |
+| `moss_sfx` (in the host) | **10.0 GB measured** (2026-08-30, 3 s at 100 steps, over a 1.2 GB floor); `vram_gb = 11` | **yes, 9.1 GB** — same lever |
 | `skintokens` skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
 | Qwen-Image fp8 + ControlNet at 1024², in `comfy` | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
 | Qwen-Image Q4_K_M GGUF + ControlNet, the lean form | **16.2 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
@@ -184,7 +189,14 @@ conservative. **Never re-quote a `vram_gb` as a measurement.** The
 image model, not the lift, is the thing that wants the whole card.
 
 Never 1536³ on 24 GB. The 8B MOSS-TTS Delay model OOMs with the audio
-tokenizer loaded; the 4B fits.
+tokenizer loaded, which is why `speech.api.json` states the 1.7B.
+
+**Three of these budgets were raised on 2026-08-30 because the first real
+run measured past them** — `moss_sfx` 8 → 11, `acestep` 12 → 14,
+`moss_tts` 12 → 13 (the designer and the cloner co-reside; the pack
+unloads neither). A budget under its own peak is worse than no budget: it
+is what `card_is_held` admits a job against, so it turns
+blocked-rather-than-OOM into OOM.
 
 ## Installing
 
@@ -207,9 +219,12 @@ Each installer is idempotent (`set -euo pipefail`, sources
    and `bash backends/acestep/install.sh` — none of which install anything.
    Each checks that the host is there, that its pack is at the pin this
    backend names and that the node classes the tracked graph needs are
-   registered, and names the fix when one is not. The MOSS weights (~11 GB
-   for the effect model, ~4 GB for the voice designer) download into the
-   same HF cache every other backend fills, on the node's first run.
+   registered, and names the fix when one is not. The MOSS weights download
+   on the node's first run into the **host's own base directory** —
+   `$PREFIX/data/models/TTS/moss_soundeffect_v2/` (10.46 GB) and
+   `.../moss_tts/` (5.72 + 3.95 + 6.61 GB: the 1.7B, the voice designer and
+   the audio tokenizer) — measured there 2026-08-30, and not into the HF
+   cache the other backends fill.
 4. `bash backends/trellis2/install.sh --yes` — conda (python 3.11, CUDA
    12.4.1 from the label channel, gcc 13), torch cu124, the CUDA extensions,
    and **nvdiffrast after the licence prompt**. DINOv3 is gated: accept on

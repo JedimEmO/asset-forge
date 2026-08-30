@@ -72,14 +72,30 @@ repo = "https://github.com/diodiogod/TTS-Audio-Suite"
 commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
 dir = "TTS-Audio-Suite"
 license = "MIT"
-# Empty, and measured so: its requirements.txt asks for numpy<2.3.0, which
-# would downgrade the host's 2.5.2 under every image template — and no pip
-# was needed. Each node registers behind its own try/except, so all 58
-# registered on the first restart with torch 2.13.0, torchaudio 2.11.0 and
-# numpy 2.5.2 exactly as they were (2026-08-30). The Manager's
-# allow_pip_install is False, which is why adding the clone could not run
-# the pack's install.py behind anyone's back.
-pips = []
+# Ten, and measured so — this row said `pips = []` until a sound was
+# actually asked for. Registration is free: all 58 classes come up with the
+# venv untouched, which is what "no pips" measured, and the Manager's
+# allow_pip_install is False, so dropping the clone in cannot run the pack's
+# install.py behind anyone's back. But MOSS-SoundEffect v2 does not *load*
+# without diffusers (AutoencoderOobleck, ConfigMixin, ModelMixin), ftfy (the
+# WAN prompter) and audiotools (the DAC VAE), each a hard import that failed
+# at POST /prompt with the card already leased (2026-08-30). Two things may
+# not come in with them: the pack's own requirements.txt (numpy<2.3.0 would
+# downgrade the host's 2.5.2 under every image template) and
+# descript-audiotools' dependencies (protobuf<3.20 would downgrade the
+# 7.36.0 ComfyUI-GGUF pins above) — so audiotools alone goes in with
+# --no-deps and the seven modules its import chain reaches follow it one by
+# one. With those two avoided nothing moved: torch 2.13.0+cu130, torchaudio
+# 2.11.0, transformers 5.16.1, numpy 2.5.2 and protobuf 7.36.0 are what they
+# were. This is the same list backends/moss_sfx and backends/moss_tts carry,
+# install.sh installs and snapshot.json records: a pack lives in four places
+# or nowhere, and this was the fourth saying something else.
+pips = [
+    "diffusers", "ftfy",
+    "descript-audiotools",   # --no-deps
+    "flatten-dict", "julius", "soundfile", "ffmpy", "importlib-resources",
+    "tensorboard", "randomname",
+]
 # The six the three audio templates use, of the 58 it registers.
 nodes = [
     "MossSoundEffectV2EngineNode",
@@ -89,7 +105,7 @@ nodes = [
     "UnifiedVoiceDesignerNode",
     "CharacterVoicesNode",
 ]
-note = "the three MOSS models — SoundEffect v2, TTS and VoiceGenerator — behind moss_sfx and moss_tts. It registers no unload node at this pin, so POST /free is the only lever the card has."
+note = "the three MOSS models — SoundEffect v2, TTS and VoiceGenerator — behind moss_sfx and moss_tts, downloaded into models/TTS/{moss_soundeffect_v2,moss_tts}/ and not into the HF cache. It registers no unload node at this pin AND POST /free does not unload what it loaded (22.85 -> 15.07 GB free across an sfx job; 5.4 GB resident after a voice, 7.3 GB after a speech), so `systemctl --user restart forge-comfy` is the only lever that returns the card — 4.4 s, measured 2026-08-30."
 
 # The models the host holds, in the ComfyUI folder each lives in under
 # $PREFIX/<base_directory>/models/. `store = "comfy:models/<dir>"` is what

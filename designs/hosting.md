@@ -245,8 +245,8 @@ flags are the flags.
 | torch | `2.13.0` from PyPI — the linux wheel is `2.13.0+cu130` |
 | ComfyUI-Manager | pip package `comfyui_manager==4.2.2`, pinned by the clone's own `manager_requirements.txt`, switched on with `--enable-manager`. Not a `custom_nodes` clone. |
 | frontend | `comfyui-frontend-package==1.49.6` (from `requirements.txt`) |
-| custom node packs | **two:** `city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a` (Apache-2.0, `gguf==0.19.0` + `protobuf==7.36.0` in the venv) — it exists for one node, `UnetLoaderGGUF`, the only way to load the lean tier's Q4_K_M image model; and `diodiogod/TTS-Audio-Suite` @ `fab00263fbdcdaddd4c721d1b560e1a08b6025ea` (v5.8.7, MIT, 185 MB, **no pips**), which is how the three MOSS models reach the host. Both cloned into `$PREFIX/data/custom_nodes/`; every other loader the fp8 templates and ACE-Step 1.5 need is native to v0.34.2. `backends/comfy/snapshot.json` records both. |
-| unit | `forge-comfy.service`, `Restart=on-failure`, `--listen 127.0.0.1 --port 8188 --disable-auto-launch --disable-api-nodes --base-directory $PREFIX/data --cache-none --enable-manager` |
+| custom node packs | **two:** `city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a` (Apache-2.0, `gguf==0.19.0` + `protobuf==7.36.0` in the venv) — it exists for one node, `UnetLoaderGGUF`, the only way to load the lean tier's Q4_K_M image model; and `diodiogod/TTS-Audio-Suite` @ `fab00263fbdcdaddd4c721d1b560e1a08b6025ea` (v5.8.7, MIT, 185 MB, **ten pips**: `diffusers ftfy flatten-dict julius soundfile ffmpy importlib-resources tensorboard randomname`, plus `descript-audiotools` with `--no-deps` because its protobuf cap would downgrade the GGUF pack's — this row said *no pips* until the first real sfx run, see below), which is how the three MOSS models reach the host. Both cloned into `$PREFIX/data/custom_nodes/`; every other loader the fp8 templates and ACE-Step 1.5 need is native to v0.34.2. `backends/comfy/snapshot.json` records both. |
+| unit | `forge-comfy.service`, `Restart=on-failure`, `--listen 127.0.0.1 --port 8188 --disable-auto-launch --disable-api-nodes --base-directory $PREFIX/data --cache-none --enable-manager`, and `Environment=TORCHDYNAMO_DISABLE=1` — the last one is a crash fix, not a preference (see below) |
 
 **The exact download list.** Into `$PREFIX/data/models/<folder>/`; sizes are
 the download, 73.7 GB in total.
@@ -440,6 +440,160 @@ or leave it on and record on the first real run how long the compile takes
 and whether the inductor cache survives a restart. Either way it belongs in
 the unit file, because it is now a property of the host. 2026-08-30.
 
+### The first real run of the audio path, 2026-08-30
+
+Everything below was measured driving `forge serve` from both doors on this
+machine, card otherwise idle, `nvidia-smi` sampled at 10 Hz for peaks and
+`GET /system_stats` read for free. It settles four things the entries above
+left open and opens three new ones.
+
+**"No pips" was true for registration and false for generation.** All 58
+TTS-Audio-Suite classes come up with the venv untouched, which is what the
+row above measured — but `MossSoundEffectV2EngineNode` does not *load*
+without three packages the host had not got, each a hard import inside the
+engine and each failing at `POST /prompt` with the card already leased:
+`diffusers` (`AutoencoderOobleck`, `ConfigMixin`, `ModelMixin`), `ftfy`
+(the WAN prompter) and `audiotools` (the DAC VAE). The pack's own
+`requirements.txt` still may not be installed — numpy<2.3.0 would downgrade
+the host's 2.5.2 under every image template — and **`descript-audiotools`
+carries a second trap of the same shape: it requires `protobuf>=3.9.2,<3.20`
+and would take ComfyUI-GGUF's pinned 7.36.0 down with it.** So it goes in
+with `--no-deps`, and the seven modules its import chain actually reaches
+are added one at a time, each checked for what it would move first:
+`flatten_dict`, `julius`, `soundfile`, `ffmpy`, `importlib_resources`,
+`tensorboard` (`audiotools.ml` imports it; nothing here trains anything)
+and `randomname`. With those two resolutions taken, **nothing moved**:
+torch 2.13.0+cu130, torchaudio 2.11.0, transformers 5.16.1, numpy 2.5.2 and
+protobuf 7.36.0 are exactly what they were. The pack's four places are now
+`[[comfy.packs]] pips` in `backends/comfy` as well as in `moss_sfx` and
+`moss_tts` — the host's own entry still said `pips = []`, with a comment
+explaining that it had been measured so, which is the four-places rule
+broken in the file `doctor` and `probe.py` read for the host; a pytest case
+now holds every entry naming one repo to the same commit, dir and pips, and
+holds `install.sh` to installing them — `install.sh`'s `TTS_PACK_PIPS` /
+`TTS_PACK_PIPS_NO_DEPS`, `snapshot.json` re-fetched from
+`GET /v2/snapshot/get_current`, and this entry. 2026-08-30.
+
+**`TORCHDYNAMO_DISABLE=1` is not a preference, it is the fix for a crash.**
+With the compile left on, every sound effect spent ~60 s compiling and then
+died: `RuntimeError: cudaMallocAsync does not yet support
+checkPoolLiveAllocations`, raised from `torch._C._cuda_checkPoolLiveAllocations`
+inside inductor's cudagraph trees, because the host runs ComfyUI's
+cudaMallocAsync allocator (`/system_stats` names it: `cuda:0 … :
+cudaMallocAsync`). Two levers exist and only one is safe: `--disable-cuda-malloc`
+would change the allocator under the image templates too, whose 23.3 GB peak
+on a 24 GB card was measured with this one, so **the compile goes and the
+allocator stays**. `Environment=TORCHDYNAMO_DISABLE=1` is now in
+`backends/comfy/forge-comfy.service` with that reason beside it; the effect
+rendered on the next attempt in 26.1 s. Nobody has measured what the compile
+would have bought, because it never completed once. 2026-08-30.
+
+**`POST /free` does not give the card back after a wrapper pack has loaded
+a model — this is the answer to the open question above, and it is no.**
+Measured after `forge gen sfx`: 22.85 GB free before the job, 15.07 GB after
+it, `forge gpu --free` then reporting "14.7 GB free before, 14.7 GB after"
+and *still* claiming "the card is back" while its own next line said
+`holding pid 693788 8.1 GB`. What does give it back is
+`systemctl --user restart forge-comfy`, **4.4 s** from restart to
+`/system_stats` answering, 9.2 GB → 1.4 GB used. The same is true of
+MOSS-VoiceGenerator (5.4 GB resident after a `voice`) and MOSS-TTS
+(7.3 GB resident after a `speech`). **Native ACE-Step is the opposite and
+needs nothing:** a 30 s track went 22.8 → 22.6 GB free with no intervention,
+the model gone by the time the job's row was written. So `unload_node = null`
+is right for `acestep` for the reason it says, and wrong-by-absence for the
+two MOSS backends — the pack has no unload class at this pin, and the unit
+restart is the only lever they have. 2026-08-30.
+
+**Timings and peaks, one 24 GB card, one job at a time.**
+
+| verb | backend | wall | peak on the card | resident after | note |
+|---|---|---|---|---|---|
+| `sfx` 3 s, 100 steps, cfg 4 | moss_sfx | **26.1 s** (20.1 s with the model already loaded, 39.0 s over MCP behind another job) | **10 283 MiB (10.0 GB)** over a 1.2 GB floor | 9.1 GB | `vram_gb = 8` is a budget and reads 2 GB light |
+| `music` 30 s, 96 bpm | acestep | **18.3 s** (16.4–18.3 across five renders) | **13 428 MiB (13.1 GB)** | **none** | `vram_gb = 12` is a budget and reads 1 GB light |
+| `voice` (audition line, 6.08 s) | moss_tts | **24.1 s** | **5 463 MiB (5.3 GB)** | 5.4 GB | the designer, MOSS-VoiceGenerator |
+| `speech` (one line) | moss_tts | **58.1 s** first (weights + load), 22–28 s after | **7 301 MiB (7.1 GB)**, with the designer's 5.4 GB already on the card | 7.3 GB | the 1.7B and the designer co-reside; the pack unloads neither |
+
+Weights were already in the HF cache from the venv era, so none of these
+times includes a download. 2026-08-30.
+
+**The speech reference travels as an uploaded file, and that half works.**
+`serve.md` §6 timeboxed this before `moss_tts`'s venv could be deleted:
+`POST /upload/image` filed `assets-src/voices/warden/ref.wav` as
+`forge_voice_warden_ref.wav`, `LoadAudio` read it by that name and
+`CharacterVoicesNode` passed it on, decoded in the host's own venv through
+PyAV. No torchcodec, no path, no codes handed over. The hypothesis is a
+measurement now. 2026-08-30.
+
+**MOSS-TTS 1.7B does not run under the host's transformers, and the pack
+turns that into one second of silence.** `forge gen speech` reported OK,
+printed a record path and wrote a `forge_record: 2` for a file that is
+1.000 s of digital zeros — `peak -120.0 dBFS`, which is what `just audio`
+says and what nothing before it said. In the host's journal:
+`AttributeError: 'MossTTSDelayModel' object has no attribute
+'_get_initial_cache_position'`, from the pack's vendored copy of
+transformers 4.x's `_sample`; transformers 5.16.1 removed that helper.
+Shimming it reaches the next break —
+`TypeError: create_causal_mask() got an unexpected keyword argument
+'input_embeds'` (renamed `inputs_embeds`, and `cache_position` dropped from
+the signature) — and shimming that one too produces 12.8 s of fluent babble
+for a four-word line, which is not a fix, it is a model running on wrong
+arithmetic. Both shims were reverted and the clone is back at
+`fab00263`. **`moss_sfx` and the voice designer are fine; `moss_tts`
+speech is not, and doctor reads it `partial`/`ok` because it probes node
+classes and weight files, neither of which is affected.** What would settle
+it: a pack pin built against transformers 5, or a `transformers<5` the host
+cannot have while the image templates need 5.16.1. Until then a spoken line
+cannot be made here. 2026-08-30.
+
+**`CharacterVoicesNode.reference_text` is never patched, and it is the
+transcript the cloner asks for.** `speech.api.json` leaves it `""` and its
+`_meta.title` carries no `PATCH:` marker, so a designed voice's audition
+line — which `voice.json` records under `params.text` — never reaches the
+node. `forge gen speech --voice-text` exists and its own help says
+"recorded; moss_tts does not use it", which was true of the venv and is
+false of the host. It is a second, independent defect from the transformers
+one above: fixing either alone does not make a line. 2026-08-30.
+
+**ACE-Step 1.5 turbo comes off the host at exactly full scale, and the
+clipping gate is right to refuse it.** Nine renders — five seeds × three
+prompt wordings, 30 s at 96 bpm, WAV and Ogg alike — every one of them
+`peak 0.0 / -0.0 dBFS` with RMS anywhere from −14.4 to −20.0 dBFS, and
+every one tripping `forge audio inspect`'s run-of-full-scale check (10 to
+186 consecutive pinned samples). A peak that lands on 0.0 dBFS regardless
+of content is a normalise-to-peak, not a hot mix, and it is on the host
+side: our own transcode is `libvorbis -q:a 6` and `pcm_s16le` with no
+filter. The shipped `ambient_crypt.ogg` came through the old resident
+server at −2.0 dBFS and is clean, so nothing about this was visible until a
+busy arrangement was asked for. The host has a native `AudioAdjustVolume`
+(INT dB, −100..100) that would sit between `VAEDecodeAudio` and `SaveAudio`;
+a stated `gain_db` knob in the graph and in `params` would be the fix inside
+the one-way rule. Until then `music` renders but does not promote.
+2026-08-30.
+
+**The pack does not download into the HF cache, and two doctor rows were
+looking in the wrong place.** TTS-Audio-Suite puts the MOSS weights under the
+host's own base directory — `$PREFIX/data/models/TTS/moss_tts/{MOSS-TTS-Local-Transformer,
+MOSS-VoiceGenerator,MOSS-Audio-Tokenizer}` — not in `~/.cache/huggingface/hub`,
+which is what `backends/moss_tts/backend.toml`'s `store = "hf"` claims and what
+doctor therefore checks; the row reads `partial` on a machine where the voice
+designer has just spoken. The `acestep` row had the same shape of error from the
+other side: `comfy_model_present` built the filename from the repo id and looked
+for `models/checkpoints/ace_step_1.5_ComfyUI_files` while `backend.toml`'s own
+`file` key names `ace_step_1.5_turbo_aio.safetensors` — so doctor read `partial`,
+exited 1 and offered a stranger a 10.03 GB download they already had. That one is
+fixed (`doctor.py` now resolves `local` → `file` → id, the way the
+`[[comfy.models]]` branch beside it always did) and `acestep` reads `ok`. The
+moss_tts store is fixed the same day, in the shape that entry names: all four
+MOSS weights now carry `store = "comfy:models/TTS/<dir>"` with the pack's own
+directory names, `comfy_model_present` accepts a **non-empty directory** as
+well as a file (a pack fetches a whole hub snapshot, not one checkpoint), and
+each `gb` is what the directory measures here —
+`moss_soundeffect_v2/MOSS-SoundEffect-v2.0` 10.46 GB,
+`moss_tts/MOSS-TTS-Local-Transformer` 5.72 GB,
+`moss_tts/MOSS-VoiceGenerator` 3.95 GB and `moss_tts/MOSS-Audio-Tokenizer`
+6.61 GB, the last of which no row had named at all. `python/tests/test_doctor.py`
+has the directory-shaped case, empty directory included. 2026-08-30.
+
 ## Onboarding, doctor and the licence gate
 
 **`nvidia-smi` is the tier detector, and its absence is an answer.**
@@ -491,17 +645,27 @@ is a drop-in. 2026-08-30.
 
 Approximate peaks on one 24 GB card with a desktop resident (~0.8 GB);
 rows marked not measured are exactly that. Two rows do not share the
-card; `just gpu` before any generate, and give the card back with `forge
-gpu --free` before a lift.
+card; `just gpu` before any generate, and give the card back before a lift
+— `forge gpu --free` for a native model, `systemctl --user restart
+forge-comfy` for anything TTS-Audio-Suite loaded, which `/free` does not
+touch.
+
+**This table and the timings table under "the first real run of the audio
+path" disagreed until 2026-08-30**: the three audio rows here were the
+pre-run budgets (~8 GB ACE-Step "held by the host until POST /free", ~12 GB
+MOSS-TTS "no", ~6–8 GB MOSS-SoundEffect "no") and every one of them was
+wrong in both columns. They are the measured rows now, and each
+`backend.toml`'s `vram_gb` was raised above its peak in the same commit.
 
 | Backend | VRAM | Resident after the call? |
 |---|---|---|
 | TRELLIS.2 at 1024³ | **4.7 GB measured** (2026-08-30, `vex_runner`) — the ~22 GB this row carried for a week was a budget nobody had run a sampler over; see the lean-tier section | no |
 | TRELLIS.2 at 512³ | **3.1 GB measured** (2026-08-30, the same reference) | no |
 | ARDY sweep | **15.4 GB measured** (2026-08-30, one prompt, two samples) — the ~16 GB this row carried was right | no |
-| ACE-Step 1.5 in the ComfyUI host | ~8 GB (budget) | held by the host until `POST /free`, `forge gpu --free` or the unit stops — there is no resident ACE-Step server any more |
-| MOSS-TTS (4B) | ~12 GB | no |
-| MOSS-SoundEffect | ~6–8 GB | no |
+| ACE-Step 1.5 in the ComfyUI host | **13.1 GB measured** (2026-08-30, 30 s at 96 bpm); `vram_gb = 14` | **no** — 22.8 → 22.6 GB free with no intervention; there is no resident ACE-Step server any more |
+| MOSS-TTS 1.7B speech in the host | **7.1 GB measured** (2026-08-30) *with the designer's 5.4 GB already resident*; `vram_gb = 13` covers the pair | **yes, 7.3 GB** — `/free` does nothing; `systemctl --user restart forge-comfy`, 4.4 s |
+| MOSS-VoiceGenerator (the designer) in the host | **5.3 GB measured** (2026-08-30, a 6 s audition) | **yes, 5.4 GB** — same lever |
+| MOSS-SoundEffect v2 in the host | **10.0 GB measured** (2026-08-30, 3 s at 100 steps, over a 1.2 GB floor); `vram_gb = 11` | **yes, 9.1 GB** — same lever |
 | Qwen-Image fp8 + InstantX ControlNet at 1024² | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
 | FLUX.1-schnell fp8 + Union-Pro ControlNet at 1024² | **23.0 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
 | Qwen-Image **Q4_K_M GGUF** + InstantX ControlNet at 1024², `--reserve-vram 8` | **16.2 GB measured** (2026-08-30) — **alone**; the lean tier's form | no, `POST /free` returns it |

@@ -10,8 +10,10 @@
 # fetches what came out.
 #
 # `unload_node` is null on purpose: these are native nodes and ComfyUI's own
-# memory manager gives the card back on `POST /free`, measured on this host
-# 2026-08-30. A wrapper pack would need one.
+# memory manager gives the card back by itself — a 30 s track went 22.8 →
+# 22.6 GB free with no intervention, the model gone before the job's row was
+# written (measured 2026-08-30). That is the opposite of the two MOSS
+# backends, whose wrapper pack `POST /free` does not touch.
 #
 # Install traps, dated: designs/hosting.md, "ComfyUI".
 
@@ -25,9 +27,13 @@ upstream = "https://github.com/ACE-Step/ACE-Step-1.5.git"
 # `backend.comfyui_commit`; writing a second commit here under the
 # generator's name would be one fact in two places.
 license = "Apache-2.0 (ACE-Step 1.5 weights, as redistributed by Comfy-Org); the code that runs them is ComfyUI's"
-# A budget, not a measurement: the all-in-one checkpoint is 10.03 GB on disk
-# and nobody has sampled the peak of a track on this host yet.
-vram_gb = 12
+# Measured, with the budget above it: a 30 s track at 96 bpm peaked at
+# 13.1 GB (nvidia-smi at 10 Hz, 2026-08-30; designs/hosting.md, "the first
+# real run of the audio path"), and the 12 that stood here read 1 GB light —
+# a budget under its own peak lets the blocked-rather-than-OOM gate admit a
+# job that OOMs. Nothing is resident afterwards: native ACE-Step gives the
+# card back with no intervention at all.
+vram_gb = 14
 entry = "audio.music"
 
 [comfy]

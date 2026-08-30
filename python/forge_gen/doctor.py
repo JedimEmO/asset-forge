@@ -699,11 +699,19 @@ def comfy_weights(backend: Backend) -> list[dict]:
     for model in backend.models:
         if not str(model.store).startswith("comfy:"):
             continue
+        # `local` beats `file` beats the repo id, exactly as the
+        # `[[comfy.models]]` branch above resolves it. Reading the id alone
+        # made doctor look for a directory named after the repo — it read
+        # `acestep partial: …/checkpoints/ace_step_1.5_ComfyUI_files is
+        # absent (10.03 GB to fetch)` on a machine whose
+        # `ace_step_1.5_turbo_aio.safetensors` had just rendered five tracks,
+        # and told a stranger to fetch 10 GB they already had (2026-08-30).
+        name = model.local or (Path(str(model.file)).name if model.file else Path(model.id).name)
         out.append(
             {
                 "id": model.id,
                 "folder": str(model.store).split(":", 1)[1],
-                "file": Path(model.id).name,
+                "file": name,
                 "gb": getattr(model, "gb", None),
             }
         )
@@ -716,6 +724,15 @@ def comfy_model_present(view: ComfyView, weight: dict) -> tuple[bool, str]:
     ComfyUI reads its models from ``<base>/models/<folder>``, so that is
     where a weight either is or is not; the hub cache is irrelevant to a
     service that was never told about it.
+
+    **A weight may be a directory.** A checkpoint is one file, but a node
+    pack that fetches a whole hub snapshot writes a directory —
+    TTS-Audio-Suite puts the three MOSS models under
+    ``models/TTS/{moss_soundeffect_v2,moss_tts}/<name>/`` — and a file check
+    read those as absent for ever, so the rows said ``partial`` on a machine
+    that had just spoken a line and offered a stranger a download the
+    installer cannot do (2026-08-30). Non-empty is the test for a directory,
+    the same one :func:`hf_model_present` uses on a snapshot.
     """
     base = view.base
     if base is None and view.host is not None:
@@ -727,6 +744,8 @@ def comfy_model_present(view: ComfyView, weight: dict) -> tuple[bool, str]:
     target = base / weight["folder"] / weight["file"]
     if target.is_file():
         return True, str(target)
+    if _non_empty_dir(target):
+        return True, f"{target}/ ({len(list(target.iterdir()))} entries)"
     return False, f"{target} is absent"
 
 

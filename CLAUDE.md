@@ -32,19 +32,28 @@ record to make a gate pass is the same defect in a smaller file.
 ## The GPU is shared
 
 One 24 GB card, and nothing on it co-resides. Peaks measured 2026-08-30
-(`designs/hosting.md` § GPU co-residency): the image model is the expensive
-one — Qwen-Image fp8 **23.3 GB**, its Q4 GGUF form **16.2 GB**, each alone
-on the card — then ARDY at **15.4 GB**; TRELLIS.2 at 1024³ is **4.7 GB**
-and SkinTokens **3.3–4.4 GB**. MOSS (~6–12 GB) and ACE-Step (~8 GB) are
-budgets nobody has sampled, and each `backend.toml`'s `vram_gb` is a budget
-too — never quote one as a measurement. The audio models run inside the
-ComfyUI host now, so there is no resident ACE-Step server of its own and no
-`--stop-server`: what stays on the card is the unit's ~0.4 GB of CUDA
-context plus whatever workflow last loaded, until its unload node,
-`POST /free`, or `systemctl --user stop forge-comfy`. `just gpu` before any generate; never run two generates at
-once, and never start one while a studio window with a model loaded is
-still up on the real adapter — or while the ComfyUI unit holds a model.
-Doctor says who is holding the card; believe it.
+(`designs/hosting.md` § GPU co-residency and § the first real run of the
+audio path): the image model is the expensive one — Qwen-Image fp8
+**23.3 GB**, its Q4 GGUF form **16.2 GB**, each alone on the card — then
+ARDY at **15.4 GB**, ACE-Step at **13.1 GB**, MOSS-SoundEffect at
+**10.0 GB**, MOSS-TTS at **7.1 GB** over the voice designer's **5.3 GB**
+(the pack unloads neither, so they add up); TRELLIS.2 at 1024³ is
+**4.7 GB** and SkinTokens **3.3–4.4 GB**. Each `backend.toml`'s `vram_gb`
+is a **budget** that sits above its measured peak — never quote one as a
+measurement, and never leave one under one.
+
+The audio models run inside the ComfyUI host now, so there is no resident
+ACE-Step server of its own and no `--stop-server`. **`forge gpu --free` is
+the door for the card; for the MOSS pack only `systemctl --user restart
+forge-comfy` returns it (measured, 4.4 s).** `POST /free` unloads native
+models — ACE-Step's card comes back with no intervention at all — and does
+nothing for what TTS-Audio-Suite loaded: there is no unload node in the
+pack at this pin, and 9.1 GB stayed on the card after an effect. What
+remains otherwise is the unit's ~0.4 GB of CUDA context. `just gpu` before
+any generate; never run two generates at once, and never start one while a
+studio window with a model loaded is still up on the real adapter — or
+while the ComfyUI unit holds a model. Doctor says who is holding the card;
+believe it.
 
 ## Records
 

@@ -277,6 +277,38 @@ def test_the_shipped_backends_are_one_model_list_and_say_how_they_run(repo_root)
             assert backend.host and not backend.env and not backend.python
 
 
+def test_one_pack_says_one_thing_wherever_it_is_named(repo_root):
+    """A pack lives in four places or nowhere (``decisions.md``, 2026-08-30).
+
+    Two of those four are ``[[comfy.packs]]`` entries in different
+    ``backend.toml`` files — the host's and each backend the pack serves —
+    and they drifted: ``backends/comfy`` said ``pips = []`` with a comment
+    explaining that it had been measured so, while ``moss_sfx`` and
+    ``moss_tts`` listed the ten the first real sfx run found were needed and
+    ``install.sh`` installed them. This holds every entry naming one repo to
+    the same commit and the same pips, so the next drift is a red test and
+    not a ``POST /prompt`` failure in front of a stranger.
+    """
+    tree = repo_root / "backends"
+    seen: dict[str, tuple[str, dict]] = {}
+    for name in backends.KNOWN:
+        backend = backends.load_backend(name, tree)
+        for pack in backend.comfy.packs if backend.comfy else []:
+            first = seen.setdefault(pack.repo, (name, pack))
+            other, theirs = first
+            assert pack.commit == theirs.commit, f"{name} and {other} pin {pack.repo} differently"
+            assert pack.pips == theirs.pips, f"{name} and {other} disagree on {pack.repo}'s pips"
+            assert pack.dir == theirs.dir, f"{name} and {other} clone {pack.repo} to different names"
+    assert "https://github.com/diodiogod/TTS-Audio-Suite" in seen, "the MOSS pack is described somewhere"
+
+    # And the third place: install.sh installs exactly what they name.
+    installer = (tree / "comfy" / "install.sh").read_text()
+    _, pack = seen["https://github.com/diodiogod/TTS-Audio-Suite"]
+    assert pack.commit in installer, "install.sh clones the pinned commit"
+    for pip in pack.pips:
+        assert pip in installer, f"install.sh does not install {pip}, which backend.toml says it needs"
+
+
 def test_default_backends_dir_is_beside_the_package(monkeypatch, repo_root):
     monkeypatch.delenv("FORGE_BACKENDS", raising=False)
     assert backends.backends_dir() == repo_root / "backends"
