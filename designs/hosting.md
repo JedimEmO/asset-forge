@@ -1052,3 +1052,151 @@ prop lift or a lean `moss_sfx`. The gap this section left open on the day
 carried no custom node packs while ComfyUI-GGUF sat in `custom_nodes/` —
 is closed: the pack, its two pips and the 13.07 GB Q4 file are recorded in
 all four places, and the trap that earned it is under § ComfyUI above.
+
+## Fitted skeleton spike (2026-08-30)
+
+`forge2.md`'s Phase 2 proposes that the skeleton fit the mesh: freeze bone
+names, hierarchy and rest **rotations**, let bone **lengths** belong to the
+body, and take the lengths from SkinTokens' own weights. This is the day's
+spike on the body the fit gate refused — the four-head witch,
+`out/grok/moss_witch_v4/`, whose shoulders sit ~17 cm below the shipped
+skeleton's. Two new files, neither registered in `cli.py` and neither run by
+`just ci`: `python/forge_gen/spike_fit.py` (numpy, no Blender, no card — the
+repo's own `python3` runs it) measures, and
+`python/forge_gen/blender/spike_fit_rig.py` builds a **scratch profile**
+under `out/spike_fit/profile/`. Nothing under `rigs/` or `assets/` was
+touched and no existing gate was loosened.
+
+**The estimator, and the two it replaced.** Every bone's world direction is
+frozen, so only a scalar per bone is measurable, and it is measured as the
+weight-product centroid of a joint's transition band —
+`C = Σ a·b·v / Σ a·b`, with `a` the parent's own weight and `b` the summed
+weight of the child and its descendants — projected onto the frozen axis.
+The first two attempts are recorded because they were both wrong in ways a
+picture would not have shown. A **1-D weight crossing along the bone's own
+axis** puts the shoulder *higher* than it is: the shoulder axis is
+three-quarters vertical, the whole arm lies to one side of it, and the arm's
+lateral extent adds to its projection — the exact error the spike exists to
+remove. A **hard band threshold** (both weights over 0.15) leaves 7 vertices
+at `vex_runner`'s left knee; the product uses every vertex two bones share
+and dropped the left/right disagreement on the legs from 24 % to 1–6 %.
+
+**Per bone does not work; per run does.** Between `LeftShoulder` and
+`LeftArm`, or between `Spine` and `Spine1`, SkinTokens draws no boundary
+worth reading. Measured bone by bone, `vex_runner` — a body that passes
+today's fit gate — came back with a collarbone at 0.85 and a shoulder at
+0.58 of their reference lengths: two numbers whose product is about right
+and whose split is invented. So the fit measures a declared set of
+**landmarks** (hip, knee, ankle, toe, shoulder, elbow, wrist, neck) and gives
+every bone in the **run** between two landmarks the same ratio. `Head` is
+deliberately not a landmark: the contract puts its joint inside the skull
+and the weights put their boundary at the base of it, and the measured ratio
+ranged over 0.27–2.26 on three bodies. The landmark set is body-plan
+knowledge and belongs in `profile.toml`; it is a table in the file because a
+spike may hard-code what a door must read.
+
+**The witch, fitted** (`used` is after mirroring the pair and after
+grounding; `raw L/R` is the two independent measurements the gate reads):
+
+| run | ref | fitted | used | raw L/R | gap |
+|---|---|---|---|---|---|
+| `Hips→Neck` (torso, 5 bones) | 60.3 cm | 44.1 cm | 0.73 | — | — |
+| `Spine3→Arm` (clavicle + shoulder) | 26.3 cm | 24.1 cm | 0.92 | 0.90 / 0.94 | 4.3 % |
+| `Arm→ForeArm` (upper arm) | 29.5 cm | 25.1 cm | 0.85 | 0.93 / 0.77 | 18.9 % |
+| `ForeArm→Hand` (forearm) | 23.3 cm | 22.8 cm | 0.98 | 0.89 / 1.07 | 17.6 % |
+| `Hips→UpLeg` (hip) | 9.9 cm | 8.7 cm | 0.88 | 0.81 / 0.95 | 16.2 % |
+| `UpLeg→Leg` (thigh) | 41.2 cm | 38.4 cm | 0.93 | 0.81 / 0.82 | 1.3 % |
+| `Leg→Foot` (shin) | 45.6 cm | 47.7 cm | 1.05 | 0.92 / 0.92 | 1.0 % |
+| `Foot→ToeBase` | 17.1 cm | 14.0 cm | 0.82 | 0.70 / 0.74 | 6.1 % |
+
+Her shoulder joint moves from y = 1.480 m to **1.350 m**, against an arm
+whose own geometry (`|x| > 0.55 m`) has a median height of 1.311 m — the
+weights' own boundary sits at 1.333 m, so the fit lands 1.7 cm from what it
+measured and 13.0 cm below where the shipped skeleton put it. `Hips` fits at
+0.933 m against 0.954 m, so **`motion_scale` is 0.978**: her legs are 2 %
+short, and the Hips-track scaling the design proposes is not what her
+problem was. Feet: the leg bands ride 11 cm up her robe, so the three
+segments below each hip are scaled by one factor — 1.138 on both sides —
+that puts `ToeBase` on the floor. The weights set the leg's proportions, the
+ground sets its length.
+
+**What passed.** The scratch profile is self-consistent: `contract.json`
+regenerated from the fitted `rig.glb` has the same bone order, the same
+parents and the same 27 driven, rest rotations within **3.1e-6** per
+component and every local translation direction unchanged to **0.0000°** —
+lengths are the only thing that moved. `forge gen export` against the
+scratch profile passed every pre-export check including its 0.1 mm rest
+tolerance. `prepare_spike` against the fitted skeleton measures her arm tips
+at z 1.3152 against wrists at 1.3496 — **3.4 cm apart, inside the shipped
+`arm_height_tolerance_m` of 0.15** that refused her at 16–23 cm; only
+`reach` still trips (1.59 against 1.45), and that is the gate measuring her
+span against the wrists it just fitted to her, which is `forge2.md`'s "the
+fit gate stops measuring span". SkinTokens re-skinned the fitted armature in
+**26.5 s**, 55 of 55 bones carrying weight, 0 unweighted, ≤ 4 influences.
+
+**`forge rig check` passes the fitted body against the *shipped* profile —
+10 findings, 0 failed**, "rest rotations match the contract" among them.
+That was not the expected result and it is worth saying plainly: **there is
+no rest-translation rule in `forge rig check`**. It checks the armature
+node, depth, names, rotations, skin, stature, feet and the walk binding
+(27 driven, 0 orphaned), and none of those move when a bone changes length.
+The 0.1 mm translation rule lives in exactly one place a *body* passes
+through — `forge gen export`'s `_check_bones` against the profile's
+`rig.blend` — and there it refuses this body with **55 problems, worst
+252.33 mm (`Head`), `Hips` at 21.09 mm**. So the door Phase 2 has to change
+is the exporter, and `forge rig check` needs the *new* numeric gate added,
+not the old one relaxed.
+
+**What failed: the fit is not a fixed point.** The design's claim is
+"skin → fit → re-skin, two passes, the second moving nothing". Measured, the
+second pass moves joints by a **mean of 73.5 mm and a worst of 118.1 mm
+(`Head`)**: `Hips` drops another 6.1 cm, the torso run measures 0.89 of the
+already-shortened torso, the thigh run measures 0.75 again, and grounding
+stretches the legs back by 1.165 again. Feet and knees are stable (4–15 mm);
+everything above the hips walks downhill. The reason is structural: the
+weights are made *against the skeleton handed in*, so a boundary the weights
+place near a joint is partly a measurement of that joint, and re-measuring
+it after moving the joint moves it again in the same direction. **Fit once
+from the unfitted skeleton — which is the same neutral prior for every body
+— and treat a second pass as a diagnostic, not a refinement.** A fixed point
+needs the geometry-only anchor `forge2.md` mentions (cross-sections of the
+T-posed tubes), which this spike did not build.
+
+**What failed: the 10 % symmetry gate refuses every body measured, the
+control included.** `vex_runner`, which passes today's fit gate, is refused
+at 24.2 % (elbow) and 23.0 % (wrist); the witch at 18.9 %, 17.6 % and
+16.2 %. The legs, the shoulder and the torso are inside 6 % everywhere. So
+the estimator's precision is ~±20 % per arm segment and ~±5 % elsewhere, and
+either the gate ships at 25 % or the arms need a better landmark than the
+weight boundary at an elbow inside a sleeve. Everything in this section was
+therefore produced with `--asymmetry 0.25` stated on the command line, and
+the fit mirrors each pair (the mean of the two measurements) so a walk does
+not limp; the **raw** pair is what the gate reads, so nothing is hidden.
+
+**The control's other number.** On `vex_runner` the root fits 5.8 cm *high*
+(1.012 m against 0.954 m) and `motion_scale` comes out 1.06 for a body that
+already works. A per-body root height is a per-body Hips track, so a fit
+that ships must either be right about the root or leave it alone.
+
+**The pictures** (`out/spike_fit/`, GIFs under `gifs/`). Against the
+baseline strip, on the walk: the arms leave the body at her shoulders
+instead of under the hat brim, the sleeve no longer bunches at the hand, and
+the hands read as hands at the ends of the arms. On `pistol_shoot` the
+baseline shredded the hat into spikes around her head; fitted, the hat is
+intact and the pose is readable, though both hands come up to her face
+rather than her chest — the contact-pose overshoot the design already prices
+in. On `roll` the posed bounds fall from 2.94 × 2.64 × 3.71 m to
+2.17 × 2.50 × 2.21 m. Feet, skinned on the CPU at 60 fps over the walk: the
+lowest foot vertex stays between **−1.5 cm and +3.0 cm** on the fitted body
+against **−3.3 cm to +0.8 cm** on the baseline, both inside
+`foot_tolerance_m` = 0.05. (The studio's own sheet reports a whole-clip
+lowest y of −0.103 m fitted against −0.168 m baseline; the two measurements
+disagree in magnitude and agree in direction, and the difference was not
+chased.) Planted-foot horizontal speed is within 1 % between the two bodies,
+so the fit neither adds nor removes skate — that detector counts any frame
+whose foot dips under 3 cm and is a comparison, not a skate measurement.
+
+**Timings**, one 4090, nothing else on the card: fit 1 s, build the fitted
+armature 5 s, `export_contract` 1 s, prepare 1.7 s, SkinTokens 26.5 s,
+re-attach 5 s, export 1.7 s, `rig check` 2 s, each strip 2 s. The whole
+chain is about a minute, of which SkinTokens is half.
