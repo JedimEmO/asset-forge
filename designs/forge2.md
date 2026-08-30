@@ -497,10 +497,34 @@ the bake, the clips, the ≤ 1 mm audit on the fixture mannequin, no
 retarget, no hand edit. Costs: contact poses (a two-handed grip) overshoot
 on long arms and fall short on short ones, which is every shared-animation
 game's price and a later IK pass's job; one consumer-facing manifest bump.
-**Spike before building:** fit the witch's skeleton from her existing
-weights (`out/grok/moss_witch_v4/`), re-skin, rig-check with the direction
-rule, walk her with the Hips track scaled — a day, and it either puts her
-shoulders where they are or says what is wrong with the idea.
+**Spiked the same night, and it works, with two corrections to the
+design** (`python/forge_gen/spike_fit.py`, `hosting.md` § Fitted skeleton
+spike, `out/spike_fit/`). The witch's shoulders moved from 1.480 m to
+1.350 m, 1.7 cm from where her arm geometry measures them; on the fitted
+skeleton she walks with her arms leaving the body at her shoulders and
+her sleeves ending in hands, her feet within 1.5 cm of the floor on
+contact frames, the hat whole through the pistol pose that shredded it
+before; her leg ratio is 0.978, so `motion_scale` was never her problem.
+Correction one: **fit by landmark runs, not per bone, and fit once.** A
+skinner draws no line between a collarbone and a shoulder, so per-bone
+ratios there are invented (vex_runner "measured" 0.85 and 0.58 for a
+product that is right); the estimator measures runs — torso, clavicle
+plus shoulder, upper arm, forearm, hand, hip, thigh, shin, foot — as the
+weight-product centroid of each transition band projected onto the
+frozen direction, and mirrors left/right (the raw pair differed by up to
+19 %, which is the gate: refuse above 10 % after mirroring, or a ratio
+outside 0.4–2.5). The second pass does not converge: weights are made
+against the skeleton handed in, so re-measuring after moving a joint
+moves it again the same way (torso 0.89 twice, head 118 mm). One fit
+from the unfitted skin; a second is a diagnostic. Correction two: **the
+only door with a rest-translation rule is the exporter.** `forge rig
+check` has none — it passed the fitted body 10 of 10 against the shipped
+profile, rest rotations included — so Phase 2 changes `forge gen export`
+(`_check_bones`, 0.1 mm against the profile's `rig.blend`) to a direction
+rule and *adds* the feet-on-the-ground gate to rig check rather than
+trading one away. And the fit gate's arm-height check passes her at
+3.4 cm against the fitted wrists; only `reach` still trips, measuring her
+span against wrists it just fitted to her — that check goes.
 
 **Phase 2 — rigging (2 weeks).** `backends/skintokens/` in the `env`
 executor with the issue-#8 and SDPA patches under `patches/`. `forge gen

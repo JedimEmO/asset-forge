@@ -877,3 +877,25 @@ budget, not a measurement of where bodies break, and the question it
 begs is Phase 2's first: whether the skeleton should fit the mesh. Until
 then the gate stands at 0.15 m and the strip is the judge of any body
 that argues with it. 2026-08-30.
+
+**Bone lengths belong to the body, and the skinner's weights say what
+they are.** Spiked 2026-08-30 on the witch the fit gate refused: names,
+hierarchy and rest rotations kept (they moved by 3.1e-6), every bone's
+local translation kept in direction and scaled in length by a ratio read
+from SkinTokens' own weights — the weight-product centroid of each
+transition band projected onto the frozen direction, measured per
+landmark run (torso, shoulder, upper arm, forearm, hand, hip, thigh,
+shin, foot) because no skinner draws a line inside a run, mirrored
+left/right — and she walks, aims and rolls with her shoulders 13 cm lower,
+where they are, feet within 1.5 cm of the floor, 27 of 27 bound, no
+retarget, no clip rebaked. **Why it holds:** a clip carries rotation
+curves and one Hips track; lengths were frozen for the audit's sake, and
+the audit binds to the fixture mannequin, which does not change. **What
+the spike also said:** fit once — the second pass walks the torso
+downhill 74 mm a time, because weights are made against the skeleton
+handed in; the only door with the 0.1 mm translation rule is the
+exporter, so that is the door that changes; the contact-pose overshoot
+is real (a two-handed grip lands at her face) and is the price every
+shared-animation game pays until an IK pass. The gate this ships with:
+refuse a run ratio outside 0.4–2.5 or a left/right split over 10 %, and
+add feet-on-the-ground on contact frames to rig check. 2026-08-30.
