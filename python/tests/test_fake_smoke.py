@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import wave
 
 import pytest
@@ -392,3 +393,26 @@ def test_fake_reruns_over_its_own_placeholders_are_fine(tmp_path):
     out = tmp_path / "door.wav"
     run_fake("sfx", "--prompt", "a door", "--out", str(out))
     run_fake("sfx", "--prompt", "a door", "--out", str(out))
+
+
+def test_a_fake_run_never_loads_the_graph_client(tmp_path):
+    """`ci-fake` is a control for the move to the host, and this is why.
+
+    `run_fake` writes a placeholder through the same doors and validators a
+    real render goes through, and touches no template, no URL and no host —
+    so a defect in the graph client cannot make the fake pipelines fail, and
+    a fake pipeline passing says nothing about the host being up.
+    """
+    import subprocess as sp
+
+    script = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "from forge_gen import cli\n"
+        "args = cli.build_parser().parse_args(['sfx', '--prompt', 'a door', '--out', %r, '--fake'])\n"
+        "args._module.run_fake(args)\n"
+        "assert 'forge_gen.comfy' not in sys.modules, 'a fake run loaded the graph client'\n"
+        "print('clean')\n"
+    ) % (str(REPO / "python"), str(tmp_path / "door.wav"))
+    done = sp.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
+    assert "clean" in done.stdout

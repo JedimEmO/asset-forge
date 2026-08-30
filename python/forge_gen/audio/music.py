@@ -40,7 +40,7 @@ import wave
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
-from forge_gen import comfy, placeholders, records
+from forge_gen import placeholders, records
 from forge_gen.audio import ffmpeg_bin, transcode_ogg, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
@@ -345,6 +345,8 @@ def backend_facts(
     — and by ``packs``, which is empty here because every node in the graph
     is ComfyUI's own.
     """
+    from forge_gen import comfy  # noqa: PLC0415 - only a real run asks the host anything
+
     return {
         "name": backend.name,
         "commit": None,
@@ -395,6 +397,11 @@ def refuse_stop_server(args) -> None:
 
 def run(args) -> dict:
     """Load the tracked graph, patch it, run it on the host, transcode, record."""
+    # Imported here and not at the top of the module: `run_fake` must never
+    # load the graph client, which is what keeps `just ci-fake` a control
+    # for the whole move to the host.
+    from forge_gen import comfy  # noqa: PLC0415
+
     refuse_stop_server(args)
     backend = backends_mod.load_backend(BACKEND)
     request = check_inputs(args)

@@ -59,7 +59,7 @@ import wave
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
-from forge_gen import comfy, placeholders, records
+from forge_gen import placeholders, records
 from forge_gen.audio import ffmpeg_bin, transcode_wav
 from forge_gen.exit_codes import InputRejected, UsageError
 
@@ -488,6 +488,11 @@ def template_inputs(spec: dict, job: dict, *, reference_name: str, prefix: str) 
 
 def run(args) -> dict:
     """Validate, upload the reference, run the graph per line, record each."""
+    # Imported here and not at the top of the module: `run_fake` must never
+    # load the graph client, which is what keeps `just ci-fake` a control
+    # for the whole move to the host.
+    from forge_gen import comfy  # noqa: PLC0415
+
     spec = plan(args)
     backend = backends_mod.load_backend(spec["backend"])
     if spec["model"] != DEFAULT_MODEL:
