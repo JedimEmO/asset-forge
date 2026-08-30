@@ -505,7 +505,15 @@ skeleton she walks with her arms leaving the body at her shoulders and
 her sleeves ending in hands, her feet within 1.5 cm of the floor on
 contact frames, the hat whole through the pistol pose that shredded it
 before; her leg ratio is 0.978, so `motion_scale` was never her problem.
-Correction one: **fit by landmark runs, not per bone, and fit once.** A
+The first real customer came an hour later: a drow warlock drawn in Grok
+for a friend's brief, refused by the fit gate at arm tips 21 cm under the
+wrists (a high collar and long hair sit his shoulders low), fitted from
+his own weights (max joint move 14.7 cm, `motion_scale` 1.016), re-skinned,
+rig check 10 of 10, and playing a clip that did not exist that morning —
+a 32-take ARDY sweep on "reads from an open book in the left hand while
+the right hand draws a five-pointed star" — beside the shipped walk
+(`out/fit_warlock/`). Correction one: **fit by landmark runs, not per
+bone, and fit once.** A
 skinner draws no line between a collarbone and a shoulder, so per-bone
 ratios there are invented (vex_runner "measured" 0.85 and 0.58 for a
 product that is right); the estimator measures runs — torso, clavicle
