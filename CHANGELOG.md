@@ -35,7 +35,7 @@ ComfyUI host the toolkit drives but does not schedule. The plan is
   never probed, never a reason to exit 1 — plus `executor` and `chosen`
   columns, one shared `GET /object_info` for every comfy row, and exit 1
   only while a *chosen* backend is not `ok`.
-- **MCP: eighteen tools over two transports.** `init_project`, `licences`,
+- **MCP: the tool surface over two transports.** `init_project`, `licences`,
   `setup`, `doctor`, `status`, `list_runs`, `wait`, `cancel` join the
   existing surface; `generate_audio` returns a job. `forge mcp` in a
   directory with no `forge.toml` now serves a session — `init_project`,
@@ -51,6 +51,14 @@ ComfyUI host the toolkit drives but does not schedule. The plan is
 - `backends/comfy` — ComfyUI as a systemd `--user` unit with a committed
   snapshot, `extra_model_paths.yaml` over the weight caches, pinned packs
   and tracked API-format workflow templates.
+- **`forge bundle`** — one self-contained `.glb` carrying a body's skin and
+  any number of clips as named animations, for handing an asset outside the
+  toolkit, with a `<stem>.bundle.json` record hashing every input. A merge,
+  not a bake: channels are re-pointed at the body's bones by name and their
+  values copied byte for byte, a clip driving a bone the body lacks is
+  refused by name, and `--motion-scale` multiplies the root travel and
+  nothing else. `just bundle`, and `export_bundle` as the MCP surface's
+  nineteenth tool.
 
 ### Changed
 

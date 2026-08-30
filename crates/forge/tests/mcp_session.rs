@@ -40,9 +40,10 @@ use serde_json::{Value, json};
 /// The whole tool surface, sorted. `mcp-check` pins the same list against a
 /// raw handshake; this pins it against a real client, so the two cannot
 /// drift apart without one of them saying so.
-const TOOLS: [&str; 18] = [
+const TOOLS: [&str; 19] = [
     "cancel",
     "doctor",
+    "export_bundle",
     "generate_audio",
     "generate_clips",
     "init_project",

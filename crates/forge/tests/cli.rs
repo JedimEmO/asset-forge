@@ -245,12 +245,13 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    // Fifteen of the eighteen `mcp-check` pins: `init_project`, `licences`
+    // Sixteen of the nineteen `mcp-check` pins: `init_project`, `licences`
     // and `setup` land with tools/setup.rs. Anything else appearing here is
     // a surface change the skills are not written against.
     let mine = [
         "cancel",
         "doctor",
+        "export_bundle",
         "generate_audio",
         "generate_clips",
         "inspect_audio",
@@ -275,7 +276,7 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         assert!(
             mine.contains(&name.as_str())
                 || matches!(name.as_str(), "init_project" | "licences" | "setup"),
-            "{name} is not one of the eighteen --- stdout\n{out}"
+            "{name} is not one of the nineteen --- stdout\n{out}"
         );
     }
     assert!(

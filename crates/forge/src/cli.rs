@@ -82,6 +82,9 @@ pub(crate) enum Command {
     /// Which bones a clip drives on a body — driven, at rest, orphaned — with
     /// no GPU. Exits 1 when nothing binds
     Bones(BonesArgs),
+    /// One self-contained glb carrying a body's skin and any number of clips
+    /// as named animations, for handing an asset outside the toolkit
+    Bundle(BundleArgs),
     /// Open the viewer window: library browser, stage, transport, metadata,
     /// audio
     Studio(StudioArgs),
@@ -282,6 +285,31 @@ pub(crate) struct BonesArgs {
 
     #[command(flatten)]
     pub(crate) body: BodyArg,
+}
+
+/// `forge bundle <body> --clips a,b,c --out <path>`.
+#[derive(Debug, Args)]
+pub(crate) struct BundleArgs {
+    /// The body: a library body name, or a path to any rigged glb — an
+    /// export under out/ that has not been promoted yet.
+    pub(crate) body: String,
+    /// The clips, in the order they should appear in the file: library clip
+    /// names or paths to clip glbs, comma-separated. Repeat the flag for
+    /// more.
+    #[arg(long, required = true, value_name = "A,B,C", value_delimiter = ',')]
+    pub(crate) clips: Vec<String>,
+    /// Where to write the bundle. The record lands beside it as
+    /// `<stem>.bundle.json`.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) out: PathBuf,
+    /// Multiply the root travel by this — the body's leg length against the
+    /// profile's reference legs, so a fitted skeleton travels its own
+    /// stride. Rotations are never touched.
+    #[arg(long, default_value_t = 1.0, value_name = "F")]
+    pub(crate) motion_scale: f64,
+    /// Who is exporting: human, `agent:<name>`, unknown.
+    #[arg(long, default_value = "human", value_name = "WHO")]
+    pub(crate) created_by: String,
 }
 
 /// `forge studio`.

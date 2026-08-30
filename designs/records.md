@@ -165,6 +165,27 @@ says "you are behind" rather than "corrupt". Adding a socket, a tag or a
 note does not bump anything; renaming a bone bumps the rig profile's
 `version` and expects every clip to need rebaking.
 
+## The bundle record (`forge_bundle: 1`)
+
+Written by `forge bundle` (`crates/forge_library/src/bundle.rs`) beside the
+`.glb` it made, as `<stem>.bundle.json`, and read by nobody but a person
+asking what they were handed. A bundle is one self-contained file carrying a
+body's skin and any number of clips as named animations, for a consumer
+outside this toolkit, and its record claims exactly one thing: **the file is
+a pure function of the body, the clips, their order and the motion scale**.
+So it carries `body {path, sha256}`, `clips[] {name, path, sha256}` in bundle
+order, the `motion_scale` applied to the root travel, and
+`output {path, sha256, bytes, animations[]}` — `name` being what each clip
+was asked for and `animations` the names it actually carries, which are the
+clips' names *inside* their own files and so need not be the library names.
+Paths are project-relative when the file is under the project and absolute
+otherwise, as in every other record here. A bundle is a derived artefact
+like a baked clip: it is never edited by hand, not to rename an animation and
+not to fix a scale — the fix is the same command run again with the right
+arguments, and the record is what makes that possible. Nothing about a bundle
+reaches `assets/`: it has no sidecar, no catalog entry and no manifest row,
+because the library already holds every input it was made from.
+
 ## What `forge verify` checks
 
 `crates/forge_library/src/verify.rs` — the engine-free half, the one that

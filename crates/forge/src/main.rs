@@ -24,6 +24,7 @@
 //! forge views <name|path.glb>               one mesh from every angle, culling off for a lift
 //! forge turntable <body>                    every view of a body, posed on the reference clip
 //! forge bones <clip> [--body]               which bones a clip drives, no GPU
+//! forge bundle <body> --clips a,b --out P   one glb: the body's skin and every clip as a named animation
 //! forge studio [--model] [--audio] …        the viewer window
 //! forge mcp                                 serve the MCP tools over stdio, for an agent
 //! forge serve [--foreground] [--port N]      the queue for this project, MCP at /mcp
@@ -103,6 +104,7 @@ fn run(cli: &Cli) -> Outcome {
         Command::Views(args) => commands::look::views(&project(cli)?, args),
         Command::Turntable(args) => commands::look::turntable(&project(cli)?, args),
         Command::Bones(args) => commands::look::bones(&project(cli)?, args),
+        Command::Bundle(args) => commands::bundle::run(&project(cli)?, args),
         Command::Studio(args) => commands::studio::run(&project(cli)?, args),
         Command::Mcp => commands::mcp::run(cli),
         Command::Serve(args) => commands::serve::run(&project(cli)?, args),

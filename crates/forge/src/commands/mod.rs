@@ -4,6 +4,7 @@
 //! [`Outcome`]: crate::outcome::Outcome
 
 pub(crate) mod audio;
+pub(crate) mod bundle;
 pub(crate) mod catalog;
 pub(crate) mod checks;
 pub(crate) mod doctor;

@@ -15,6 +15,7 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use crate::server::ForgeServer;
 
 pub(crate) mod audio;
+mod bundle;
 mod doctor;
 mod generate;
 mod jobs;
@@ -32,5 +33,6 @@ pub(crate) fn router() -> ToolRouter<ForgeServer> {
         + generate::router()
         + jobs::router()
         + promote::router()
+        + bundle::router()
         + setup::router()
 }

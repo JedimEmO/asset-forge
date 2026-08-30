@@ -908,3 +908,28 @@ root and the shoulder line from geometry (the crotch and the lowest
 vertices, the arm tube's centroid), which the T-pose makes cheap; the
 symmetry tolerance set from the two bodies measured, not guessed; and
 feet-on-the-ground on contact frames added to rig check. 2026-08-30.
+
+**A bundle is a merge, not a bake.** `forge bundle` writes one
+self-contained `.glb` carrying a body's skin and any number of clips as
+named animations, for handing an asset to somebody who has none of this
+toolkit — and it re-derives nothing. **Why the contract makes it so:** a
+baked clip carries a rotation curve per bone plus one translation track on
+the root, and every channel targets its bone **by name path**; every body
+carries the profile's names, hierarchy and rest rotations. So re-pointing
+each channel at the body's node of the same name is the whole operation,
+the sampler values travel byte for byte, and the file that comes out plays
+what the library holds rather than something re-computed from it — which
+also means a clip driving a bone the body lacks has nowhere to point and is
+refused by name, rather than binding to nothing while the engine reports
+that at no log level. Two things fall out. The one number a bundle applies
+is `motion_scale` on the root track alone (metres against the reference
+legs, the fitted-skeleton design), never on a rotation and never on another
+bone's translation — a Blender-era clip's constant translation curves are
+bone rest offsets, and scaling one of those moves a skeleton. And a bundle
+is a **derived artefact**: it is a pure function of body, clips, order and
+scale, its `<stem>.bundle.json` hashes every input, and the fix for
+anything wrong with one is the same command run again — never a hand edit
+of the `.glb` or of the record, the one-way rule that already covers every
+`.blend` and every baked clip. Nothing about it reaches `assets/`: no
+sidecar, no catalog entry, no manifest row, because the library already
+holds every input it was made from. 2026-08-30.

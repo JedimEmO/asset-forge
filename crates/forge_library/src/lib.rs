@@ -45,6 +45,7 @@ use std::path::{Path, PathBuf};
 
 pub mod audit;
 pub mod backends;
+pub mod bundle;
 pub mod catalog;
 pub mod clock;
 pub mod generator_record;

@@ -312,10 +312,10 @@ forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three ques
       audio inspect|list                   rig export-contract|fixture|check
       gen <cmd…>                           (mesh, prop, rig, export, rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor)
       serve | stop | jobs                  (the daemon: the queue, the card lock, the job table)
-      doctor | gpu | sheet | views | turntable | bones | studio | mcp
+      doctor | gpu | sheet | views | turntable | bones | bundle | studio | mcp
 ```
 
-`forge mcp` serves eighteen tools over stdio, registered in
+`forge mcp` serves nineteen tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -335,6 +335,7 @@ exist, so a wrong name costs one turn, not a guess.
 | `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
 | `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
 | `promote_audio` | file an auditioned sound as sfx, music or voice |
+| `export_bundle` | one glb: a body's skin and any number of clips as named animations, for handing outside the toolkit; nothing is filed |
 | `doctor` | what this machine can run: ok, partial, missing, broken — and `off` for a kind the project did not choose |
 | `init_project` | make a project: what you make, what card this is, where ComfyUI is. Refuses an existing project unless `adopt` |
 | `licences` | every licence the chosen kinds carry, **each notice in full** — you cannot accept what you were not shown |
@@ -344,7 +345,7 @@ exist, so a wrong name costs one turn, not a guess.
 There is **no promote for a mesh**: a body or a model goes through the skills
 with a human looking at the lift, the views and the rig before anything is
 filed. `just mcp-check` handshakes the server and holds the tool list to
-exactly these eighteen, and `just mcp-session` runs the whole path —
+exactly these nineteen, and `just mcp-session` runs the whole path —
 `init_project → licences → setup → doctor → generate_audio → wait →
 inspect_audio → promote_audio → verify`, plus the refusals — over **both**
 transports, stdio and the daemon's streamable HTTP at `/mcp`.
@@ -477,6 +478,27 @@ front −Z:
 No runtime crate ships: spawning a body, playing a clip by name and attaching
 at a socket are a few dozen lines in any engine that loads glTF, and the
 manifest has everything they need.
+
+Handing one asset to somebody who has none of this — an artist, another
+project, a jam team — is `forge bundle`: one self-contained `.glb` carrying a
+body's skin and any number of clips as named animations, plus a
+`<stem>.bundle.json` record naming and hashing everything that went into it.
+
+```sh
+just bundle out/fit_warlock/drow_warlock_fitted.glb walk,roll \
+    out/bundles/warlock.glb --motion-scale 1.0156
+```
+
+It is a merge, not a bake. Every clip's channels target bones by name and
+every body carries the contract's names, so re-pointing the channels at the
+body's nodes is the whole operation and the curve values travel byte for
+byte; a clip that drives a bone the body lacks is refused, naming the bone.
+`--motion-scale` multiplies the root travel — the body's leg length against
+the profile's reference legs, so a fitted skeleton travels its own stride —
+and touches no rotation. The body may be a library name or any rigged `.glb`,
+the clips library names or paths, and the output goes wherever you say:
+nothing is filed in the library, because the library already holds every
+input. A bundle is derived, so it is regenerated rather than repaired.
 
 ## Licence
 

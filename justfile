@@ -482,6 +482,17 @@ promote-audio kind name file *flags: _build
            fi ;;
     esac
 
+# A merge, not a bake: every clip's channels are re-pointed at the body's
+# bones by name and their values copied, so a clip driving a bone the body
+# lacks is refused by name. The record lands beside the file as
+# <stem>.bundle.json. Nothing is filed in the library — a bundle is an
+# export, regenerated rather than repaired.
+# `just bundle out/fit_warlock/drow_warlock_fitted.glb walk,roll out/bundles/warlock.glb --motion-scale 1.0156`
+#
+# One glb carrying a body's skin and any number of clips as named animations.
+bundle body clips out *flags: _build
+    {{forge}} bundle {{body}} --clips {{clips}} --out {{out}} {{flags}}
+
 # Project the library into assets/library.json. Run it after any hand edit.
 manifest: _build
     {{forge}} manifest
@@ -605,7 +616,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="cancel doctor generate_audio generate_clips init_project inspect_audio licences list_audio list_clips list_models list_runs promote_audio promote_clip render_clip_strip render_model setup status wait"
+    expected="cancel doctor export_bundle generate_audio generate_clips init_project inspect_audio licences list_audio list_clips list_models list_runs promote_audio promote_clip render_clip_strip render_model setup status wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -634,7 +645,7 @@ mcp-check: _build
 # daemon's streamable HTTP at /mcp — because "one tool surface, two
 # transports, one queue" is the claim this phase makes and a transport
 # nothing exercises ships ungated. The script: initialize, tools/list
-# against the pinned eighteen, init_project, licences, the setup gate (a
+# against the pinned nineteen, init_project, licences, the setup gate (a
 # gated kind with an empty accept must refuse and name the id), doctor (an
 # `off` row, exit 0), generate_audio (a job id comes back, not the file),
 # wait, inspect_audio, promote_audio, verify — plus the two negative legs
