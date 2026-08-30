@@ -41,15 +41,32 @@ generators, then the two the Phase 0 spikes stood up:
 |---|---|---|---|---|
 | `trellis2` | image → textured mesh | microsoft/TRELLIS.2 @ `75fbf018` | conda, python 3.11, CUDA 12.4 | `forge gen mesh` |
 | `ardy` | prompt → motion take | nv-tlabs/ardy @ `693f74d1` | venv, python 3.12 | `forge gen motion sweep\|keys` |
-| `acestep` | prompt → music | ACE-Step/ACE-Step-1.5 @ `82252c24` | venv, python 3.12 | `forge gen music` (a resident server) |
-| `moss_sfx` | prompt → sound effect | OpenMOSS/MOSS-TTS @ `58b20a0d`, `moss_soundeffect_v2/` | venv, python 3.12 | `forge gen sfx` |
-| `moss_tts` | text → speech; description → voice | OpenMOSS/MOSS-TTS @ `58b20a0d` | venv, python 3.12 | `forge gen speech`, `forge gen voice` |
+| `acestep` | prompt → music | ACE-Step/ACE-Step-1.5 @ `82252c24` | **comfy executor** — native in the host, no env of its own | `forge gen music` |
+| `moss_sfx` | prompt → sound effect | OpenMOSS/MOSS-TTS @ `58b20a0d`, `moss_soundeffect_v2/` | **comfy executor** — TTS-Audio-Suite in the host | `forge gen sfx` |
+| `moss_tts` | text → speech; description → voice | OpenMOSS/MOSS-TTS @ `58b20a0d` | **comfy executor** — TTS-Audio-Suite in the host | `forge gen speech`, `forge gen voice` |
 | `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `city96/ComfyUI-GGUF` @ `6ea2651e`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host; `backends/comfy/workflows/*.api.json` are what it is sent |
 | `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
 
 Doctor prints an eighth row, `blender`, between the two groups: it is
 described by a `backend.toml` like the rest so its version and licence
 notice have somewhere to live, but it is a host tool, not a backend (below).
+
+**`executor` is the field that says who runs a backend**, and doctor renders
+its row from it: `env` is the per-backend interpreter and checkout the
+launcher execs; `comfy` is a workflow posted to the ComfyUI service at
+`[hardware] comfy_url`, so the backend has no interpreter of its own and its
+weights live under the host's model folders; `tool` is a host program
+(Blender) or a service described so it has a row (`comfy` itself). A
+`comfy` backend's five words are judged against the service — see
+"What doctor's words mean" below.
+
+**Which backends a project even has rows for** comes from `[make]` in its
+`forge.toml`. A kind that was not chosen reads `off`: not probed, printed
+with the line that turned it off, and never a reason to exit 1. The map is
+one fact in one place — `props → trellis2, qwen_image`; `characters → +
+skintokens`; `clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice →
+moss_tts`; anything `comfy` adds the `comfy` host, and a mesh kind adds
+Blender.
 
 `moss_sfx` and `moss_tts` share one clone and keep two venvs: the
 sound-effect model pins a different torch. `moss_tts` hosts two models:
@@ -195,13 +212,40 @@ Each installer is idempotent (`set -euo pipefail`, sources
    fetching the FLUX pose ControlNet, which is **non-commercial**;
    `--no-flux-controlnet` declines, `--no-service` skips systemd.
 
-Then `forge doctor` (or `python3 python/forge_gen doctor`): every backend
-should read `ok`; `partial` names the weight, import or CUDA that is
-missing; `missing` is not installed; `broken` is present but unusable, with
-the check that says why. Exit 1 while any is not ok.
+### What doctor's words mean
+
+Then `forge doctor` (or `python3 python/forge_gen doctor`): every **chosen**
+backend should read `ok`.
+
+| word | an `env` backend | a `comfy` backend |
+|---|---|---|
+| `ok` | the env runs, the probe imports, the weights are cached | the service answers at `comfy_url`, is at its pinned commit, lists every node class the description and its workflows name, every pack clone is at its pin, every weight is on disk |
+| `partial` | the env runs but a weight, an import or CUDA is missing | it answers and the packs are right, but a node class or a weight is absent — named, with its GB |
+| `missing` | not installed | nothing is listening (hint: `systemctl --user status forge-comfy.service`) |
+| `broken` | present but unusable: bad toml, no probe, probe fails, checkout gone | it answers as another commit than pinned, a pack is off its pin, or a tracked workflow names a class that does not exist — none of which a download fixes |
+| `off` | `[make]` did not choose the kind. Never probed, never a vote | the same |
+
+**Exit 1 only while a *chosen* backend is not ok.** A project at tier `fake`
+chooses nothing, so every row reads `off` and doctor exits 0.
+
+`GET /object_info` is fetched **once per doctor run** and shared by every
+comfy backend: it is the whole node surface, and six backends asking six
+times on a cold host is six waits for one answer that cannot differ.
 
 Common flags (all installers): `--prefix DIR`, `--no-models` (skip weight
 downloads; doctor says `partial`), `--yes` (every licence prompt).
+
+The kind-shaped door above these is **`forge setup [kind…]`**: it prints one
+screen — per chosen kind the backends, their disk, the total, and every
+licence fact in full — before a byte downloads, asks once, appends what you
+accepted to `$FORGE_BACKENDS_HOME/licences.json` (beside the installs,
+because the install is what is licensed), and skips every backend doctor
+already calls `ok`, so it is safe to re-run. `--yes nvdiffrast --yes llama3`
+accepts **by name** and is repeatable; a bare `--yes` is refused, because a
+blanket yes to a list nobody read is what the gate exists to prevent. The
+licence ids are `nvdiffrast`, `dinov3`, `llama3`, `skintokens_encoder` and
+`comfyui_gpl`; the first three need your yes, the last two are facts you are
+told.
 
 ## Adopting an install you already have
 

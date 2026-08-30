@@ -11,14 +11,24 @@
 //! hints, because a licence fact is not a detail and an install hint is the
 //! next command to type.
 //!
-//! The exit code is 1 when any backend is not `ok`, or when the profile is
-//! broken. A `partial` backend — the env runs, a weight is not cached — is
-//! not ok: the first `forge gen` through it would download for minutes, and
-//! doctor's job is to say so first. `--quick` skips the probes and reports
-//! only what the directory says (found / missing / broken), in well under a
-//! second.
+//! The exit code is 1 when a **chosen** backend is not `ok`, or when the
+//! profile is broken. A `partial` backend — the env runs, a weight is not
+//! cached — is not ok: the first `forge gen` through it would download for
+//! minutes, and doctor's job is to say so first. `--quick` skips the probes
+//! and reports only what the directory says (found / missing / broken), in
+//! well under a second.
+//!
+//! # The fifth word
+//!
+//! `off` is not a probe result. It is `[make]` not having chosen the kind,
+//! so the row is printed dimmed with the project's own reason for it
+//! (`off — [make] music = false`), is never probed — which is what makes
+//! doctor fast on a props-only project — and never votes on the exit code.
+//! `[make]` with nothing in it, and tier `fake`, choose nothing: every row
+//! reads `off` and doctor exits 0.
 
 use forge_library::backends::{BackendState, Backends, KNOWN};
+use forge_library::project::{BLENDER_BACKEND, COMFY_BACKEND, MakeKind, Tier};
 use forge_library::{Catalog, Kind, Project, manifest};
 use serde_json::{Value, json};
 
@@ -86,10 +96,25 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     // -- backends ---------------------------------------------------------
     let backends = Backends::discover(project);
     let toolkit = Backends::toolkit_root(project);
+    let chosen = project.chosen_backends();
+    let chosen_list = chosen.join(",");
+    let comfy_url = project.hardware.comfy_url.clone();
+    let off_flags: Vec<String> = off_rows(&backends, &chosen, project.tier());
+    let mut doctor_call: Vec<&str> = vec![
+        "doctor",
+        "--chosen",
+        &chosen_list,
+        "--comfy-url",
+        &comfy_url,
+    ];
+    for entry in &off_flags {
+        doctor_call.push("--off");
+        doctor_call.push(entry);
+    }
     let gen_report: Option<Value> = if args.quick || toolkit.is_none() {
         None
     } else {
-        match generate::spawn(project, &["doctor"], false) {
+        match generate::spawn(project, &doctor_call, false) {
             Ok(result) => result.payload,
             Err(failure) => {
                 lines.push(format!(
@@ -105,7 +130,14 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     if let Some(report) = &gen_report {
         probed_lines(report, &backends.origin, &mut lines, &mut not_ok);
     } else {
-        unprobed_lines(&backends, args.quick, &mut lines, &mut not_ok);
+        unprobed_lines(
+            &backends,
+            &chosen,
+            project.tier(),
+            args.quick,
+            &mut lines,
+            &mut not_ok,
+        );
     }
     if let Some(root) = &toolkit {
         lines.push(format!("toolkit   {} (python/forge_gen)", root.display()));
@@ -118,10 +150,12 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     }
 
     let ok = broken.is_empty() && not_ok.is_empty();
-    let verdict = if ok && gen_report.is_none() {
-        String::from("doctor: every backend found (not probed)")
+    let verdict = if ok && chosen.is_empty() {
+        String::from("doctor: nothing is chosen — every backend is off, and that is not a problem")
+    } else if ok && gen_report.is_none() {
+        String::from("doctor: every chosen backend found (not probed)")
     } else if ok {
-        String::from("doctor: every backend ok")
+        String::from("doctor: every chosen backend ok")
     } else {
         let mut parts = broken.clone();
         parts.extend(not_ok.iter().cloned());
@@ -135,6 +169,10 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
             "rig": rig_json,
             "library": library_json,
             "backends_origin": backends.origin,
+            "make": project.make,
+            "tier": project.tier().as_str(),
+            "chosen": chosen,
+            "comfy_url": project.hardware.comfy_url,
             "toolkit": toolkit,
             "gen": gen_report,
             "quick": args.quick,
@@ -157,6 +195,51 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
 
 /// [`KNOWN`] as sort keys that order before any other name.
 const KNOWN_ORDER: [&str; 5] = ["0", "1", "2", "3", "4"];
+
+/// `--off name=reason` for every backend the directory describes that
+/// `[make]` did not choose, in the project's own words.
+///
+/// The reason names the line in `forge.toml` that turned it off, because
+/// that is where the fix is. A host row — Blender, the comfy service — has
+/// no `[make]` line of its own and says which kind would have brought it.
+fn off_rows(backends: &Backends, chosen: &[&str], tier: Tier) -> Vec<String> {
+    backends
+        .backends
+        .iter()
+        .map(|backend| backend.name.as_str())
+        .filter(|name| !chosen.contains(name))
+        .map(|name| format!("{name}={}", off_reason(name, tier)))
+        .collect()
+}
+
+/// Why one backend is off, in the words the project uses.
+fn off_reason(name: &str, tier: Tier) -> String {
+    if tier.is_fake() {
+        // The tier answers before [make] does: on `fake` nothing is
+        // installed and nothing needs to be, because every generator writes
+        // a branded placeholder through the same validators.
+        return String::from(
+            "[hardware] tier = \"fake\" — every generator writes a placeholder, so no \
+             backend is needed",
+        );
+    }
+    let kinds: Vec<MakeKind> = MakeKind::ALL
+        .into_iter()
+        .filter(|kind| kind.backends().contains(&name))
+        .collect();
+    if kinds.is_empty() {
+        return match name {
+            COMFY_BACKEND => String::from("no chosen kind runs in the comfy executor"),
+            BLENDER_BACKEND => String::from("[make] props = false and [make] characters = false"),
+            _ => String::from("no chosen kind needs it"),
+        };
+    }
+    kinds
+        .iter()
+        .map(|kind| format!("[make] {kind} = false"))
+        .collect::<Vec<_>>()
+        .join(" and ")
+}
 
 /// The backend rows from the Python report: host first, then one row per
 /// backend with what failed under it.
@@ -187,7 +270,10 @@ fn probed_lines(report: &Value, origin: &str, lines: &mut Vec<String>, not_ok: &
             let entry = &entries[name];
             backend_lines(name, entry, lines);
             let status = entry.get("status").and_then(Value::as_str).unwrap_or("?");
-            if status != "ok" {
+            // `off` never votes: a kind the project did not choose is not a
+            // defect, and a doctor that exited 1 over one would teach the
+            // stranger to ignore the exit code.
+            if status != "ok" && status != "off" {
                 not_ok.push(format!("{name} {status}"));
             }
         }
@@ -198,6 +284,8 @@ fn probed_lines(report: &Value, origin: &str, lines: &mut Vec<String>, not_ok: &
 /// that is all.
 fn unprobed_lines(
     backends: &Backends,
+    chosen: &[&str],
+    tier: Tier,
     quick: bool,
     lines: &mut Vec<String>,
     not_ok: &mut Vec<String>,
@@ -211,6 +299,17 @@ fn unprobed_lines(
         backends.origin
     ));
     for backend in &backends.backends {
+        if !chosen.contains(&backend.name.as_str()) {
+            // Off is off whether or not the probes ran: the kind was not
+            // chosen, so the row is not a question this machine answers.
+            lines.push(format!(
+                "  {:<10} {:<8} off — {}",
+                backend.name,
+                "off",
+                off_reason(&backend.name, tier)
+            ));
+            continue;
+        }
         lines.push(format!(
             "  {:<10} {:<8} {}",
             backend.name,
@@ -389,6 +488,21 @@ fn host_lines(report: &Value, lines: &mut Vec<String>) {
 /// notices and hints. Checks that passed are in `--json` and not here.
 fn backend_lines(name: &str, entry: &Value, lines: &mut Vec<String>) {
     let status = entry.get("status").and_then(Value::as_str).unwrap_or("?");
+    if status == "off" {
+        lines.push(format!(
+            "  {name:<10} {status:<8} off — {}",
+            entry
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("not chosen")
+        ));
+        return;
+    }
+    let executor = entry
+        .get("executor")
+        .and_then(Value::as_str)
+        .map(|word| format!("[{word}] "))
+        .unwrap_or_default();
     let checks: Vec<&Value> = entry
         .get("checks")
         .and_then(Value::as_array)
@@ -407,7 +521,7 @@ fn backend_lines(name: &str, entry: &Value, lines: &mut Vec<String>) {
         .or_else(|| detail_of("python"))
         .or_else(|| detail_of("toml"))
         .unwrap_or("");
-    lines.push(format!("  {name:<10} {status:<8} {summary}"));
+    lines.push(format!("  {name:<10} {status:<8} {executor}{summary}"));
     for check in &checks {
         let ok = check.get("ok").and_then(Value::as_bool).unwrap_or(false);
         let detail = check.get("detail").and_then(Value::as_str).unwrap_or("");
@@ -451,9 +565,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_off_row_says_which_line_turned_it_off_and_never_votes() {
+        let entry: Value = serde_json::from_str(
+            "{\"status\":\"off\",\"chosen\":false,\"executor\":\"comfy\",\
+             \"reason\":\"[make] music = false\",\"checks\":[],\"notices\":[],\"hints\":[]}",
+        )
+        .expect("json");
+        let mut lines = Vec::new();
+        backend_lines("acestep", &entry, &mut lines);
+        assert_eq!(
+            lines,
+            vec!["  acestep    off      off — [make] music = false"]
+        );
+
+        let mut report_lines = Vec::new();
+        let mut not_ok = Vec::new();
+        let report: Value = serde_json::from_str(&format!(
+            "{{\"backends_dir\":\"/b\",\"backends\":{{\"acestep\":{entry}}}}}"
+        ))
+        .expect("json");
+        probed_lines(&report, "forge.toml", &mut report_lines, &mut not_ok);
+        assert!(not_ok.is_empty(), "{not_ok:?}");
+    }
+
+    #[test]
+    fn an_off_reason_names_the_kind_that_would_have_chosen_it() {
+        assert_eq!(off_reason("acestep", Tier::Full), "[make] music = false");
+        assert_eq!(
+            off_reason("trellis2", Tier::Full),
+            "[make] props = false and [make] characters = false"
+        );
+        assert_eq!(
+            off_reason(COMFY_BACKEND, Tier::Full),
+            "no chosen kind runs in the comfy executor"
+        );
+        assert!(
+            off_reason("ardy", Tier::Fake).contains("tier = \"fake\""),
+            "the tier answers before [make] does"
+        );
+    }
+
+    #[test]
     fn a_backend_row_shows_failures_notices_and_hints_but_not_passing_checks() {
         let entry: Value = serde_json::from_str(
-            "{\"status\":\"partial\",\"checks\":[\
+            "{\"status\":\"partial\",\"executor\":\"env\",\"chosen\":true,\"checks\":[\
                {\"name\":\"toml\",\"ok\":true,\"detail\":\"sfx, venv py3.12\"},\
                {\"name\":\"probe\",\"ok\":true,\"detail\":\"torch 2.9.0, cuda yes\"},\
                {\"name\":\"checkout\",\"ok\":true,\"detail\":\"abc; dirty (5 tracked files modified)\"},\
@@ -463,7 +618,10 @@ mod tests {
         .expect("json");
         let mut lines = Vec::new();
         backend_lines("moss_sfx", &entry, &mut lines);
-        assert_eq!(lines[0], "  moss_sfx   partial  torch 2.9.0, cuda yes");
+        assert_eq!(
+            lines[0],
+            "  moss_sfx   partial  [env] torch 2.9.0, cuda yes"
+        );
         assert!(
             lines
                 .iter()

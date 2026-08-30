@@ -38,30 +38,69 @@ Before the first `just`, the build prerequisites:
 - **Bevy's system headers** (Debian/Ubuntu):
   `sudo apt install libasound2-dev libudev-dev pkg-config`.
 - **python3 ≥ 3.11** on PATH, for the generator launcher (stdlib only).
-- **Disk for the backends**: ~80 GB for all five (trellis2 ~20 GB, ardy
-  ~35 GB, acestep ~10 GB, moss_sfx ~12 GB, moss_tts ~13 GB), under
-  `~/.cache/asset-forge/` and the Hugging Face cache. `just setup` prints
-  that bill and refuses to fetch it without `--yes`; `--no-models` defers
-  each backend's weights to its first generate.
-- **A GPU only for generating** — 24 GB for the 1024³ lifts, 16 GB for
-  clips and audio. Without one you can still run everything below except
-  the generators: `just ci-fake` (the five generate pipelines end to end
-  on placeholders — no GPU, no backend, no Blender), the viewer, the
-  sheets and the shipped sample library all run on CPU (llvmpipe).
+- **Disk for the backends** — how much depends on what you make, and
+  `forge setup` prints the bill for *your* answer before a byte downloads.
+  Everything lands under `$FORGE_BACKENDS_HOME` (default
+  `~/.cache/asset-forge/backends`) and the Hugging Face cache.
+- **A GPU only for generating** — 24 GB is the `full` tier, 16 GB is
+  `lean` (the same lifts at 1024³, a quantised reference model, a smaller
+  speech model), and no card at all is `fake`, which is a **first-class
+  answer**: every generator writes a branded placeholder through the same
+  doors and validators, so the whole path, the viewer, the sheets and the
+  shipped sample library work on CPU (llvmpipe).
 
 Every recipe builds and runs `./target/debug/forge` itself; `just install`
 puts a release `forge` on PATH (`~/.cargo/bin`) for shells outside the
 checkout.
 
+### The first hour
+
+`forge init` asks three questions once, and everything after reads the
+answers out of `forge.toml`. They are phrased as **what you make** and
+**what card you have**, never as model names:
+
 ```sh
 git clone https://github.com/JedimEmO/asset-forge && cd asset-forge
 just ci-fake                  # before installing anything: the whole pipeline on placeholders
-just setup trellis2 --yes     # one backend; `just setup` alone runs all five (~80 GB — it prints
-                              # the bill and wants --yes). --yes also accepts nvdiffrast's
-                              # non-commercial licence (it is printed either way)
-just doctor                   # trellis2 `ok`; the four backends you have not installed say
-                              # `missing`, and doctor exits 1 until every one of them is in
+
+cd ~/my-game && forge init    # 1. what will you make here?  props, characters, clips,
+                              #    sfx, music, voice — default props+characters+clips
+                              # 2. what card is this?  detected from nvidia-smi and OFFERED:
+                              #    >=22 GB full, >=14 lean, none fake
+                              # 3. where is ComfyUI?  asked only if a chosen kind runs in it
 ```
+
+The same three as flags, which is also what an agent's `init_project`
+passes — `--make props,characters,clips` (or `all`, or `none`),
+`--tier full|lean|fake`, `--comfy-url URL`, `--yes`. With no terminal and
+no flags it takes the defaults and prints one line naming each assumption;
+it never hangs on a prompt.
+
+```sh
+forge setup                   # ONE SCREEN BEFORE A BYTE DOWNLOADS: per chosen kind the
+                              # backends, their disk, the total, and every licence fact in
+                              # full — nvdiffrast's non-commercial clause, the DINOv3 gated
+                              # login, Llama 3's attribution, the SkinTokens encoder
+                              # question, ComfyUI's GPL. Then it asks once.
+                              # `--yes nvdiffrast --yes llama3` accepts by NAME and is
+                              # repeatable; a bare `--yes` is refused, because a blanket yes
+                              # to a list nobody read is what the gate exists to prevent.
+                              # Resumable: a backend doctor already calls `ok` is skipped.
+just doctor                   # ok | partial | missing | broken per chosen backend, and `off`
+                              # for a kind you did not choose — never probed, never a reason
+                              # to exit 1. Exit 1 only while a CHOSEN backend is not ok, so a
+                              # props-only project is not red about music
+```
+
+What you accepted is recorded in `$FORGE_BACKENDS_HOME/licences.json`,
+beside the installs — because the install is what is licensed, and
+`forge.toml` is hand-edited, which would let an acceptance be *typed*
+rather than *given*.
+
+Tiers change registers and variants, never features: `lean` runs the
+reference image model quantised (Q4_K_M GGUF) and MOSS-TTS at 1.7B, and
+**lifts at 1024³ exactly like `full`** — a 1024³ lift measures 4.7 GB, and
+512³ costs the face rather than saving memory.
 
 Already have TRELLIS.2, ARDY, ACE-Step or MOSS installed? Adopt them instead
 of rebuilding: `bash backends/<name>/install.sh --adopt-env DIR
@@ -122,12 +161,15 @@ game reads.
 | Judging and the viewer | CPU is enough: headless sheets and views need a wgpu adapter and llvmpipe qualifies; no display server |
 | Python | 3.11+ system interpreter for the launcher (stdlib only); each backend brings its own env |
 | Rust and `just` | rustup (the repo pins 1.96.1), `just`, and Bevy's headers — the prerequisites block above the Quickstart |
-| Disk | ~80 GB for all five backends' envs and weights (the per-backend split is in the Quickstart and `.claude/skills/forge-setup`); `just setup` prints the bill before fetching |
+| Disk | what the kinds you chose need, and no more; `forge setup` prints the bill for your answer before fetching |
 
-The generators do not share the card: TRELLIS.2 at 1024³ takes ~22 GB alone,
-ARDY ~16 GB, MOSS 6–12 GB, and the ACE-Step server stays resident at ~8–10 GB
-until `forge gen music --stop-server`. `just gpu` says who holds it and
-whether the largest backend would fit.
+The generators do not share the card. The image model is the one thing that
+wants all of it (23.3 GB fp8, 16.2 GB as the lean tier's Q4 GGUF, measured
+2026-08-30, alone either way); the 1024³ lift is the cheapest of the three
+at 4.7 GB, ARDY's sweep is 15.4 GB, and the ComfyUI host holds ~0.4 GB of
+CUDA context for as long as its unit is up. `just gpu` says who holds the
+card and whether the largest chosen backend would fit; a `backend.toml`'s
+`vram_gb` is a budget and is never a measurement.
 
 ## The reference image
 
@@ -244,7 +286,7 @@ table:
 
 | Skill | Ships |
 |---|---|
-| `forge-setup` | backends installed or adopted, `just doctor` green |
+| `forge-setup` | the three questions answered, the licences read, the chosen backends installed or adopted, `just doctor` green |
 | `forge-prop` | a static model from a PNG |
 | `forge-character` | a rigged body from a PNG, starting with the reference checklist |
 | `forge-clip` | a clip from a prompt: sweep, review, promote with a recipe, strip on the body |
@@ -255,14 +297,17 @@ table:
 The CLI is one binary:
 
 ```
-forge init | catalog | manifest [--check] | verify | audit [--fit] | rebake | migrate
+forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three questions)
+      setup [kind…] [--yes <licence>…] [--dry-run]         (one screen, then the installers)
+      catalog | manifest [--check] | verify | audit [--fit] | rebake | migrate
       promote clip|body|model|audio        (direct; refuse an existing name unless --overwrite)
       audio inspect|list                   rig export-contract|fixture|check
       gen <cmd…>                           (mesh, prop, rig, export, rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor)
+      serve | stop | jobs                  (the daemon: the queue, the card lock, the job table)
       doctor | gpu | sheet | views | turntable | bones | studio | mcp
 ```
 
-`forge mcp` serves eleven tools over stdio, registered in
+`forge mcp` serves eighteen tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -282,12 +327,19 @@ exist, so a wrong name costs one turn, not a guess.
 | `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
 | `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
 | `promote_audio` | file an auditioned sound as sfx, music or voice |
-| `doctor` | what this machine can run |
+| `doctor` | what this machine can run: ok, partial, missing, broken — and `off` for a kind the project did not choose |
+| `init_project` | make a project: what you make, what card this is, where ComfyUI is. Refuses an existing project unless `adopt` |
+| `licences` | every licence the chosen kinds carry, **each notice in full** — you cannot accept what you were not shown |
+| `setup` | install what a kind needs. **Refused** until `accept` names every gated id, and the refusal lists exactly which |
+| `wait` / `cancel` / `status` / `list_runs` | a generate returns a job; these are how you follow it, stop it, and see what the card is doing |
 
 There is **no promote for a mesh**: a body or a model goes through the skills
 with a human looking at the lift, the views and the rig before anything is
 filed. `just mcp-check` handshakes the server and holds the tool list to
-exactly these eleven.
+exactly these eighteen, and `just mcp-session` runs the whole path —
+`init_project → licences → setup → doctor → generate_audio → wait →
+inspect_audio → promote_audio → verify`, plus the refusals — over **both**
+transports, stdio and the daemon's streamable HTTP at `/mcp`.
 
 ## Backends and licences
 

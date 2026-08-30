@@ -277,7 +277,25 @@ fn host_lines(probe: &Value, out: &mut String) {
 /// licence fact is not a detail) and hints (the next command to type).
 fn backend_lines(name: &str, entry: &Value, out: &mut String) {
     let status = text(entry, "status");
-    let _ = writeln!(out, "  {name:<12} {status}");
+    if status == "off" {
+        // Not a probe result and not a problem: the project's [make] did
+        // not choose the kind, so nothing was run and nothing is wrong.
+        let _ = writeln!(
+            out,
+            "  {name:<12} off — {}",
+            entry
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("not chosen")
+        );
+        return;
+    }
+    let executor = entry
+        .get("executor")
+        .and_then(Value::as_str)
+        .map(|word| format!(" [{word}]"))
+        .unwrap_or_default();
+    let _ = writeln!(out, "  {name:<12} {status}{executor}");
     for check in entry
         .get("checks")
         .and_then(Value::as_array)

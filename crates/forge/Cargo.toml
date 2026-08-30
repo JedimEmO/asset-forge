@@ -47,5 +47,16 @@ serde_json = { workspace = true }
 # beside its clip in a scratch root that removes itself.
 tempfile = { workspace = true }
 
+[dev-dependencies]
+# The `mcp-session` gate drives this binary's own MCP server with rmcp's own
+# client, over both transports: a second protocol implementation in CI would
+# be a second thing to keep current. The SDK's pin is the workspace's; only
+# the client-side features are added here, and only for tests.
+rmcp = { workspace = true, features = [
+    "client",
+    "transport-async-rw",
+    "transport-streamable-http-client-reqwest",
+] }
+
 [lints]
 workspace = true

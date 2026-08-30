@@ -343,6 +343,53 @@ the gate" would have learned nothing. What separates them is the style
 line, the hands and the background, and all three are read by eye off the
 contact sheet.
 
+## Onboarding, doctor and the licence gate
+
+**`nvidia-smi` is the tier detector, and its absence is an answer.**
+`forge init` reads `--query-gpu=memory.total --format=csv,noheader,nounits`
+and takes the largest card: ≥ 22 GB is `full`, ≥ 14 GB is `lean`, anything
+else — including no `nvidia-smi` on PATH, a driver that does not answer, and
+a machine with no GPU — is `fake`. It is **offered, not assumed**: the
+detected tier is the prompt's default and `--tier` overrides it, because the
+card that is busy today is still the card this project runs on. 2026-08-30.
+
+**A prompt with no TTY in front of it hangs, and that is the trap this repo
+already knew.** `hf auth login` taught it (see Common, above); `forge init`
+must not repeat it. With no terminal *and* no `--make`, init takes the
+defaults and prints **one line naming each assumption** rather than waiting
+on stdin — which is what makes it safe inside `ci-fake`, inside
+`mcp-session`, and inside any agent's shell. Every branch of the question
+code returns an answer; none of them can block. 2026-08-30.
+
+**`GET /object_info` is fetched once per doctor run.** It is ComfyUI's whole
+node surface — megabytes on a host with packs, and slow on a cold service —
+and every backend the `comfy` executor hosts asks it the same question. Six
+comfy backends probing independently would be six fetches for one answer
+that cannot differ, so the view (`/system_stats` and `/object_info`) is
+built once and shared. The base directory is read from the running service's
+own `--base-directory` argv rather than guessed, because a service started
+by hand without it writes into the clone and finds no models. 2026-08-30.
+
+**The five words for a comfy backend, and which of them is `broken`.**
+`ok` the service answers, is at the pinned commit, lists every node class
+the backend's `[comfy] nodes` and its tracked workflows name, every pack
+clone is at its pin and every weight is on disk. `partial` it answers and
+the packs are right, but a class or a weight is absent — the weight is named
+with its GB, because "partial" without the number is a shrug. `missing`
+nothing is listening. `broken` it answers as *another* commit than pinned,
+or a pack is off its pin, or a tracked workflow names a class the service
+does not have: none of those is fixed by downloading anything, which is what
+separates `broken` from `partial`. The hint on a service that is not
+answering is `systemctl --user status forge-comfy.service`. 2026-08-30.
+
+**`process-wrap ^9.0` is not resolvable from this machine's crates.io
+index**, so rmcp's `transport-child-process` feature cannot be enabled here.
+`mcp-session`'s stdio leg spawns the server itself and hands rmcp the
+child's own pipes — `(ChildStdout, ChildStdin)` implements `IntoTransport`
+under `transport-async-rw` — which is the same protocol over the same bytes
+with one fewer dependency. If the index ever carries it, `TokioChildProcess`
+is a drop-in. 2026-08-30.
+
 ## GPU co-residency
 
 Approximate peaks on one 24 GB card with a desktop resident (~0.8 GB);

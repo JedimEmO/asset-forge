@@ -1,20 +1,31 @@
 ---
 name: forge-setup
-description: Get the backends healthy — read the doctor table, install or adopt one backend at a time under backends/<name>/, accept the licence prompts knowingly, log in for the gated weights, and free the GPU. Use when a command exits 3 saying a backend is missing, when `just doctor` is red, or on a fresh machine.
+description: Get a machine ready to make things — answer the three questions `forge init` asks, read the licence screen `forge setup` prints before a byte downloads, accept by name, log in for the gated weights, install or adopt each backend, and read the doctor table down to its fifth word. Use when a command exits 3 saying a backend is missing, when `just doctor` is red, or on a fresh machine.
 ---
 
-# Setup: `just doctor` → `just setup <backend>` → `just doctor` again
+# Setup: `forge init` → `forge setup` → `just doctor`
+
+Three doors, in that order, and each one is where its step actually
+happens:
+
+| Step | Door | What it decides |
+|---|---|---|
+| what you make, what card, where ComfyUI | `forge init` (MCP: `init_project`) | `[make]` and `[hardware]` in `forge.toml` — everything after reads them |
+| what that costs and what it asks of you | `forge setup` (MCP: `licences`, then `setup`) | the one screen, the acceptance, the installers |
+| what this machine can actually do | `just doctor` (MCP: `doctor`) | five words per backend, and the exit code |
 
 Every generator lives in its own environment under a `$PREFIX` outside the
-tree (`~/.cache/asset-forge/backends/<name>` by default), and
-`backends/<name>/` holds only gitignored links to it. `just doctor` is
-where every diagnosis starts and where it ends; nothing in this skill
-guesses at what the table can say.
+tree (`$FORGE_BACKENDS_HOME`, default `~/.cache/asset-forge/backends/<name>`)
+and `backends/<name>/` holds only gitignored links to it — except the ones
+the ComfyUI host runs, which have no environment of their own at all.
+`just doctor` is where every diagnosis starts and ends; nothing in this
+skill guesses at what the table can say.
 
 ## Prerequisites (check, don't assume)
 
-- Linux, an NVIDIA card, `nvidia-smi` on PATH. 24 GB for the 1024³ lifts;
-  16 GB is enough for clips and audio.
+- Linux. An NVIDIA card **only if you want the real generators**: the tier
+  question below has `fake` as a first-class answer, and everything except
+  a real generate works without one.
 - Rust via rustup (`rust-toolchain.toml` pins 1.96.1 and rustup fetches
   it), `just`, and Bevy's headers — Debian/Ubuntu:
   `sudo apt install libasound2-dev libudev-dev pkg-config`. Every recipe
@@ -24,107 +35,189 @@ guesses at what the table can say.
 - A system `python3` ≥ 3.11 (the launcher is stdlib-only and never imports
   torch; an older interpreter is refused with exit 6 naming the version
   and the path — put a newer python3 first on PATH); `conda` for
-  `trellis2` only (the other four are venvs).
+  `trellis2` only.
 - Blender ≥ 4.2 on PATH or `$BLENDER_BIN`, and `ffmpeg` — host tools, not
-  backends; doctor lists them and nothing installs them.
-- Disk, per backend, before you start (~80 GB and change for all five;
-  `just setup` with no name prints this bill and refuses without `--yes`):
-
-  | Backend | Env + clone | Weights | Where |
-  |---|---|---|---|
-  | `trellis2` | conda env (py 3.11, CUDA 12.4.1, gcc 13, torch cu124, flash-attn, nvdiffrast) + clone | `microsoft/TRELLIS.2-4B` + gated `facebook/dinov3-vitl16-pretrain-lvd1689m` | HF cache |
-  | `ardy` | venv 3.12 + clone | `nvidia/ARDY-Core-RP-20FPS-Horizon40` in the HF cache; the Llama-3 + LLM2Vec text encoder assembled in-env — **~16 GB downloaded, ~31 GB written** | `.text-encoders` |
-  | `acestep` | venv + patched clone | the minimal set, ~7.3 GB (`--all-models` adds ~38 GB nobody asks for) | `.checkpoints` |
-  | `moss_sfx` | venv + the `moss_soundeffect_v2/` subdirectory of the MOSS-TTS clone | `OpenMOSS-Team/MOSS-SoundEffect-v2.0`, ~11 GB | HF cache |
-  | `moss_tts` | venv + the MOSS-TTS clone (shared with `moss_sfx`) | `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5`, ~8 GB; `OpenMOSS-Team/MOSS-VoiceGenerator`, ~4 GB (the voice designer) | HF cache |
+  backends; doctor lists them and nothing installs them. Blender is only
+  needed if you chose `props` or `characters`.
+- Disk: **do not quote a total until you know what they make.** `forge
+  setup` prints the bill for their answer. For reference, per backend:
+  `trellis2` ~20 GB, `ardy` ~35 GB, `qwen_image` ~33.6 GB fp8 (~26 GB on
+  the lean tier's Q4 GGUF), `moss_sfx` ~11 GB, `moss_tts` ~12 GB,
+  `acestep` ~7.5 GB, the `comfy` host ~2 GB, `skintokens` ~3 GB.
 
 ## Steps
 
-### 1. Read the table — `just doctor`
+### 1. Answer the three questions — `forge init`
 
-Exit 0 only when every backend is `ok`; `--quick` skips the in-env probes
-(seconds each) and says only `found / missing / broken` from the directory;
-`--json` for a machine. The table on this machine, 2026-08-23, trimmed:
+The door is `forge init` in the project directory (an agent's door is the
+MCP `init_project`). It asks once, on a terminal, and writes the answers to
+`forge.toml`:
+
+1. **What will you make here?** `props`, `characters`, `clips`, `sfx`,
+   `music`, `voice` — default `props,characters,clips`.
+2. **What card is this?** Detected from `nvidia-smi --query-gpu=memory.total`
+   — ≥ 22 GB is `full`, ≥ 14 GB is `lean`, none is `fake` — and **offered,
+   not assumed**: the detected one is the default and you can override it.
+3. **Where is ComfyUI?** Asked only when a chosen kind runs in the comfy
+   executor. Another machine's URL is fine.
+
+The same three as flags, which is what to use in a script or under an
+agent:
 
 ```
-project   asset-forge at … (forge.toml)
-rig       humanoid v1: 55 bones (27 driven by cskel27), 5 socket(s), rigs/humanoid — glb sha ok, blend sha ok, no drift
-library   N clip, N body, N model, N sfx, N music, N voice; manifest current
-gpu       NVIDIA GeForce RTX 4090  3437 / 24564 MiB in use
-          warn: GPU busy: pid 140003 … 2.5 GB
-blender   5.2.0 /snap/bin/blender  ok
-ffmpeg    ffmpeg version 6.1.1 …
-python3   3.12.7 …
-backends  …/backends (forge.toml [backends] dir)
-  trellis2   ok       torch 2.6.0+cu124 cu12.4, cuda yes, imports 9/9; attn_backend=flash_attn, nvcc=12.4, nvdiffrast=0.4.0
-             warn notice: nvdiffrast is non-commercial: the texture bake runs through nvdiffrast 0.4.0 (NVIDIA Source Code License, 1-Way Commercial): non-commercial use only. …
-             warn notice: briaai/RMBG-2.0 is never fetched: …
-  ardy       ok       torch 2.13.0+cu130 cu13.0, cuda yes, imports 11/11; … load_model=True, text_encoders=ok
-             warn notice: Llama 3: Built with Meta Llama 3 — the text encoder only; …
-  acestep    ok       … checkpoints=…, lm=acestep-5Hz-lm-0.6B
-             warn checkout: 82252c2418de; dirty (5 tracked files modified)
-             warn notice: resident server: the ACE-Step API server stays on the GPU (~8 GB) after a track until `forge gen music --stop-server`; …
-  moss_sfx   ok       torch 2.9.0+cu128 cu12.8, cuda yes, imports 3/3; …
-  moss_tts   partial  torch 2.9.1+cu128 cu12.8, cuda yes, imports 3/3; …
-             FAIL model:OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5: absent: not in …/.cache/huggingface/hub
-             hint: the first run downloads OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5; or: bash backends/moss_tts/install.sh
-  blender    ok       5.2.0 at /snap/bin/blender (build fbe6228777e7)
-             warn notice: Blender: GPL-licensed tool; … glTF export is not byte-stable across Blender versions: bodies and models claim integrity (sha256), never regeneration.
-toolkit   … (python/forge_gen)
-doctor: moss_tts partial (exit 1)
+forge init --make props,characters,clips --tier full --comfy-url http://127.0.0.1:8188 --yes
+forge init --make all          # every kind
+forge init --make none         # nothing yet; every doctor row reads off
 ```
 
-How to read a backend row:
+**With no terminal and no flags it takes the defaults and prints one line
+naming each assumption.** It never hangs on a prompt — that is the trap
+`hf auth login` taught this repo, and it is why every branch of the
+question code returns an answer.
 
-| Status | Means | Do |
-|---|---|---|
-| `ok` | toml parses, checkout at the pinned commit, env python is the declared version, the probe imports everything and sees CUDA, every weight is on disk | nothing |
-| `partial` | the env runs but a `FAIL` line names a weight, an import or CUDA that is missing; the first generate through it would download for minutes (or fail) | the `hint:` under it is the exact command |
-| `missing` | no `.env` link: not installed | `just setup <name>` (step 2) |
-| `broken` | present but unusable: bad toml, no probe, the probe fails, the checkout gone | the check that says why is on the row; usually re-run the installer, or `--adopt-*` the thing that moved |
+What the answers change downstream:
+
+- `[make]` decides which backends `forge setup` installs and which doctor
+  rows are `off`.
+- `[hardware] tier` changes **registers and variants, never features**:
+  `lean` runs the reference image model quantised (Q4_K_M GGUF) and
+  MOSS-TTS at 1.7B, and **lifts at 1024³ exactly like `full`** — a 1024³
+  lift measures 4.7 GB, and 512³ costs the face rather than saving memory.
+  `fake` sets `FORGE_FAKE=1` as a first-class answer: every `forge gen`
+  writes a branded placeholder through the same doors and validators.
+
+To re-answer for a project that already exists, edit `[make]`/`[hardware]`
+by hand, or call `init_project` with `adopt: true` — which rewrites only
+those two tables and leaves every other line, comments included, alone.
+
+### 2. Read the screen, then accept by name — `forge setup`
+
+The door is `forge setup [kind…]` (an agent's doors are `licences`, then
+`setup` with `accept`). **It prints one screen before a byte downloads**:
+per chosen kind the backends, what each costs on disk, the total, and every
+licence fact those carry — each in the words a human is asked to accept,
+not a summary of them.
+
+```
+forge setup --dry-run          # the screen, and nothing else happens
+forge setup                    # the screen, then one question, on a terminal
+forge setup --yes nvdiffrast --yes dinov3      # accept by name; repeatable
+forge setup sfx voice          # only these kinds, whatever [make] says
+forge setup --no-models        # make the envs now; weights on first generate
+```
+
+**A bare `--yes` is refused.** The ids are what is being agreed to, and a
+blanket yes to a list nobody read is exactly what this gate exists to
+prevent. The five ids:
+
+| id | what | backend | needs your yes |
+|---|---|---|---|
+| `nvdiffrast` | NVIDIA Source Code License (1-Way Commercial) — **non-commercial only** | `trellis2` | **yes** |
+| `dinov3` | DINOv3 License (Meta), gated behind a token only a human holds | `trellis2` | **yes** |
+| `llama3` | Llama 3 Community License — "Built with Meta Llama 3" | `ardy` | **yes** |
+| `skintokens_encoder` | the Michelangelo encoder question (upstream issue #9) | `skintokens` | no — a warning |
+| `comfyui_gpl` | GPL-3.0-or-later, driven over HTTP from a separate process | `comfy` | no — a fact |
+
+**Say what a `--yes` accepts before passing it.** It is the user's licence
+decision, not yours. nvdiffrast is the one that matters: TRELLIS.2's
+texture bake runs through it, every lift record carries
+`texture_baker: "nvdiffrast (NVIDIA Source Code License, non-commercial)"`,
+and a commercial project cannot ship a lifted texture until a replacement
+baker exists. Declining leaves an env that does everything but bake:
+doctor says `partial`, `forge gen mesh` exits 6.
+
+What was accepted is appended to `$FORGE_BACKENDS_HOME/licences.json` —
+beside the installs, because the install is what is licensed, and never in
+`forge.toml`, which is hand-edited and would let an acceptance be *typed*
+rather than *given*. The receipt records who accepted (`human`, or
+`agent:claude` through the MCP), when, and at which door.
+
+**The DINOv3 login is a human's job and nothing gets past it.** Two
+commands, in this order:
+
+```
+# 1. accept on the model page, with the account the token belongs to:
+#    https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m
+# 2. then, and NEVER the interactive form — there is no TTY under an agent:
+hf auth login --token <tok>
+```
+
+`$HF_TOKEN` exported is the zero-file alternative. The token is the user's;
+ask for it, do not hunt for it.
+
+**Resumable.** `forge setup` asks doctor first and skips every backend it
+already calls `ok` with one line saying so — a stronger question than "does
+the receipt match the pin", because a receipt says an env was *made* and
+`ok` says the weights are there too. Re-run it as often as you like.
+
+### 2b. One backend at a time — `just setup <backend>`
+
+The backend-shaped door under `forge setup`, for installing or adopting
+one: `just setup trellis2 --yes`. `just setup` with no name runs every
+`backends/*/install.sh` in turn after printing a disk bill and refusing
+without `--yes`. Installers are idempotent (`set -euo pipefail`, a finished
+env is a no-op) and every trap they encode is dated in
+`designs/hosting.md`. Flags:
+
+| Flag | Does |
+|---|---|
+| `--prefix DIR` | where the env and clone go (default `$FORGE_BACKENDS_HOME/<name>`) |
+| `--adopt-env DIR` | link an existing interpreter prefix instead of making one |
+| `--adopt-checkout DIR` | link an existing upstream clone instead of cloning |
+| `--adopt-text-encoders DIR` | `ardy`: link an assembled text-encoder directory |
+| `--adopt-checkpoints DIR` | `acestep`: link a checkpoints directory |
+| `--no-models` | skip the weight downloads; doctor says `partial` until the first run |
+| `--yes` | accept the installer's own licence prompts without a TTY; the text prints either way |
+| `--no-service` | `comfy`: skip the systemd `--user` unit |
+
+**A machine that already has the envs** (one that ran the previous
+toolkit, or your own): do not rebuild, link. Adopting writes the
+`.env`/`.checkout` links and `installed.json` (`"adopted": true`), runs the
+probe, installs nothing:
+
+```
+just setup trellis2 --adopt-env ~/anaconda3/envs/trellis2 --adopt-checkout ~/src/TRELLIS.2
+just setup ardy     --adopt-env ~/src/ardy/.venv --adopt-checkout ~/src/ardy --adopt-text-encoders ~/src/text-encoders
+just setup skintokens --adopt-env ~/src/SkinTokens/.venv --adopt-checkout ~/src/SkinTokens
+```
+
+An adopted env without nvdiffrast is warned about, not refused. For one
+shell and no links at all, `FORGE_BACKEND_<NAME>_PYTHON=<prefix or python>`
+names the interpreter directly and wins over the link.
+
+### 3. Read the table — `just doctor`
+
+The door is `just doctor` (`--json` for a machine, `--quick` to skip the
+in-env probes; the MCP tool is `doctor`). **Exit 0 when every *chosen*
+backend is `ok`.** Five words per row:
+
+| Status | An `env` backend | A `comfy` backend | Do |
+|---|---|---|---|
+| `ok` | toml parses, checkout at its pin, the env python is the declared version, the probe imports everything and sees CUDA, every weight is on disk | the service answers at `comfy_url`, is at its pinned commit, lists every node class the description and its workflows name, every pack clone is at its pin, every weight is on disk | nothing |
+| `partial` | the env runs but a `FAIL` line names a weight, an import or CUDA that is missing | it answers and the packs are right, but a node class or a weight is absent — named, with its GB | the `hint:` under it is the exact command |
+| `missing` | no `.env` link: not installed | nothing is listening | `forge setup`, or `just setup <name>` |
+| `broken` | present but unusable: bad toml, no probe, the probe fails, the checkout gone | it answers as **another commit** than pinned, a pack is off its pin, or a tracked workflow names a class that does not exist | the check on the row says why; for a comfy row, `systemctl --user status forge-comfy.service` |
+| `off` | `[make]` did not choose the kind | the same | **nothing.** It was not probed and it is not a defect |
+
+An `off` row is printed with the line that turned it off — `off — [make]
+music = false` — and **never votes on the exit code**. A project at tier
+`fake` chooses nothing, so every row reads `off` and doctor exits 0. Each
+row also names its executor: `[env]`, `[comfy]` or `[tool]`.
 
 Lines under a row:
 
 - `warn checkout: <sha>; dirty (N tracked files modified)` — the clone is
-  not at the pinned commit, or has edits. A **warning, not an error**;
-  ACE-Step's is expected to be dirty (the soundfile patch and a trimmed
-  `pyproject`).
-- `warn notice: …` — a licence fact, printed every time on purpose.
-  **`nvdiffrast is non-commercial`** is the one that matters: TRELLIS.2's
-  texture bake runs through nvdiffrast 0.4.0 under the NVIDIA Source Code
-  License (1-Way Commercial), every lift record carries
-  `texture_baker: "nvdiffrast (NVIDIA Source Code License,
-  non-commercial)"`, and a commercial project
-  cannot ship a lifted texture until a replacement baker exists. The line
-  stays for as long as it is installed; it is not a defect to fix, it is a
-  decision to make before lifting. `Built with Meta Llama 3` is ARDY's
-  attribution; it ships in no asset.
-- `FAIL model:<id>: gated and absent: …` followed by two hints — the DINOv3
-  image conditioner, on a fresh `trellis2`:
-
-  ```
-  hint: accept the licence for facebook/dinov3-vitl16-pretrain-lvd1689m at https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m
-  hint: hf auth login --token <tok>   (no token at …/.cache/huggingface/token; never the interactive login — no TTY under an agent)
-  ```
-
-  Do exactly those two, in that order: accept on the model page with the
-  account the token belongs to, then `hf auth login --token <tok>` —
-  **never the interactive `hf auth login`**: under an agent's shell there
-  is no TTY, the prompt hangs or exits with nothing stored, and the env
-  builds fine only to fail on first load. `$HF_TOKEN` exported is the
-  zero-file alternative. The token is the user's; ask for it, do not
-  hunt for it.
+  not at the pinned commit, or has edits. A **warning, not an error**.
+- `warn notice: …` — a licence fact, printed every time on purpose. It is
+  not a defect to fix; it is a decision that was made and now travels.
+- `FAIL model:<id>: gated and absent: …` followed by two hints — the
+  DINOv3 login from step 2. Do exactly those two, in that order.
 - `hint: the env's torch cannot see the GPU: driver, CUDA build of torch,
-  or another process holding the card` — `nvidia-smi` first; then `just gpu`.
-- A `hint:` under a row that still reads `ok` is a hint, not a gate: the
-  generate will run. Act on it when it recurs — it usually names a link or
-  editable install that moved.
+  or another process holding the card` — `nvidia-smi` first, then `just gpu`.
 - `warn env:<KEY>: the shell's <KEY>=… shadows backend.toml's …` — an
-  ambient shell variable is overriding one of the backend's plain `[env]`
-  values for the inner process. A warning, not a failure; the values a run
-  cannot work without (trellis2's `CC`/`CXX`/`CUDAHOSTCXX`/`CUDA_HOME`)
-  are in `[env.force]` and cannot be shadowed. Unset the ambient variable
-  if the run misbehaves — `designs/hosting.md` has the trap, dated.
+  ambient shell variable is overriding a plain `[env]` value. A warning;
+  the values a run cannot work without are in `[env.force]` and cannot be
+  shadowed.
 - `gpu … warn: GPU busy: pid N <name> X GB` — somebody holds more than
   2 GB. Believe it.
 
@@ -136,100 +229,39 @@ forge-gen: missing_backend: ardy is not installed — generation through it is o
 forge-gen: hint: bash backends/ardy/install.sh  (or --adopt-env <prefix> --adopt-checkout <clone>)
 ```
 
-Exit 3. That hint is step 2.
-
-### 2. Install or adopt — `just setup <backend> [flags]`
-
-`just setup` with no name runs every `backends/*/install.sh` in turn with
-the same flags — after printing the ~80 GB disk bill and, without `--yes`,
-refusing with exit 2 (it names `--no-models` and the one-backend
-alternative). One at a time is easier to read. Installers are idempotent
-(`set -euo pipefail`, a finished env is a no-op) and every trap they encode
-is dated in `designs/hosting.md`. Common flags:
-
-| Flag | Does |
-|---|---|
-| `--prefix DIR` | where the env and clone go (default `$FORGE_BACKENDS_HOME` or `~/.cache/asset-forge/backends/<name>`) |
-| `--adopt-env DIR` | link an existing interpreter prefix (a conda env or a venv) instead of making one |
-| `--adopt-checkout DIR` | link an existing upstream clone instead of cloning |
-| `--adopt-text-encoders DIR` | `ardy`: link an assembled text-encoder directory |
-| `--adopt-checkpoints DIR` | `acestep`: link a checkpoints directory |
-| `--no-models` | skip the weight downloads; doctor says `partial` until the first run fetches them |
-| `--yes` | accept every licence prompt without a TTY — nvdiffrast (`trellis2`), Llama 3 (`ardy`). The text prints either way |
-| `--all-models` | `acestep` only: the two XL DiTs, ~38 GB, that nothing here asks for |
-
-**Fresh machine**, in the order that fails fastest and downloads least:
-
-```
-just setup ardy --yes
-just setup moss_sfx
-just setup moss_tts
-just setup acestep
-just setup trellis2 --yes
-```
-
-`trellis2` last: it is the conda env, the CUDA toolkit from the label
-channel, gcc 13, torch cu124, four CUDA extensions and — after the licence
-is printed — nvdiffrast. Without `--yes` and without a TTY the installer
-stops at that prompt on purpose: `this needs consent: re-run with --yes
-after reading the text above`. Declining leaves the env without a texture
-bake: doctor says `partial`, `forge gen mesh` exits 6. **Say what `--yes`
-accepts before passing it**; it is the user's licence decision, not yours.
-Then the gated login from step 1.
-
-**A machine that already has the envs** (one that ran the previous
-toolkit, or your own): do not rebuild, link. Adopting writes the
-`.env`/`.checkout` links and `installed.json` (`"adopted": true`), runs the
-probe, installs nothing:
-
-```
-just setup trellis2 --adopt-env ~/anaconda3/envs/trellis2 --adopt-checkout ~/src/TRELLIS.2
-just setup ardy     --adopt-env ~/src/ardy/.venv --adopt-checkout ~/src/ardy --adopt-text-encoders ~/src/text-encoders
-just setup acestep  --adopt-env ~/src/ACE-Step-1.5/.venv --adopt-checkout ~/src/ACE-Step-1.5 --adopt-checkpoints ~/src/ACE-Step-1.5/checkpoints
-just setup moss_tts --adopt-env ~/src/MOSS-TTS/.venv --adopt-checkout ~/src/MOSS-TTS
-just setup moss_sfx --adopt-env ~/src/MOSS-TTS/moss_soundeffect_v2/.venv --adopt-checkout ~/src/MOSS-TTS/moss_soundeffect_v2
-```
-
-An adopted env without nvdiffrast is warned about, not refused
-(`the adopted env has no nvdiffrast — the texture bake is unavailable`).
-For one shell and no links at all, `FORGE_BACKEND_<NAME>_PYTHON=<prefix or
-python>` names the interpreter directly and wins over the link.
-
-### 3. Read the table again — `just doctor`
-
-Every row `ok`, the nvdiffrast and Llama 3 notices still there (they do
-not go away; they are not supposed to), exit 0. A `partial` that names a
-weight with `the first run downloads …` is allowed to stay partial until
-the first generate if the user would rather pay then.
+Exit 3.
 
 ### 4. The GPU — `just gpu`
 
 ```
 gpu       NVIDIA GeForce RTX 4090  3413 / 24564 MiB in use, 21151 MiB free
 holding   pid 140003 2.5 GB  <process>
-largest   trellis2 needs 22 GB (22528 MiB): does NOT fit — stop what holds the card before a generate
+largest   qwen_image needs 24 GB (24576 MiB): does NOT fit — stop what holds the card before a generate
 ```
 
-Exit 1 when the largest backend would not fit in what is free, naming who
-holds the rest. The free card reads `769 / 24564 MiB in use, 23795 MiB
-free`, `holding   nobody`, `largest   trellis2 needs 22 GB (22528 MiB):
-fits`, exit 0. One 24 GB card, a desktop resident (~0.8 GB), and these do
-not share it:
+Exit 1 when the largest chosen backend would not fit in what is free,
+naming who holds the rest. One card, a desktop resident (~0.8 GB), and
+these do not share it. **Peaks measured 2026-08-30, `nvidia-smi` at 10 Hz**
+— the rows marked *budget* are estimates nobody has sampled, and a
+`backend.toml`'s `vram_gb` is always a budget:
 
 | Backend | VRAM | Resident after the call? |
 |---|---|---|
-| `trellis2` at 1024³ | ~22 GB — alone | no |
-| `trellis2` at 512³ | completes beside the desktop; peak not measured | no |
-| `ardy` sweep | ~16 GB | no |
-| `acestep` server | ~8–10 GB | **yes**, until `forge gen music --stop-server` |
-| `moss_tts` (4B) | ~12 GB | no |
-| `moss_sfx` | ~6–8 GB | no |
+| `qwen_image` fp8 at 1024² | **23.3 GB measured** — alone | no; `POST /free` returns it |
+| `qwen_image` Q4 GGUF (lean) | **16.2 GB measured** — alone | no |
+| `ardy` sweep | **15.4 GB measured** | no |
+| `trellis2` at 1024³ | **4.7 GB measured** | no |
+| `skintokens` skin-only | **3.3–4.4 GB measured** | no |
+| `moss_tts` (4B) | ~12 GB (budget) | no |
+| `moss_sfx` | ~6–8 GB (budget) | no |
+| `acestep` | ~8 GB (budget) | no |
+| the `comfy` unit, idle | ~0.4 GB of CUDA context | **yes**, until the unit stops |
 | studio viewer on the real adapter | small; not measured | while open |
 
-`holding pid N 10.4 GB …/backends/acestep/.env/bin/python` is the usual
-answer and `target/debug/forge gen music --stop-server` the usual fix.
-Never two generates at once; never one while a studio window with a model
-loaded is up on the real adapter; never 1536³ on 24 GB.
+The usual fix is `systemctl --user stop forge-comfy` (the host holds
+whatever a workflow last loaded until its unload node or `POST /free`), or
+closing the studio. Never two generates at once; never one while a studio
+window with a model loaded is up on the real adapter; never 1536³ on 24 GB.
 
 ## The traps (the why is in `designs/hosting.md`, dated; read it before fighting one)
 
@@ -253,15 +285,19 @@ loaded is up on the real adapter; never 1536³ on 24 GB.
   hand-assembled (Llama-3-8B-Instruct from an ungated mirror, the LLM2Vec
   MNTP adapter merged, the supervised adapter's base path rewritten) —
   `assemble_text_encoder.py` does all three; ~31 GB.
-- **`acestep`:** torchaudio segfaults against the system glib, so the
-  clone is patched to `soundfile` (the dirty checkout doctor notes); it is
-  a server on `127.0.0.1:8001`, `/health` to probe, first start loads for
-  minutes; `ACESTEP_CHECKPOINTS_DIR` or it downloads into its own tree.
-- **`moss_sfx` / `moss_tts`:** one clone, two venvs (the effect model pins a
-  different torch); `TORCHDYNAMO_DISABLE=1` for effects or the first call
-  compiles the DiT for minutes and loses it with the process;
-  `enable_cudnn_sdp(False)` for speech (a broken kernel); the 8B Delay
-  model OOMs, the 4B is what runs.
+- **The three audio backends run inside the ComfyUI host**, so they have no
+  venv of their own and no server of their own to stop: ACE-Step is native
+  in the host, MOSS speaks through TTS-Audio-Suite, and what holds the card
+  is the unit — `systemctl --user stop forge-comfy`, or the workflow's
+  unload node, or `POST /free`. The 8B MOSS Delay model still OOMs; the 4B
+  is what runs.
+- **`comfy`:** a systemd `--user` unit on `127.0.0.1:8188`, started with
+  `--base-directory` (without it the service writes into the clone and
+  finds no models), `--disable-api-nodes` (no node can call a paid API) and
+  `--enable-manager`. `snapshot.json` beside `backend.toml` is the
+  Manager's own answer — re-fetch it, never hand-edit it. A pack clone off
+  its pin, or a workflow naming a class the service does not list, is
+  `broken`, not `partial`: no download fixes either.
 - **Blender:** only rig, export and prop-normalize need it; `just ci`
   does not. `*.blend1` is a backup, not a source. glTF export is not
   byte-stable across versions — bodies and models claim integrity only.
@@ -280,14 +316,20 @@ loaded is up on the real adapter; never 1536³ on 24 GB.
 
 | Seen | Consequence | Fix |
 |---|---|---|
-| `missing_backend: <name> is not installed`, exit 3 | no GPU work attempted | `just setup <name>` or the `--adopt-*` line in the hint |
+| `missing_backend: <name> is not installed`, exit 3 | no GPU work attempted | `forge setup`, `just setup <name>`, or the `--adopt-*` line in the hint |
+| `refused: nothing was installed. N licence(s) here need accepting by name` | `setup` did nothing at all | read them (`forge setup --dry-run`, or the MCP `licences`), then `--yes <id>` / `accept: [<id>]` for each |
+| a bare `--yes` refused | intentional | name the ids: `--yes nvdiffrast --yes dinov3` |
+| a row reads `off` | the kind was not chosen; it was never probed | nothing, unless they meant to choose it — then `[make]` in `forge.toml`, or `init_project` with `adopt: true` |
+| doctor exits 0 with rows that are not `ok` | those rows are `off` | correct. `off` never votes |
+| a comfy row reads `missing` | the service is not listening | `systemctl --user start forge-comfy`, then `systemctl --user status forge-comfy` |
+| a comfy row reads `broken` naming a commit | the running clone is not the pinned one | `git -C <clone> checkout <pin>`, or update `backend.toml`'s commit knowingly |
 | `<link> has no bin/python — the install did not finish, or the environment moved` | `broken` | re-run the installer, or `--adopt-env` the env's new home |
 | `<name> runs from its upstream checkout, and … is not there` | `broken` | `--adopt-checkout`, or re-run the installer |
 | `this needs consent: re-run with --yes after reading the text above (no TTY to ask)` | the nvdiffrast or Llama 3 prompt with no TTY | tell the user what it accepts; `--yes` only when they say so |
 | `FAIL model:… gated and absent` | a lift cannot start | the two hints: accept on the page, `hf auth login --token <tok>` |
 | `the env's torch cannot see the GPU` | driver, torch build or the card is held | `nvidia-smi`, then `just gpu` |
 | `warn checkout: … is not the pinned …` | the clone moved; doctor warns, generation runs | fine for a knowing user; the record carries the commit it ran at |
-| `GPU busy: pid N …` / `does NOT fit` | the next generate OOMs, not queues | stop the holder (`--stop-server`, close the studio); wait for the other generate |
+| `GPU busy: pid N …` / `does NOT fit` | the next generate OOMs, not queues | stop the holder (`systemctl --user stop forge-comfy`, close the studio); wait for the other generate |
 | `hint: set FORGE_BACKENDS or run from a toolkit checkout` | run from a project that names no backends dir | `forge.toml [backends] dir`, or `FORGE_BACKENDS=<checkout>/backends` |
 | doctor `partial` after `--no-models` | intended | the first generate downloads; or re-run the installer without it |
 
@@ -311,3 +353,12 @@ beside it. Commit only when the user asks.
   `--no-models` defers, it does not avoid.
 - `just doctor` describes this machine; it is not part of `just ci`, and a
   CI runner is not this machine.
+- The disk figures are read out of `backends/README.md` and
+  `backends/comfy/backend.toml`; the VRAM figures marked *measured* are
+  `nvidia-smi` at 10 Hz on one 24 GB card on 2026-08-30. **No `vram_gb` in
+  any `backend.toml` is a measurement** — it is a budget `just gpu` sizes
+  the card against, kept conservative. Never re-quote one as a fact.
+- No number here was taken on a real 16 GB part. The `lean` column was
+  measured under a cap on a 24 GB card, and a real 16 GB part has roughly
+  15.0–15.5 GB usable once its own context and a desktop are resident;
+  `ardy` at 15.4 GB is marginal on one.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -23,6 +24,23 @@ def test_help_lists_every_command():
     assert done.returncode == 0
     for name in ("sweep", "keys", "review"):
         assert name in done.stdout
+
+
+def test_help_never_imports_torch(tmp_path):
+    """The outer half runs under the system python and stays stdlib-only.
+
+    `--help` — and `doctor --help`, which is the one a stranger types first
+    — must not reach for a backend's environment. The guard is a `torch`
+    that explodes on import, first on the path: if anything the outer half
+    touches imports it, the help exits non-zero and says so, which is the
+    fastest possible way to learn that a new import crept into the launcher.
+    """
+    (tmp_path / "torch.py").write_text("raise ImportError('the outer half must not import torch')\n")
+    env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{PYTHON_DIR}"}
+    for argv in (("--help",), ("doctor", "--help"), ("motion", "--help")):
+        done = _run(*argv, env=env)
+        assert done.returncode == 0, f"{argv}: {done.stderr}"
+        assert "torch" not in done.stderr
 
 
 def test_no_command_is_usage():
