@@ -15,6 +15,7 @@
 //! asset root, `takes/`, `refs/` and `blender/` under the sources, and the
 //! scratch subdirectories under `out/`.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -85,6 +86,13 @@ struct ForgeToml {
     studio: StudioSection,
     #[serde(default)]
     backends: BackendsSection,
+    /// What this project makes. Absent means every kind — see [`MakeKinds`].
+    #[serde(default)]
+    make: Option<MakeKinds>,
+    /// What card it runs on, and where the comfy host is. Absent means
+    /// detect the tier — see [`Hardware`].
+    #[serde(default)]
+    hardware: Option<Hardware>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,6 +198,13 @@ pub struct Project {
     pub backends_dir: Option<PathBuf>,
     /// Per-backend interpreter overrides from `[backends.interpreters]`.
     pub backend_interpreters: std::collections::BTreeMap<String, String>,
+    /// What this project makes, from `[make]`. A `forge.toml` written before
+    /// the table existed reads as every kind chosen, so no existing
+    /// project's doctor goes quiet.
+    pub make: MakeKinds,
+    /// What card it runs on and where the comfy host is, from `[hardware]`.
+    /// A file that does not say reads as "detect the tier".
+    pub hardware: Hardware,
 }
 
 impl Project {
@@ -247,6 +262,10 @@ impl Project {
             stage_body: parsed.studio.stage_body,
             backends_dir: parsed.backends.dir.map(|dir| root.join(dir)),
             backend_interpreters: parsed.backends.interpreters,
+            // No table is every kind, and a tier to be detected: a project
+            // written before this phase must not lose a doctor row.
+            make: parsed.make.unwrap_or_default(),
+            hardware: parsed.hardware.unwrap_or_default(),
             root,
         })
     }
@@ -264,6 +283,21 @@ impl Project {
     /// project would rewrite a file somebody edited — and fails when a
     /// directory or the file cannot be created.
     pub fn init(root: &Path, name: &str) -> Result<Self> {
+        Self::init_with(root, name, MakeKinds::default(), &Hardware::default())
+    }
+
+    /// [`Self::init`] with the three questions already answered: what you
+    /// make, what card this is, where `ComfyUI` is.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::init`].
+    pub fn init_with(
+        root: &Path,
+        name: &str,
+        make: MakeKinds,
+        hardware: &Hardware,
+    ) -> Result<Self> {
         let marker = root.join(PROJECT_FILE);
         if marker.exists() {
             return Err(LibraryError::rejected(format!(
@@ -298,7 +332,12 @@ impl Project {
              # stage_body = \"vex_runner\"    # the body clips are posed on by default\n\
              \n\
              [backends]\n\
-             # dir = \"/path/to/asset-forge/backends\"   # defaults to the toolkit's own\n"
+             # dir = \"/path/to/asset-forge/backends\"   # defaults to the toolkit's own\n\
+             \n\
+             {make}\n\
+             {hardware}",
+            make = make.to_toml(),
+            hardware = hardware.to_toml(),
         );
         crate::write_atomic(&marker, text.as_bytes())?;
         let project = Self::load(root)?;
@@ -333,6 +372,46 @@ impl Project {
         forge_rig::RigProfile::load(source_dir)?;
         let target = self.rig_dir();
         copy_tree(source_dir, &target)
+    }
+
+    /// Rewrite **only** `[make]` and `[hardware]` in this project's
+    /// `forge.toml`, leaving every other line — including the comments
+    /// somebody wrote — exactly as it was.
+    ///
+    /// This is what `init --adopt` (and the MCP `init_project` with
+    /// `adopt: true`) does to a directory that is already a project: the
+    /// answers to the three questions are re-given, and nothing else is
+    /// touched. Both tables are replaced whole rather than patched key by
+    /// key, so a half-written table cannot survive an adopt.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the file cannot be read or written, or when what is
+    /// written back does not load.
+    pub fn set_make_hardware(&self, make: MakeKinds, hardware: &Hardware) -> Result<Self> {
+        let path = self.root.join(PROJECT_FILE);
+        let text = crate::read_to_string(&path)?;
+        let kept = strip_tables(&text, &["make", "hardware"]);
+        let mut out = kept.trim_end().to_string();
+        out.push_str("\n\n");
+        out.push_str(&make.to_toml());
+        out.push('\n');
+        out.push_str(&hardware.to_toml());
+        crate::write_atomic(&path, out.as_bytes())?;
+        Self::load(&self.root)
+    }
+
+    /// The tier in force: what `[hardware]` says, else what the card says.
+    #[must_use]
+    pub fn tier(&self) -> Tier {
+        self.hardware.tier()
+    }
+
+    /// Every backend the chosen kinds need — what doctor is told to hold to
+    /// `ok`, and what `setup` installs. See [`MakeKinds::backends`].
+    #[must_use]
+    pub fn chosen_backends(&self) -> Vec<&'static str> {
+        self.make.backends()
     }
 
     /// The rig profile directory: `<rigs>/<rig_name>`.
@@ -418,6 +497,1038 @@ impl Project {
     }
 }
 
+// ---------------------------------------------------- what you make, on what --
+
+/// One of the six things a project can make.
+///
+/// This is the vocabulary of `[make]`, and the only vocabulary the stranger
+/// meets: `forge init` asks what you will make, never which models you want,
+/// because a model name is a fact about this month's backends and
+/// "characters" is a fact about the game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MakeKind {
+    /// Static props: a lift, normalised in Blender.
+    Props,
+    /// Rigged characters: a lift, prepared, skinned to the rig profile.
+    Characters,
+    /// Animation clips.
+    Clips,
+    /// Sound effects.
+    Sfx,
+    /// Music.
+    Music,
+    /// Spoken lines, and the voices they are cloned from.
+    Voice,
+}
+
+impl MakeKind {
+    /// Every kind, in the order `[make]` writes them and doctor lists them.
+    pub const ALL: [Self; 6] = [
+        Self::Props,
+        Self::Characters,
+        Self::Clips,
+        Self::Sfx,
+        Self::Music,
+        Self::Voice,
+    ];
+
+    /// The word `forge.toml` and `--make` spell it with.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Props => "props",
+            Self::Characters => "characters",
+            Self::Clips => "clips",
+            Self::Sfx => "sfx",
+            Self::Music => "music",
+            Self::Voice => "voice",
+        }
+    }
+
+    /// The kind that word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        let word = word.trim().to_ascii_lowercase();
+        Self::ALL.into_iter().find(|kind| kind.as_str() == word)
+    }
+
+    /// **The kind → backend map, one fact in one place.** What this kind
+    /// cannot be made without, before `+ comfy` is added for any backend the
+    /// `comfy` executor hosts (see [`MakeKinds::backends`]).
+    ///
+    /// The same fact each `backend.toml` states with `executor =`; the file
+    /// is what doctor renders a row from, and this table is what `init`,
+    /// `licences` and `setup` reason about *before* a backend directory
+    /// exists on the machine at all.
+    #[must_use]
+    pub const fn backends(self) -> &'static [&'static str] {
+        match self {
+            Self::Props => &["trellis2", "qwen_image"],
+            Self::Characters => &["trellis2", "skintokens", "qwen_image"],
+            Self::Clips => &["ardy"],
+            Self::Sfx => &["moss_sfx"],
+            Self::Music => &["acestep"],
+            Self::Voice => &["moss_tts"],
+        }
+    }
+
+    /// One line for the stranger: what choosing this gets them.
+    #[must_use]
+    pub const fn blurb(self) -> &'static str {
+        match self {
+            Self::Props => "static props from a reference image",
+            Self::Characters => "rigged characters from a reference image",
+            Self::Clips => "animation clips from a prompt",
+            Self::Sfx => "sound effects from a prompt",
+            Self::Music => "music from a prompt",
+            Self::Voice => "spoken lines, in a voice you design",
+        }
+    }
+}
+
+impl std::fmt::Display for MakeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Which executor runs a backend: the `env` launcher this repo has always
+/// had, the `ComfyUI` service over HTTP, or a host program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Executor {
+    /// A per-backend interpreter and checkout the launcher execs.
+    Env,
+    /// A workflow posted to the `ComfyUI` service at `[hardware] comfy_url`.
+    Comfy,
+    /// A host program (Blender), or a service described so it has a row.
+    Tool,
+}
+
+impl Executor {
+    /// The word `backend.toml` spells it with.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Env => "env",
+            Self::Comfy => "comfy",
+            Self::Tool => "tool",
+        }
+    }
+
+    /// The executor that word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        match word {
+            "env" => Some(Self::Env),
+            "comfy" => Some(Self::Comfy),
+            "tool" => Some(Self::Tool),
+            _ => None,
+        }
+    }
+}
+
+/// The host every `comfy` backend needs, added to the chosen set whenever
+/// one of them is chosen.
+pub const COMFY_BACKEND: &str = "comfy";
+
+/// One backend a kind can need: which executor runs it, what it costs on
+/// disk, and which licences it carries.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BackendNeed {
+    /// The directory name under `backends/`.
+    pub name: &'static str,
+    /// Who runs it.
+    pub executor: Executor,
+    /// Approximate disk, in GB, for the environment, the clone and the
+    /// weights together. See [`Self::disk_note`] for where each number came
+    /// from. None of these is a VRAM figure: a `vram_gb` is a budget and is
+    /// never quoted as a measurement (`designs/decisions.md`, 2026-08-30).
+    pub disk_gb: f64,
+    /// Where the disk number came from, so nobody re-quotes an estimate as
+    /// a measurement.
+    pub disk_note: &'static str,
+    /// The licence ids this backend carries, by [`Licence::id`].
+    pub licences: &'static [&'static str],
+}
+
+/// Every backend the six kinds can need, with its executor, its disk and
+/// its licences. The counterpart to [`MakeKind::backends`]: that says which
+/// backends a kind needs, this says what each backend costs and carries.
+pub const BACKEND_NEEDS: [BackendNeed; 8] = [
+    BackendNeed {
+        name: "trellis2",
+        executor: Executor::Env,
+        disk_gb: 20.0,
+        disk_note: "conda env (CUDA 12.4) + TRELLIS.2-4B + DINOv3 — backends/README.md",
+        licences: &["nvdiffrast", "dinov3"],
+    },
+    BackendNeed {
+        name: "skintokens",
+        executor: Executor::Env,
+        disk_gb: 3.0,
+        disk_note: "venv + clone + ~1.6 GB of weights — backends/README.md",
+        licences: &["skintokens_encoder"],
+    },
+    BackendNeed {
+        name: "ardy",
+        executor: Executor::Env,
+        disk_gb: 35.0,
+        disk_note: "venv + clone + the assembled Llama-3/LLM2Vec encoder — backends/README.md",
+        licences: &["llama3"],
+    },
+    BackendNeed {
+        name: "qwen_image",
+        executor: Executor::Comfy,
+        disk_gb: 33.6,
+        disk_note: "Qwen-Image fp8 20.43 + text encoder 9.38 + VAE 0.25 + ControlNet-Union \
+                    3.54 — backends/comfy/backend.toml (lean substitutes the 13.07 GB \
+                    Q4_K_M GGUF for the fp8 model)",
+        licences: &[],
+    },
+    BackendNeed {
+        name: "moss_sfx",
+        executor: Executor::Comfy,
+        disk_gb: 11.0,
+        disk_note: "MOSS-SoundEffect-v2 weights — backends/README.md",
+        licences: &[],
+    },
+    BackendNeed {
+        name: "acestep",
+        executor: Executor::Comfy,
+        disk_gb: 7.5,
+        disk_note: "the minimal ACE-Step 1.5 model set — backends/README.md",
+        licences: &[],
+    },
+    BackendNeed {
+        name: "moss_tts",
+        executor: Executor::Comfy,
+        disk_gb: 12.0,
+        disk_note: "MOSS-TTS 4B ~8 GB + MOSS-VoiceGenerator ~4 GB — backends/README.md",
+        licences: &[],
+    },
+    BackendNeed {
+        name: COMFY_BACKEND,
+        executor: Executor::Tool,
+        disk_gb: 2.0,
+        disk_note: "venv + the pinned ComfyUI clone and its one node pack; an estimate, \
+                    not a measurement — the models it hosts are counted against the \
+                    backends that name them",
+        licences: &["comfyui_gpl"],
+    },
+];
+
+/// What one backend needs, by name.
+#[must_use]
+pub fn backend_need(name: &str) -> Option<&'static BackendNeed> {
+    BACKEND_NEEDS.iter().find(|need| need.name == name)
+}
+
+/// The `[make]` table: which of the six a project makes.
+///
+/// An absent table reads as every kind — a `forge.toml` written before the
+/// table existed must not go quiet, and a project that says nothing wants
+/// everything checked. A *present* table states each kind, so an unstated
+/// one is off; `forge init` always writes all six.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MakeKinds {
+    /// Static props.
+    #[serde(default)]
+    pub props: bool,
+    /// Rigged characters.
+    #[serde(default)]
+    pub characters: bool,
+    /// Animation clips.
+    #[serde(default)]
+    pub clips: bool,
+    /// Sound effects.
+    #[serde(default)]
+    pub sfx: bool,
+    /// Music.
+    #[serde(default)]
+    pub music: bool,
+    /// Spoken lines.
+    #[serde(default)]
+    pub voice: bool,
+}
+
+impl Default for MakeKinds {
+    /// Every kind — what an absent `[make]` means.
+    fn default() -> Self {
+        Self::all()
+    }
+}
+
+impl MakeKinds {
+    /// What `forge init` offers when nobody answers: the three the toolkit's
+    /// own library is made of.
+    pub const DEFAULT: Self = Self {
+        props: true,
+        characters: true,
+        clips: true,
+        sfx: false,
+        music: false,
+        voice: false,
+    };
+
+    /// Every kind chosen — `--make all`, and what an absent `[make]` reads as.
+    #[must_use]
+    pub const fn all() -> Self {
+        Self {
+            props: true,
+            characters: true,
+            clips: true,
+            sfx: true,
+            music: true,
+            voice: true,
+        }
+    }
+
+    /// Nothing chosen — `--make none`, and what tier `fake` chooses.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            props: false,
+            characters: false,
+            clips: false,
+            sfx: false,
+            music: false,
+            voice: false,
+        }
+    }
+
+    /// Whether one kind is chosen.
+    #[must_use]
+    pub const fn has(&self, kind: MakeKind) -> bool {
+        match kind {
+            MakeKind::Props => self.props,
+            MakeKind::Characters => self.characters,
+            MakeKind::Clips => self.clips,
+            MakeKind::Sfx => self.sfx,
+            MakeKind::Music => self.music,
+            MakeKind::Voice => self.voice,
+        }
+    }
+
+    /// Choose or unchoose one kind.
+    pub const fn set(&mut self, kind: MakeKind, on: bool) {
+        match kind {
+            MakeKind::Props => self.props = on,
+            MakeKind::Characters => self.characters = on,
+            MakeKind::Clips => self.clips = on,
+            MakeKind::Sfx => self.sfx = on,
+            MakeKind::Music => self.music = on,
+            MakeKind::Voice => self.voice = on,
+        }
+    }
+
+    /// The chosen kinds, in [`MakeKind::ALL`] order.
+    #[must_use]
+    pub fn chosen(&self) -> Vec<MakeKind> {
+        MakeKind::ALL
+            .into_iter()
+            .filter(|kind| self.has(*kind))
+            .collect()
+    }
+
+    /// Whether nothing at all is chosen — every doctor row reads `off`.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.chosen().is_empty()
+    }
+
+    /// **The chosen backend set**: every backend the chosen kinds need, plus
+    /// [`COMFY_BACKEND`] when any of them is hosted by the `comfy` executor.
+    /// Sorted, deduplicated — this is what `forge gen doctor --chosen` is
+    /// handed, and what decides which rows may vote on the exit code.
+    #[must_use]
+    pub fn backends(&self) -> Vec<&'static str> {
+        let mut names: Vec<&'static str> = Vec::new();
+        for kind in self.chosen() {
+            for name in kind.backends() {
+                if !names.contains(name) {
+                    names.push(name);
+                }
+            }
+        }
+        if names
+            .iter()
+            .any(|name| backend_need(name).map(|need| need.executor) == Some(Executor::Comfy))
+            && !names.contains(&COMFY_BACKEND)
+        {
+            names.push(COMFY_BACKEND);
+        }
+        names.sort_unstable();
+        names
+    }
+
+    /// Read a `--make` value: `all`, `none`, or a comma-separated list of
+    /// kinds. The error names every word that would have worked, because a
+    /// refusal that does not is a second turn.
+    ///
+    /// # Errors
+    ///
+    /// [`LibraryError::Rejected`] naming the unknown word and the six kinds.
+    pub fn parse_list(value: &str) -> Result<Self> {
+        let value = value.trim();
+        if value.eq_ignore_ascii_case("all") {
+            return Ok(Self::all());
+        }
+        if value.is_empty() || value.eq_ignore_ascii_case("none") {
+            return Ok(Self::none());
+        }
+        let mut make = Self::none();
+        for word in value.split(',').map(str::trim).filter(|w| !w.is_empty()) {
+            let kind = MakeKind::parse(word).ok_or_else(|| {
+                LibraryError::rejected(format!(
+                    "{word:?} is not something this makes — use one or more of {}, or all, or none",
+                    MakeKind::ALL
+                        .iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            })?;
+            make.set(kind, true);
+        }
+        Ok(make)
+    }
+
+    /// The `[make]` table as `forge.toml` writes it, comments and all.
+    #[must_use]
+    pub fn to_toml(&self) -> String {
+        let mut out = String::from(
+            "[make]\n\
+             # What you make here. Everything after reads this: `forge setup` installs\n\
+             # only what a chosen kind needs, and `forge doctor` prints `off` for a kind\n\
+             # you did not choose rather than probing it.\n",
+        );
+        for kind in MakeKind::ALL {
+            let _ = writeln!(
+                out,
+                "{:<11}= {:<6}# {}",
+                kind.as_str(),
+                self.has(kind),
+                kind.backends().join(" + ")
+            );
+        }
+        out
+    }
+}
+
+// --------------------------------------------------------- what card is this --
+
+/// Which register the generators run in. Tiers change registers and
+/// variants, never features.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    /// A 24 GB card: every model in its full register.
+    Full,
+    /// A 16 GB card: the `Q4_K_M` GGUF reference model and `MOSS-TTS` 1.7B.
+    /// **Lifts at 1024³ like the full tier** — a 1024³ lift measured 4.7 GB
+    /// (`designs/decisions.md`, 2026-08-30), and 512³ costs the face.
+    Lean,
+    /// No card: `FORGE_FAKE=1` as a first-class answer. Every `forge gen`
+    /// writes branded placeholders through the same doors and validators.
+    Fake,
+}
+
+impl Tier {
+    /// Every tier, in the order the prompt offers them.
+    pub const ALL: [Self; 3] = [Self::Full, Self::Lean, Self::Fake];
+
+    /// A card of at least this many MiB is [`Tier::Full`].
+    pub const FULL_MIB: u64 = 22 * 1024;
+    /// A card of at least this many MiB is [`Tier::Lean`].
+    pub const LEAN_MIB: u64 = 14 * 1024;
+
+    /// The word `forge.toml` and `--tier` spell it with.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Lean => "lean",
+            Self::Fake => "fake",
+        }
+    }
+
+    /// The tier that word names.
+    ///
+    /// # Errors
+    ///
+    /// [`LibraryError::Rejected`] naming the three words.
+    pub fn parse(word: &str) -> Result<Self> {
+        let word = word.trim().to_ascii_lowercase();
+        Self::ALL
+            .into_iter()
+            .find(|tier| tier.as_str() == word)
+            .ok_or_else(|| {
+                LibraryError::rejected(format!(
+                    "{word:?} is not a tier — full (24 GB), lean (16 GB) or fake (no card)"
+                ))
+            })
+    }
+
+    /// One line for the stranger.
+    #[must_use]
+    pub const fn blurb(self) -> &'static str {
+        match self {
+            Self::Full => "a 24 GB card: every model in its full register",
+            Self::Lean => {
+                "a 16 GB card: the Q4_K_M reference model and MOSS-TTS 1.7B; \
+                 lifts at 1024 cubed like full"
+            }
+            Self::Fake => {
+                "no card: every generator writes a branded placeholder through \
+                 the same validators"
+            }
+        }
+    }
+
+    /// Whether this tier means `FORGE_FAKE=1`.
+    #[must_use]
+    pub const fn is_fake(self) -> bool {
+        matches!(self, Self::Fake)
+    }
+
+    /// The tier this machine's card suggests: the largest card `nvidia-smi`
+    /// reports, held against [`Self::FULL_MIB`] and [`Self::LEAN_MIB`]. No
+    /// `nvidia-smi`, no card, or a card too small is [`Tier::Fake`].
+    ///
+    /// Offered, never assumed: `forge init` prints what it detected and lets
+    /// the answer be overridden, because the card that is busy today is
+    /// still the card this project runs on.
+    #[must_use]
+    pub fn detect() -> Self {
+        Self::from_total_mib(largest_gpu_mib())
+    }
+
+    /// The tier a card of this size is, for a caller that already asked the
+    /// driver. `None` is no card at all.
+    #[must_use]
+    pub fn from_total_mib(total_mib: Option<u64>) -> Self {
+        match total_mib {
+            Some(mib) if mib >= Self::FULL_MIB => Self::Full,
+            Some(mib) if mib >= Self::LEAN_MIB => Self::Lean,
+            _ => Self::Fake,
+        }
+    }
+}
+
+impl std::fmt::Display for Tier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The largest card `nvidia-smi` reports, in MiB. `None` when the program is
+/// not there, does not answer, or lists no GPU — all of which mean the same
+/// thing to a tier.
+fn largest_gpu_mib() -> Option<u64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u64>().ok())
+        .max()
+}
+
+/// Where the `ComfyUI` service answers when nobody says otherwise.
+pub const DEFAULT_COMFY_URL: &str = "http://127.0.0.1:8188";
+
+/// The `[hardware]` table: the register, and where the comfy host is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hardware {
+    /// The tier as the file states it. `None` means the file did not say, so
+    /// it is [`Tier::detect`]ed — which is what a `forge.toml` written
+    /// before this table reads as.
+    #[serde(default)]
+    pub tier: Option<Tier>,
+    /// Where the `ComfyUI` service answers. Another machine's is fine: the
+    /// `env` backends and Blender stay local.
+    #[serde(default = "default_comfy_url")]
+    pub comfy_url: String,
+}
+
+fn default_comfy_url() -> String {
+    String::from(DEFAULT_COMFY_URL)
+}
+
+impl Default for Hardware {
+    fn default() -> Self {
+        Self {
+            tier: None,
+            comfy_url: default_comfy_url(),
+        }
+    }
+}
+
+impl Hardware {
+    /// The tier in force: what the file says, else what the card says.
+    #[must_use]
+    pub fn tier(&self) -> Tier {
+        self.tier.unwrap_or_else(Tier::detect)
+    }
+
+    /// The `[hardware]` table as `forge.toml` writes it.
+    #[must_use]
+    pub fn to_toml(&self) -> String {
+        let tier = self.tier.unwrap_or(Tier::Full);
+        format!(
+            "[hardware]\n\
+             # Detected from the card and overridable. Tiers change registers and\n\
+             # variants, never features: lean runs the reference image model quantised\n\
+             # and MOSS-TTS at 1.7B, and lifts at 1024 cubed exactly like full.\n\
+             tier = {:?}     # {}\n\
+             comfy_url = {:?}   # where the ComfyUI service answers; another machine's is fine\n",
+            tier.as_str(),
+            tier.blurb(),
+            self.comfy_url
+        )
+    }
+}
+
+// ------------------------------------------------------------------ licences --
+
+/// One licence fact a backend carries, as the stranger is shown it.
+///
+/// [`Self::terms`] is the whole notice — the same words `install.sh` prints
+/// and the CLI asks about, not a summary of them — because neither a human
+/// nor an agent can accept what it was not shown. Where the complete legal
+/// text runs longer than a screen, the notice quotes the operative clause
+/// verbatim and [`Self::full_text`] names where the rest lives; that is the
+/// form this repo's installers have used since the first one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Licence {
+    /// The id `--yes <id>` and the MCP `accept: [...]` name it by.
+    pub id: &'static str,
+    /// What it is called.
+    pub name: &'static str,
+    /// The backend that carries it.
+    pub backend: &'static str,
+    /// Whether nothing installs until this one is accepted by name. `false`
+    /// is a fact to be told, not a bargain to be struck.
+    pub needs_accept: bool,
+    /// The notice, in full.
+    pub terms: &'static str,
+    /// Where the complete text is.
+    pub full_text: &'static str,
+}
+
+/// The five licence facts the six kinds can carry.
+pub const LICENCES: [Licence; 5] = [
+    Licence {
+        id: "nvdiffrast",
+        name: "NVIDIA Source Code License (1-Way Commercial)",
+        backend: "trellis2",
+        needs_accept: true,
+        terms: "nvdiffrast 0.4.0 — NVIDIA Source Code License (1-Way Commercial)\n\
+                \n\
+                TRELLIS.2's texture bake (o_voxel.postprocess.to_glb) rasterises through\n\
+                nvdiffrast. Nothing in `forge gen mesh` produces a textured mesh without\n\
+                it. Its licence, section 3.3, Use Limitation:\n\
+                \n\
+                \x20 \"The Work and any derivative works thereof only may be used or intended\n\
+                \x20  for use non-commercially. [...] As used herein, 'non-commercially'\n\
+                \x20  means for research or evaluation purposes only and not for any direct\n\
+                \x20  or indirect monetary gain.\"\n\
+                \n\
+                If your project is commercial, a lifted mesh's texture came through\n\
+                software you are not licensed to use for it. `forge doctor` warns for as\n\
+                long as nvdiffrast is installed, and every lift record carries\n\
+                texture_baker naming it — the fact travels with the asset.\n\
+                \n\
+                Declining leaves an env that does everything but bake: doctor reports\n\
+                \"partial\" and `forge gen mesh` exits 6 pointing back here.",
+        full_text: "https://github.com/NVlabs/nvdiffrast/blob/v0.4.0/LICENSE.txt",
+    },
+    Licence {
+        id: "dinov3",
+        name: "DINOv3 License (Meta) — gated",
+        backend: "trellis2",
+        needs_accept: true,
+        terms: "facebook/dinov3-vitl16-pretrain-lvd1689m — DINOv3 License (Meta)\n\
+                \n\
+                TRELLIS.2 encodes the reference image with DINOv3. The weights are gated\n\
+                on the Hugging Face hub: the licence is accepted by a human on the model\n\
+                page, and the token that proves it is a thing only a human holds.\n\
+                \n\
+                Two commands, in this order, and neither can be run for you:\n\
+                \x20 1. accept at https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m\n\
+                \x20 2. hf auth login --token <tok>\n\
+                \n\
+                Never the interactive `hf auth login`: it waits on a TTY an agent does\n\
+                not have, and hangs (designs/hosting.md, Common).",
+        full_text: "https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m",
+    },
+    Licence {
+        id: "llama3",
+        name: "Llama 3 Community License — attribution required",
+        backend: "ardy",
+        needs_accept: true,
+        terms: "Meta-Llama-3-8B-Instruct (ARDY's text encoder base) — Llama 3 Community License\n\
+                \n\
+                ARDY's text encoder is built from Meta-Llama-3-8B-Instruct (via the\n\
+                NousResearch mirror) under the Llama 3 Community License, which asks that\n\
+                anything built with it say:\n\
+                \n\
+                \x20 \"Built with Meta Llama 3\"\n\
+                \n\
+                Here the encoder only embeds the prompt — no Llama weights ship inside a\n\
+                clip — and the backend's notice carries the attribution so it travels\n\
+                with the backend. The assembly downloads ~16 GB and writes ~31 GB.",
+        full_text: "https://llama.meta.com/llama3/license/",
+    },
+    Licence {
+        id: "skintokens_encoder",
+        name: "SkinTokens Michelangelo encoder — an open question",
+        backend: "skintokens",
+        needs_accept: false,
+        terms: "SkinTokens src/model/michelangelo/ — a licence question, not a licence\n\
+                \n\
+                SkinTokens' code and weights are MIT. Its shape encoder is derived from\n\
+                NeuralCarver/Michelangelo, which is GPL-3.0 upstream and is shipped by\n\
+                SkinTokens under MIT; the authors have not answered (issue #9).\n\
+                \n\
+                What this project does about it: the skinner runs in its own process,\n\
+                nothing of it ships inside an asset, and every rig record names its\n\
+                `skinner` the way a lift record names its texture baker. Doctor warns for\n\
+                as long as it is installed. This is a warning, so nothing waits on your\n\
+                accepting it — but you were told, and the fact travels.",
+        full_text: "https://github.com/VAST-AI-Research/SkinTokens/issues/9",
+    },
+    Licence {
+        id: "comfyui_gpl",
+        name: "ComfyUI — GPL-3.0-or-later",
+        backend: COMFY_BACKEND,
+        needs_accept: false,
+        terms: "ComfyUI — GPL-3.0-or-later\n\
+                \n\
+                The audio models and the reference image model run inside ComfyUI, which\n\
+                is GPL-3.0-or-later. It runs as its own service and is driven over HTTP\n\
+                from a separate process: nothing of it is linked into this toolkit, and\n\
+                what it writes is your project's own. It is started with\n\
+                --disable-api-nodes, so no node in it can call a paid API or reach the\n\
+                internet from a graph.\n\
+                \n\
+                Nothing here waits on your accepting this; you are told because the\n\
+                service is a program that lands on your machine.",
+        full_text: "https://github.com/comfyanonymous/ComfyUI/blob/master/LICENSE",
+    },
+];
+
+/// One licence by id.
+#[must_use]
+pub fn licence(id: &str) -> Option<&'static Licence> {
+    LICENCES.iter().find(|licence| licence.id == id)
+}
+
+/// Every licence the chosen kinds carry, in [`LICENCES`] order, without
+/// repeats — props and characters share nvdiffrast and it is shown once.
+#[must_use]
+pub fn licences_for(kinds: &[MakeKind]) -> Vec<&'static Licence> {
+    let mut make = MakeKinds::none();
+    for kind in kinds {
+        make.set(*kind, true);
+    }
+    let backends = make.backends();
+    LICENCES
+        .iter()
+        .filter(|licence| backends.contains(&licence.backend))
+        .collect()
+}
+
+/// The licence ids the chosen kinds cannot be installed without — the ones
+/// `--yes <id>` and `accept: [...]` must name.
+#[must_use]
+pub fn required_licences(kinds: &[MakeKind]) -> Vec<&'static Licence> {
+    licences_for(kinds)
+        .into_iter()
+        .filter(|licence| licence.needs_accept)
+        .collect()
+}
+
+/// The licence receipt: who accepted what, when, and at which door.
+///
+/// It lives at `$FORGE_BACKENDS_HOME/licences.json` — **beside the installs,
+/// because the install is what is licensed**. Deliberately not in
+/// `forge.toml`: that file is hand-edited, and a hand-edited acceptance is
+/// one that was *typed* rather than *given*. A machine that has accepted
+/// nvdiffrast has accepted it for every project on it; a machine that has
+/// not accepted it has an empty file, and `forge setup` asks.
+///
+/// ```json
+/// {"forge_licences":1,"accepted":[{"id":"nvdiffrast",
+///   "name":"NVIDIA Source Code License (1-Way Commercial)","backend":"trellis2",
+///   "by":"human","at":"2026-08-30T14:02:11Z","via":"cli"}]}
+/// ```
+pub mod licences {
+    use std::path::{Path, PathBuf};
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::{LibraryError, Result};
+
+    /// The environment variable naming where the backends install
+    /// themselves — envs, clones, weights, and this receipt.
+    pub const BACKENDS_HOME_ENV: &str = "FORGE_BACKENDS_HOME";
+
+    /// Where the installs go when `$FORGE_BACKENDS_HOME` is unset, relative
+    /// to the home directory.
+    pub const DEFAULT_BACKENDS_HOME: &str = ".cache/asset-forge/backends";
+
+    /// The receipt's file name.
+    pub const RECEIPT_FILE: &str = "licences.json";
+
+    /// The receipt's schema version.
+    pub const RECEIPT_SCHEMA: u32 = 1;
+
+    /// Which door an acceptance came through.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Via {
+        /// `forge setup` at a terminal, or `--yes <id>`.
+        Cli,
+        /// The MCP `setup` tool's `accept` argument.
+        Mcp,
+        /// A backend's own `install.sh`, run directly.
+        Install,
+    }
+
+    impl Via {
+        /// The word the receipt writes.
+        #[must_use]
+        pub const fn as_str(self) -> &'static str {
+            match self {
+                Self::Cli => "cli",
+                Self::Mcp => "mcp",
+                Self::Install => "install",
+            }
+        }
+    }
+
+    /// One acceptance, as written.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Accepted {
+        /// The licence id, by [`super::Licence::id`].
+        pub id: String,
+        /// What it is called, copied in so the receipt reads on its own.
+        pub name: String,
+        /// The backend it belongs to.
+        pub backend: String,
+        /// Who accepted: `human` at a TTY, or the actor an agent's door
+        /// named (`agent:claude`). Never invented — the door that writes
+        /// the row knows which it was.
+        pub by: String,
+        /// When, as `YYYY-MM-DDTHH:MM:SSZ`.
+        pub at: String,
+        /// Which door.
+        pub via: Via,
+    }
+
+    /// The file.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Receipt {
+        /// The schema version, so a later shape can be read.
+        #[serde(rename = "forge_licences")]
+        pub schema: u32,
+        /// Every acceptance, in the order it was given.
+        #[serde(default)]
+        pub accepted: Vec<Accepted>,
+    }
+
+    impl Default for Receipt {
+        fn default() -> Self {
+            Self {
+                schema: RECEIPT_SCHEMA,
+                accepted: Vec::new(),
+            }
+        }
+    }
+
+    impl Receipt {
+        /// Whether this licence has been accepted on this machine.
+        #[must_use]
+        pub fn has(&self, id: &str) -> bool {
+            self.accepted.iter().any(|row| row.id == id)
+        }
+
+        /// The row for a licence, when there is one.
+        #[must_use]
+        pub fn row(&self, id: &str) -> Option<&Accepted> {
+            self.accepted.iter().find(|row| row.id == id)
+        }
+    }
+
+    /// Where the backends install themselves: `$FORGE_BACKENDS_HOME`, else
+    /// `~/.cache/asset-forge/backends`. The same rule `_lib/common.sh` uses,
+    /// so the shell installers and this agree without either being told.
+    #[must_use]
+    pub fn backends_home() -> PathBuf {
+        if let Ok(dir) = std::env::var(BACKENDS_HOME_ENV)
+            && !dir.trim().is_empty()
+        {
+            return PathBuf::from(dir);
+        }
+        home_dir().join(DEFAULT_BACKENDS_HOME)
+    }
+
+    /// `$HOME`, or the current directory when even that is unset — a
+    /// receipt that lands in the wrong place is better than a panic in a
+    /// container with no environment.
+    fn home_dir() -> PathBuf {
+        std::env::var_os("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from)
+    }
+
+    /// The receipt's path under a backends home.
+    #[must_use]
+    pub fn path_in(home: &Path) -> PathBuf {
+        home.join(RECEIPT_FILE)
+    }
+
+    /// The receipt's path on this machine.
+    #[must_use]
+    pub fn path() -> PathBuf {
+        path_in(&backends_home())
+    }
+
+    /// Read the receipt at `path`. A file that is not there is an empty
+    /// receipt — nothing accepted yet is a normal state, not an error.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the file exists and does not parse: a receipt nobody can
+    /// read must not silently become "you accepted nothing", because the
+    /// next thing that happens is a second prompt for something already
+    /// agreed to, and the row that recorded it is gone.
+    pub fn load_from(path: &Path) -> Result<Receipt> {
+        if !path.is_file() {
+            return Ok(Receipt::default());
+        }
+        let text = crate::read_to_string(path)?;
+        serde_json::from_str(&text).map_err(|e| {
+            LibraryError::rejected(format!(
+                "{} does not parse as a licence receipt: {e}",
+                path.display()
+            ))
+        })
+    }
+
+    /// Read this machine's receipt.
+    ///
+    /// # Errors
+    ///
+    /// As [`load_from`].
+    pub fn load() -> Result<Receipt> {
+        load_from(&path())
+    }
+
+    /// Append acceptances to the receipt at `path` and write it back,
+    /// creating the directory if the installers have not yet.
+    ///
+    /// Appending, never rewriting: an id already in the file keeps its
+    /// original row, because the question "when was this accepted, and by
+    /// whom" has one true answer and a re-run of `setup` is not it.
+    ///
+    /// # Errors
+    ///
+    /// As [`load_from`], or when the file cannot be written.
+    pub fn accept_in(
+        path: &Path,
+        ids: &[&str],
+        by: &str,
+        via: Via,
+    ) -> Result<(Receipt, Vec<String>)> {
+        let mut receipt = load_from(path)?;
+        let at = crate::clock::now_iso();
+        let mut added = Vec::new();
+        for id in ids {
+            if receipt.has(id) {
+                continue;
+            }
+            let Some(licence) = super::licence(id) else {
+                return Err(LibraryError::rejected(format!(
+                    "{id:?} is not a licence this toolkit knows — the ids are {}",
+                    super::LICENCES
+                        .iter()
+                        .map(|l| l.id)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            };
+            receipt.accepted.push(Accepted {
+                id: licence.id.to_string(),
+                name: licence.name.to_string(),
+                backend: licence.backend.to_string(),
+                by: by.to_string(),
+                at: at.clone(),
+                via,
+            });
+            added.push(licence.id.to_string());
+        }
+        if !added.is_empty() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| LibraryError::io(parent, e))?;
+            }
+            let text = serde_json::to_string_pretty(&receipt)
+                .map_err(|e| LibraryError::rejected(e.to_string()))?;
+            crate::write_atomic(path, format!("{text}\n").as_bytes())?;
+        }
+        Ok((receipt, added))
+    }
+
+    /// Append acceptances to this machine's receipt.
+    ///
+    /// # Errors
+    ///
+    /// As [`accept_in`].
+    pub fn accept(ids: &[&str], by: &str, via: Via) -> Result<(Receipt, Vec<String>)> {
+        accept_in(&path(), ids, by, via)
+    }
+}
+
+/// Drop the named top-level tables from a TOML document, keeping every
+/// other line — and every comment — byte for byte.
+///
+/// A comment line immediately above a dropped header goes with it: it is
+/// that table's comment, and leaving it stranded over the next table is
+/// worse than losing it. Line surgery rather than a re-serialise, because
+/// `toml::to_string` would throw away every comment in the file, and
+/// `forge.toml` is mostly comments on purpose.
+fn strip_tables(text: &str, tables: &[&str]) -> String {
+    let headers: Vec<String> = tables.iter().map(|name| format!("[{name}]")).collect();
+    let mut out: Vec<&str> = Vec::new();
+    let mut dropping = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            dropping = headers.iter().any(|header| trimmed == header);
+            if dropping {
+                // Take the comment block that introduces it with it.
+                while out
+                    .last()
+                    .is_some_and(|prev| prev.trim_start().starts_with('#'))
+                {
+                    out.pop();
+                }
+            }
+        }
+        if !dropping {
+            out.push(line);
+        }
+    }
+    let mut joined = out.join("\n");
+    joined.push('\n');
+    joined
+}
+
 /// Copy every regular file under `from` to `to`, one level of subdirectory
 /// deep — enough for a profile's `fixture/`.
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
@@ -498,6 +1609,167 @@ mod tests {
         .expect("write");
         let error = Project::load(dir.path()).expect_err("refuse");
         assert!(error.to_string().contains("asets"), "{error}");
+    }
+
+    #[test]
+    fn a_forge_toml_written_before_this_phase_makes_everything_and_detects_its_tier() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join(PROJECT_FILE),
+            "[project]\nname = \"old\"\nlibrary_version = \"0.1.0\"\n",
+        )
+        .expect("write");
+        let project = Project::load(dir.path()).expect("load");
+        assert_eq!(project.make, MakeKinds::all(), "no [make] is every kind");
+        assert!(!project.make.is_empty());
+        assert_eq!(
+            project.hardware.tier, None,
+            "no [hardware] tier is detected"
+        );
+        assert_eq!(project.hardware.comfy_url, DEFAULT_COMFY_URL);
+    }
+
+    #[test]
+    fn init_writes_both_tables_and_they_read_back() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let hardware = Hardware {
+            tier: Some(Tier::Fake),
+            comfy_url: String::from("http://box:8188"),
+        };
+        let make = MakeKinds::parse_list("sfx,voice").expect("parse");
+        let project = Project::init_with(dir.path(), "my_game", make, &hardware).expect("init");
+        assert_eq!(project.make, make);
+        assert_eq!(project.hardware, hardware);
+        assert_eq!(project.tier(), Tier::Fake);
+        assert_eq!(
+            project.chosen_backends(),
+            vec!["comfy", "moss_sfx", "moss_tts"],
+            "anything comfy adds the host"
+        );
+        let text = std::fs::read_to_string(dir.path().join(PROJECT_FILE)).expect("read");
+        assert!(text.contains("sfx        = true"), "{text}");
+        assert!(text.contains("props      = false"), "{text}");
+        assert!(text.contains("tier = \"fake\""), "{text}");
+    }
+
+    #[test]
+    fn adopt_replaces_only_the_two_tables_and_keeps_every_other_comment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let project = Project::init(dir.path(), "my_game").expect("init");
+        let before = std::fs::read_to_string(dir.path().join(PROJECT_FILE)).expect("read");
+        assert!(before.contains("# stage_body ="));
+        let adopted = project
+            .set_make_hardware(
+                MakeKinds::parse_list("clips").expect("parse"),
+                &Hardware {
+                    tier: Some(Tier::Lean),
+                    comfy_url: String::from(DEFAULT_COMFY_URL),
+                },
+            )
+            .expect("adopt");
+        assert_eq!(adopted.make.chosen(), vec![MakeKind::Clips]);
+        assert_eq!(adopted.tier(), Tier::Lean);
+        assert_eq!(adopted.name, project.name);
+        let after = std::fs::read_to_string(dir.path().join(PROJECT_FILE)).expect("read");
+        assert!(after.contains("# stage_body ="), "{after}");
+        assert_eq!(after.matches("[make]").count(), 1, "{after}");
+        assert_eq!(after.matches("[hardware]").count(), 1, "{after}");
+        assert!(after.contains("tier = \"lean\""), "{after}");
+    }
+
+    #[test]
+    fn the_kind_to_backend_map_and_the_licence_table_agree() {
+        // Every backend a kind names is described in BACKEND_NEEDS, and
+        // every licence names a backend that exists there. The two tables
+        // are the one fact this phase publishes; a name in one and not the
+        // other is the drift this test is here to catch.
+        for kind in MakeKind::ALL {
+            for name in kind.backends() {
+                assert!(backend_need(name).is_some(), "{kind} names {name}");
+            }
+        }
+        for licence in LICENCES {
+            assert!(
+                backend_need(licence.backend).is_some(),
+                "{} names {}",
+                licence.id,
+                licence.backend
+            );
+            assert!(
+                backend_need(licence.backend)
+                    .expect("need")
+                    .licences
+                    .contains(&licence.id),
+                "{} is not listed by {}",
+                licence.id,
+                licence.backend
+            );
+        }
+        assert_eq!(
+            MakeKinds::none().backends(),
+            Vec::<&str>::new(),
+            "--make none chooses nothing, so every row is off"
+        );
+        let props = licences_for(&[MakeKind::Props]);
+        assert_eq!(
+            props.iter().map(|l| l.id).collect::<Vec<_>>(),
+            vec!["nvdiffrast", "dinov3", "comfyui_gpl"]
+        );
+        assert_eq!(
+            required_licences(&[MakeKind::Sfx])
+                .iter()
+                .map(|l| l.id)
+                .collect::<Vec<_>>(),
+            Vec::<&str>::new(),
+            "sfx carries a fact to be told, not one to be accepted"
+        );
+        assert_eq!(
+            required_licences(&[MakeKind::Characters])
+                .iter()
+                .map(|l| l.id)
+                .collect::<Vec<_>>(),
+            vec!["nvdiffrast", "dinov3"]
+        );
+    }
+
+    #[test]
+    fn a_tier_is_detected_from_the_card_and_named_in_a_refusal() {
+        assert_eq!(Tier::from_total_mib(Some(24_564)), Tier::Full);
+        assert_eq!(Tier::from_total_mib(Some(22 * 1024)), Tier::Full);
+        assert_eq!(Tier::from_total_mib(Some(16_376)), Tier::Lean);
+        assert_eq!(Tier::from_total_mib(Some(8_192)), Tier::Fake);
+        assert_eq!(Tier::from_total_mib(None), Tier::Fake);
+        let error = Tier::parse("big").expect_err("refuse");
+        assert!(error.to_string().contains("full"), "{error}");
+        let error = MakeKinds::parse_list("props,widgets").expect_err("refuse");
+        assert!(error.to_string().contains("characters"), "{error}");
+    }
+
+    #[test]
+    fn the_receipt_appends_and_never_relaunders_an_acceptance() {
+        use super::licences::{Via, accept_in, load_from};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("licences.json");
+        assert!(load_from(&path).expect("empty").accepted.is_empty());
+
+        let (receipt, added) =
+            accept_in(&path, &["nvdiffrast"], "human", Via::Cli).expect("accept");
+        assert_eq!(added, vec![String::from("nvdiffrast")]);
+        assert!(receipt.has("nvdiffrast"));
+        let first = receipt.row("nvdiffrast").expect("row").clone();
+        assert_eq!(first.backend, "trellis2");
+        assert_eq!(first.by, "human");
+
+        let (receipt, added) =
+            accept_in(&path, &["nvdiffrast", "llama3"], "agent:claude", Via::Mcp).expect("again");
+        assert_eq!(added, vec![String::from("llama3")], "already given stands");
+        assert_eq!(receipt.row("nvdiffrast"), Some(&first));
+        assert_eq!(receipt.accepted.len(), 2);
+
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert!(text.contains("\"forge_licences\": 1"), "{text}");
+        let error = accept_in(&path, &["invented"], "human", Via::Cli).expect_err("refuse");
+        assert!(error.to_string().contains("nvdiffrast"), "{error}");
     }
 
     #[test]
