@@ -29,6 +29,13 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 
 ## Step 0 — judge the PNG before any GPU time
 
+**The reference is brought, not made here** — no image model ships in this
+toolkit (`designs/decisions.md`, "The reference image stays brought",
+2026-08-30). Draw it, or have the user draw it, and bring it in through
+`import_reference` / `forge ref import` (Phase 3; until that door lands, copy
+the PNG in and write its `SOURCES.md` row by hand). The sample library's
+references were made in **Grok**, and `SOURCES.md` says so.
+
 `Read` the PNG. TRELLIS lifts what it can see; the gates measure geometry.
 
 | Seen | Consequence downstream | Fix (in the image) |

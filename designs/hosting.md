@@ -615,6 +615,58 @@ each `gb` is what the directory measures here —
 6.61 GB, the last of which no row had named at all. `python/tests/test_doctor.py`
 has the directory-shaped case, empty directory included. 2026-08-30.
 
+### The image-model group leaves the host, 2026-08-30
+
+Everything above about Qwen-Image, FLUX.1-schnell, the two ControlNets, the
+three `reference_*.api.json` templates and the `city96/ComfyUI-GGUF` pack
+stays as the record of what was measured. What changed is that none of it is
+described, fetched or run any more: the reference image is brought, not
+generated (`decisions.md`, "The reference image stays brought"). `backend.toml`
+lost its nine `[[models]]` rows, the GGUF pack entry and the FLUX ControlNet
+notice; `install.sh` lost `--models`, `--no-flux-controlnet`, its `fetch()`
+and its `confirm_license` call; the three templates and
+`python/forge_gen/spike_pose.py` are deleted; and `MakeKind::backends` no
+longer gives props or characters a `qwen_image`, so a props- or
+characters-only project installs no ComfyUI host at all and its setup screen
+falls from 58.6 GB to 23.0.
+
+Four things this turned up, each a trap for whoever does the next removal:
+
+**Weights are the user's, and an installer does not delete them.** ~60 GB sits
+under `$PREFIX/data/models/{diffusion_models,controlnet}`, plus the FLUX and
+Qwen files in `text_encoders`, `vae` and `checkpoints`, and the pack clone in
+`custom_nodes/ComfyUI-GGUF`. Nothing here removes any of it. `install.sh`
+closes by naming those directories in one line and stops there — a fact, not
+an action; an installer that removes files it did not just write is one nobody
+can re-run safely.
+
+**`--models` and `--no-flux-controlnet` die by name, not as unknown flags.**
+A stranger — or an old `forge setup` — with those on the command line gets a
+sentence saying the group left and where the remaining weights come from. The
+generic `unknown flag:` arm would have been true and useless.
+
+**Dropping the GGUF pack dropped the only place `protobuf==7.36.0` was
+pinned.** That pin was ComfyUI-GGUF's, and it was what the TTS pack's
+`descript-audiotools --no-deps` was protecting: audiotools caps
+`protobuf<3.20`. The `--no-deps` is still there and still necessary, but what
+now keeps the host's protobuf above 3.20 is tensorboard's and transformers'
+own floors rather than an explicit pin. Not a change anyone would notice on an
+installed host; a fresh install is where it would show, and it has not been
+run since.
+
+**What the live host still carries, said out loud.** The `ComfyUI-GGUF` clone
+and its pips are still installed on this machine's unit, so the committed
+`backends/comfy/snapshot.json` — which is the Manager's own answer and is
+never hand-edited — still lists them. It was not uninstalled and the snapshot
+was not re-fetched: that needs `systemctl --user restart forge-comfy`, and the
+card is shared with whatever else is running. `probe.py` does not mind (a pack
+the description does not name is not a defect it looks for), and the next
+install on a host where the pack is gone will re-fetch the snapshot honestly.
+`probe.py`'s wanted-node list, which used to be the eight loaders the
+reference templates named, is now derived from the packs `backend.toml`
+declares — the host asserts nothing about ComfyUI's native surface, because
+each guest backend checks the classes its own graphs name.
+
 ## Onboarding, doctor and the licence gate
 
 **`nvidia-smi` is the tier detector, and its absence is an answer.**

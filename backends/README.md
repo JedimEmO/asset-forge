@@ -25,7 +25,7 @@ backends/<name>/
   install.sh          makes the env and the clone under $PREFIX, or adopts ones you have
   probe.py            run inside the env by doctor: imports, torch, CUDA, one JSON line
   patches/            (acestep, skintokens) what the clone needs changed before it runs
-  workflows/          (comfy) API-format graphs the executor patches and posts
+  workflows/          (a comfy backend) API-format graphs the executor patches and posts
   snapshot.json       (comfy) what the Manager says is installed: commit, node packs, pips
   .env        ->      gitignored symlink to the interpreter prefix (what the launcher execs)
   .checkout   ->      gitignored symlink to the upstream clone at the pinned commit
@@ -44,7 +44,7 @@ generators, then the two the Phase 0 spikes stood up:
 | `acestep` | prompt → music | ACE-Step 1.5, native to the pinned ComfyUI | **none of its own** — runs on the `comfy` host | `forge gen music` |
 | `moss_sfx` | prompt → sound effect | MOSS-SoundEffect-v2.0 through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen sfx` |
 | `moss_tts` | text → speech; description → voice | MOSS-TTS-Local-Transformer (1.7B) and MOSS-VoiceGenerator through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen speech`, `forge gen voice` |
-| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ two node packs, `city96/ComfyUI-GGUF` @ `6ea2651e` and `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host; `backends/comfy/workflows/*.api.json` are what it is sent |
+| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host, and it holds no graphs of its own: each guest's `workflows/*.api.json` are what it is sent |
 | `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
 
 Doctor prints an eighth row, `blender`, between the two groups: it is
@@ -63,10 +63,13 @@ weights live under the host's model folders; `tool` is a host program
 **Which backends a project even has rows for** comes from `[make]` in its
 `forge.toml`. A kind that was not chosen reads `off`: not probed, printed
 with the line that turned it off, and never a reason to exit 1. The map is
-one fact in one place — `props → trellis2, qwen_image`; `characters → +
-skintokens`; `clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice →
-moss_tts`; anything `comfy` adds the `comfy` host, and a mesh kind adds
-Blender.
+one fact in one place — `props → trellis2`; `characters → + skintokens`;
+`clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice → moss_tts`;
+anything `comfy` adds the `comfy` host, and a mesh kind adds Blender. **No
+kind names an image model**: a reference PNG is brought through
+`import_reference` / `forge ref import` (Phase 3), not generated here
+(`designs/decisions.md`, 2026-08-30), so a props- or characters-only project
+never installs the ComfyUI host at all.
 
 `moss_sfx` and `moss_tts` share the ComfyUI host, not a clone: since the
 three MOSS models moved onto TTS-Audio-Suite neither has an environment,
@@ -80,6 +83,23 @@ links to them. No absolute path is ever written into a tracked file.
 
 Blender is a host tool, not a backend: `$BLENDER_BIN` or `blender` on PATH,
 ≥ 4.2, run `--background --factory-startup`. So is ffmpeg.
+
+### What a workflow template may say
+
+A `workflows/*.api.json` is `POST /prompt`'s `prompt` object — a flat map of
+node id → `{class_type, inputs, _meta}` — and it is a **pure graph**: no
+forge metadata is smuggled into the file, because anything at the top level
+of that object is read by ComfyUI as another node. What a caller may change
+is marked **inside the graph**: a node's `_meta.title` carries one
+`PATCH:<key>` token per patchable input (`PATCH:seed`, or `the line;
+PATCH:text PATCH:speed`), and the rest of the title is prose for whoever
+opens the graph in the UI. There is no sidecar manifest of node ids — that
+would be one fact in two files with nothing holding them together — and
+`python/forge_gen/comfy.py::patch_points` builds the map by reading the
+markers. A template missing a key its verb requires is a refusal before the
+GPU, naming the key and the file. Everything unmarked — the model files, the
+sampler, the step count — is the template's own statement of the register,
+and changing one is a new template, not a flag.
 
 ## How the launcher finds an interpreter
 
@@ -144,11 +164,18 @@ Added 2026-08-30, with the two Phase 0 backends:
 | SkinTokens code + weights | MIT | |
 | SkinTokens `src/model/michelangelo/` | **open question** | derived from NeuralCarver/Michelangelo, GPL-3.0 upstream, shipped by SkinTokens under MIT; the authors have not answered (issue #9). It runs in its own process, nothing of it ships inside an asset, and every rig record names the `skinner`. |
 | ComfyUI | GPL-3.0-or-later | A service driven over HTTP from a separate process; nothing of it is linked into the toolkit, and what it writes is the project's own. |
-| `city96/ComfyUI-GGUF` | Apache-2.0 | The one custom node pack: `UnetLoaderGGUF`, which is the only way to load the lean tier's Q4 image model. |
-| Qwen-Image (+ `Comfy-Org` fp8 repack, `city96` Q4_K_M GGUF) | Apache-2.0 | |
-| InstantX Qwen-Image ControlNet-Union | Apache-2.0 | The pose ControlNet the reference door will use; trained on the model it conditions. |
-| FLUX.1-schnell + `flux_text_encoders` + its VAE | Apache-2.0 | The VAE repo is gated `auto`: an `hf auth login --token` is needed even so. |
-| `Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0` | **FLUX.1-dev Non-Commercial License** | On disk only because the Phase 0 spike had to condition both candidates on a pose. Trained on FLUX.1-dev, applied off-base to schnell. The spike chose Qwen-Image, so **no shipped record may name it**; `install.sh` asks before fetching it and `--no-flux-controlnet` declines. |
+| `diodiogod/TTS-Audio-Suite` | MIT | The one custom node pack: the six classes the three audio graphs use. |
+
+**The image models left the host on 2026-08-30**, with the reference door: a
+reference PNG is brought, not generated (`designs/decisions.md`, "The
+reference image stays brought"). Qwen-Image and its InstantX
+ControlNet-Union (Apache-2.0), FLUX.1-schnell with `flux_text_encoders` and
+its VAE (Apache-2.0), the `city96/ComfyUI-GGUF` pack (Apache-2.0) and the
+Shakker-Labs FLUX.1-dev ControlNet-Union-Pro-2.0 (**FLUX.1-dev Non-Commercial
+License**, which is why no shipped record was ever allowed to name it) are no
+longer fetched, described or run. What a machine already downloaded stays
+where it is: `backends/comfy/install.sh` closes by naming the directories, and
+removing them is a human's call.
 
 A licence fact in a record is not a detail. Keep `texture_baker` in every
 lift record, and keep the Llama 3 notice in `ardy/backend.toml`.
@@ -177,16 +204,17 @@ were sampled are in `designs/hosting.md` § GPU co-residency.
 | `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | **5.3 GB measured** (2026-08-30, a 6 s audition) | **yes, 5.4 GB** — same lever |
 | `moss_sfx` (in the host) | **10.0 GB measured** (2026-08-30, 3 s at 100 steps, over a 1.2 GB floor); `vram_gb = 11` | **yes, 9.1 GB** — same lever |
 | `skintokens` skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
-| Qwen-Image fp8 + ControlNet at 1024², in `comfy` | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
-| Qwen-Image Q4_K_M GGUF + ControlNet, the lean form | **16.2 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
 | the `comfy` unit idle, nothing loaded | ~0.4 GB, creeping to ~0.7 GB after several model swaps | **yes**, until the unit stops |
 | studio viewer on the real adapter | small; not measured | while open |
 
 The rows marked *measured* are `nvidia-smi` at 10 Hz on one 24 GB card;
 the rows marked *budget* are estimates, and so is every `backend.toml`'s
 `vram_gb` — `just gpu` sizes the card against those, which is why they stay
-conservative. **Never re-quote a `vram_gb` as a measurement.** The
-image model, not the lift, is the thing that wants the whole card.
+conservative. **Never re-quote a `vram_gb` as a measurement.** The two image
+rows this table carried — Qwen-Image fp8 at 23.3 GB and its Q4 GGUF at
+16.2 GB, each alone on the card — left with the image models on 2026-08-30;
+`designs/hosting.md` keeps them as the record of what they cost. ARDY's
+sweep is now the hungriest thing here.
 
 Never 1536³ on 24 GB. The 8B MOSS-TTS Delay model OOMs with the audio
 tokenizer loaded, which is why `speech.api.json` states the 1.7B.
@@ -208,19 +236,12 @@ Each installer is idempotent (`set -euo pipefail`, sources
    `numpy<2`; assembles the Llama-3 + LLM2Vec text encoder under `$PREFIX`
    (the Llama 3 notice prints; `--yes` accepts it without a TTY).
 2. `bash backends/comfy/install.sh` — venv (python 3.12, torch cu130), the
-   pinned ComfyUI clone, **two** node packs (`ComfyUI-GGUF` for the lean
-   tier's Q4 reference, `TTS-Audio-Suite` for the three MOSS models) and a
-   systemd `--user` unit on `127.0.0.1:8188`. **`--models` decides which
-   weights come down**: `all` (the default, 73.67 GB), `qwen_image`
-   (46.67 GB — the fp8 trio, the InstantX ControlNet and the Q4 GGUF),
-   `flux` (22.72 GB, the Phase 0 spike's losing candidate) or `none`. It
-   asks before fetching the FLUX pose ControlNet, which is
-   **non-commercial**; `--no-flux-controlnet` declines, and `forge setup`
-   always passes it, because a licence with no id in the toolkit's table is
-   one no `--yes` may accept for you. `--no-service` skips systemd. Every
-   audio kind runs on this host, so it comes before them — and asks it for
-   `--models none`, since ACE-Step's own 10.03 GB checkpoint is step 3's
-   and the MOSS weights are the node pack's on first run.
+   pinned ComfyUI clone, **one** node pack (`TTS-Audio-Suite`, for the three
+   MOSS models) and a systemd `--user` unit on `127.0.0.1:8188`. **It
+   downloads no weights**: ACE-Step's own 10.03 GB checkpoint is step 3's and
+   the MOSS weights are the node pack's on first run. `--no-service` skips
+   systemd; `--no-models` is accepted and does nothing. Every audio kind runs
+   on this host, so it comes before them.
 3. `bash backends/moss_sfx/install.sh`, `bash backends/moss_tts/install.sh`
    and `bash backends/acestep/install.sh` — none of which install anything.
    Each checks that the host is there, that its pack is at the pin this
@@ -273,7 +294,9 @@ accepts **by name** and is repeatable; a bare `--yes` is refused, because a
 blanket yes to a list nobody read is what the gate exists to prevent. The
 licence ids are `nvdiffrast`, `dinov3`, `llama3`, `skintokens_encoder` and
 `comfyui_gpl`; the first three need your yes, the last two are facts you are
-told.
+told. No installer asks about a licence that has no id here: the one that
+did — the FLUX pose ControlNet's — left with the image models, and the rule
+it bought stays.
 
 ## Adopting an install you already have
 

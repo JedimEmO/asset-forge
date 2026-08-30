@@ -210,41 +210,21 @@ pub(crate) fn run(project: &Project, args: &SetupArgs) -> Outcome {
 /// then accepted the Shakker-Labs `FLUX.1-dev` `ControlNet` — **a
 /// non-commercial licence**, not one of the five ids, never on the screen,
 /// in no receipt — on the strength of a `--yes` about nvdiffrast
-/// (2026-08-30).
+/// (2026-08-30). That prompt and the image weights behind it have since
+/// left the host with the reference door, but the rule they bought stays:
 ///
-/// Two things fix it, and both are here:
-///
-/// - `--yes` is passed only when every id in `BackendNeed::installer_prompts`
-///   is on this machine's receipt or in this call's `--yes`. An installer that would still ask gets no `--yes`
-///   and asks — on a TTY it is answered, and without one it stops, which is
-///   the correct end of a licence nobody has agreed to.
-/// - The comfy host is told **which model group to fetch**. Its installer
-///   defaults to all 73.67 GB of image weights, including the FLUX set the
-///   Phase 0 spike discarded; `forge setup music` now says
-///   `--models none` and fetches nothing there, `forge setup props` says
-///   `--models qwen_image`, and `--no-flux-controlnet` is always passed
-///   because no kind in the map needs it — which is also why the one
-///   prompt comfy has is never reached from this door.
+/// `--yes` is passed only when every id in `BackendNeed::installer_prompts`
+/// is on this machine's receipt or in this call's `--yes`. An installer
+/// that would still ask gets no `--yes` and asks — on a TTY it is answered,
+/// and without one it stops, which is the correct end of a licence nobody
+/// has agreed to.
 fn installer_flags(
     need: &'static forge_library::project::BackendNeed,
-    plan: &SetupPlan,
+    _plan: &SetupPlan,
     accepted: &[String],
 ) -> Vec<String> {
     let mut flags: Vec<String> = Vec::new();
-    let mut prompts: Vec<&str> = need.installer_prompts.to_vec();
-    if need.name == forge_library::project::COMFY_BACKEND {
-        let wants_images = plan.backends.iter().any(|other| other.name == "qwen_image");
-        flags.push(String::from("--models"));
-        flags.push(String::from(if wants_images {
-            "qwen_image"
-        } else {
-            "none"
-        }));
-        // Nothing the kind → backend map names is conditioned on a FLUX
-        // ControlNet, so it is declined here rather than accepted for you.
-        flags.push(String::from("--no-flux-controlnet"));
-        prompts.retain(|id| *id != "flux_dev_controlnet");
-    }
+    let prompts: Vec<&str> = need.installer_prompts.to_vec();
     let covered = prompts
         .iter()
         .all(|id| accepted.iter().any(|given| given == id));
@@ -343,21 +323,18 @@ mod tests {
             .iter()
             .find(|need| need.name == "comfy")
             .expect("music runs on the host");
-        let flags = installer_flags(comfy, &plan, &[]);
         assert_eq!(
-            flags,
-            vec!["--models", "none", "--no-flux-controlnet", "--yes"],
-            "a music project fetches no image weights at all, and declines a licence nobody \
-             named"
+            installer_flags(comfy, &plan, &[]),
+            vec!["--yes"],
+            "the host asks about nothing since the image models left it, so there is nothing \
+             to decline and no group to name"
         );
 
         let props = SetupPlan::for_kinds(&[MakeKind::Props], Tier::Full);
-        let comfy = props
-            .backends
-            .iter()
-            .find(|need| need.name == "comfy")
-            .expect("props run the image model on the host");
-        assert!(installer_flags(comfy, &props, &[]).contains(&String::from("qwen_image")));
+        assert!(
+            !props.backends.iter().any(|need| need.name == "comfy"),
+            "props need no host: the reference image is brought, not generated"
+        );
 
         let trellis = props
             .backends

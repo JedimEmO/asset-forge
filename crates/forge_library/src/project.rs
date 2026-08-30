@@ -669,8 +669,8 @@ impl MakeKind {
     #[must_use]
     pub const fn backends(self) -> &'static [&'static str] {
         match self {
-            Self::Props => &["trellis2", "qwen_image"],
-            Self::Characters => &["trellis2", "skintokens", "qwen_image"],
+            Self::Props => &["trellis2"],
+            Self::Characters => &["trellis2", "skintokens"],
             Self::Clips => &["ardy"],
             Self::Sfx => &["moss_sfx"],
             Self::Music => &["acestep"],
@@ -796,8 +796,9 @@ pub struct BackendNeed {
     /// What the weights cost, in GB: the sum of the `gb` figures in
     /// `backends/<name>/backend.toml`'s `[[models]]`, and held to it by
     /// `the_disk_bill_is_read_out_of_each_backend_toml`. `0.0` for a
-    /// backend whose weights are counted against another (the `comfy`
-    /// host's image models belong to `qwen_image`) or whose models state no
+    /// backend whose weights are counted against another (the `comfy` host
+    /// states no models of its own; each guest names what it runs) or whose
+    /// models state no
     /// size, because `null` means unknown and a guess in a bill is how
     /// `acestep` came to say 7.5 GB for a 10.03 GB checkpoint.
     pub weights_gb: f64,
@@ -814,8 +815,9 @@ pub struct BackendNeed {
     /// used to pass a blanket one to every installer — the door the CLI
     /// itself refuses from a human — and `backends/comfy/install.sh` then
     /// accepted the Shakker-Labs `FLUX.1-dev` `ControlNet` under a
-    /// **non-commercial** licence that is not one of the five ids, was
-    /// never on the screen and landed in no receipt (2026-08-30). An
+    /// **non-commercial** licence that was not one of the five ids, was
+    /// never on the screen and landed in no receipt (2026-08-30). That
+    /// prompt left with the image models; the rule it taught stays — an
     /// installer whose prompts are not all covered by the receipt gets no
     /// `--yes` and asks for itself.
     pub installer_prompts: &'static [&'static str],
@@ -833,7 +835,7 @@ impl BackendNeed {
 /// Every backend the six kinds can need, with its executor, its disk and
 /// its licences. The counterpart to [`MakeKind::backends`]: that says which
 /// backends a kind needs, this says what each backend costs and carries.
-pub const BACKEND_NEEDS: [BackendNeed; 9] = [
+pub const BACKEND_NEEDS: [BackendNeed; 8] = [
     BackendNeed {
         name: "trellis2",
         executor: Executor::Env,
@@ -864,19 +866,6 @@ pub const BACKEND_NEEDS: [BackendNeed; 9] = [
                     downloaded, ~31 GB written) — an estimate (backends/README.md)",
         licences: &["llama3"],
         installer_prompts: &["llama3"],
-    },
-    BackendNeed {
-        name: "qwen_image",
-        executor: Executor::Comfy,
-        env_gb: 0.0,
-        weights_gb: 33.6,
-        disk_note: "Qwen-Image fp8 20.43 + text encoder 9.38 + VAE 0.25 + InstantX \
-                    ControlNet-Union 3.54, read out of backends/comfy/backend.toml \
-                    (lean substitutes the 13.07 GB Q4_K_M GGUF for the fp8 model). It has \
-                    no environment: it is a model group inside the host, fetched with \
-                    `install.sh --models qwen_image`",
-        licences: &[],
-        installer_prompts: &[],
     },
     BackendNeed {
         name: "moss_sfx",
@@ -927,16 +916,15 @@ pub const BACKEND_NEEDS: [BackendNeed; 9] = [
         executor: Executor::Tool,
         env_gb: 2.0,
         weights_gb: 0.0,
-        disk_note: "venv + the pinned ComfyUI clone and its two node packs; an estimate, \
-                    not a measurement. **The models it hosts are counted against the \
-                    backends that name them**, and `forge setup` tells its installer which \
-                    group to fetch (`--models qwen_image`, `--models none`) rather than \
-                    letting it pull all 73.67 GB of them",
+        disk_note: "venv + the pinned ComfyUI clone and its one node pack; an estimate, \
+                    not a measurement. **It downloads no weights at all**: the models it \
+                    hosts are counted against the backends that name them, and each of \
+                    those installers fetches its own",
         licences: &["comfyui_gpl"],
-        // `install.sh --models flux` is the only path that reaches
-        // `confirm_license`, and `forge setup` never passes it — see
-        // `installer_prompts`.
-        installer_prompts: &["flux_dev_controlnet"],
+        // Nothing in this installer calls `confirm_license` any more: its one
+        // prompt was the FLUX pose ControlNet, and that went with the
+        // image-model group (2026-08-30).
+        installer_prompts: &[],
     },
 ];
 
@@ -1155,7 +1143,7 @@ impl MakeKinds {
 pub enum Tier {
     /// A 24 GB card: every model in its full register.
     Full,
-    /// A 16 GB card: the `Q4_K_M` GGUF reference model and `MOSS-TTS` 1.7B.
+    /// A 16 GB card: `MOSS-TTS` at 1.7B rather than 8B.
     /// **Lifts at 1024³ like the full tier** — a 1024³ lift measured 4.7 GB
     /// (`designs/decisions.md`, 2026-08-30), and 512³ costs the face.
     Lean,
@@ -1441,8 +1429,8 @@ pub const LICENCES: [Licence; 5] = [
         needs_accept: false,
         terms: "ComfyUI — GPL-3.0-or-later\n\
                 \n\
-                The audio models and the reference image model run inside ComfyUI, which\n\
-                is GPL-3.0-or-later. It runs as its own service and is driven over HTTP\n\
+                The audio models run inside ComfyUI, which is\n\
+                GPL-3.0-or-later. It runs as its own service and is driven over HTTP\n\
                 from a separate process: nothing of it is linked into this toolkit, and\n\
                 what it writes is your project's own. It is started with\n\
                 --disable-api-nodes, so no node in it can call a paid API or reach the\n\
@@ -2088,8 +2076,9 @@ mod tests {
         for need in &BACKEND_NEEDS {
             let file = tree.join(need.name).join("backend.toml");
             let Ok(text) = std::fs::read_to_string(&file) else {
-                // No directory here yet (qwen_image is Phase 3's), so the
-                // constant is all there is and it says where it came from.
+                // A backend the map names before a directory for it exists:
+                // the constant is all there is, and it says where it came
+                // from.
                 assert!(
                     !need.disk_note.is_empty(),
                     "{}: a figure with no file behind it must at least say where it came from",
@@ -2129,19 +2118,9 @@ mod tests {
     /// agreed to by name, so every prompt an installer makes is either
     /// covered by an id in the table or suppressed by a flag.
     #[test]
-    fn every_installer_prompt_is_a_licence_id_or_a_declined_group() {
+    fn every_installer_prompt_is_a_licence_id_this_machine_can_accept() {
         for need in &BACKEND_NEEDS {
             for id in need.installer_prompts {
-                if *id == "flux_dev_controlnet" {
-                    // Deliberately not in LICENCES: no kind in the map needs
-                    // the FLUX pose ControlNet, `forge setup` always passes
-                    // `--no-flux-controlnet`, and an id in the table would
-                    // put a non-commercial licence on the screen of every
-                    // project that makes a sound.
-                    assert_eq!(need.name, COMFY_BACKEND);
-                    assert!(licence(id).is_none());
-                    continue;
-                }
                 let known = licence(id).unwrap_or_else(|| panic!("{id} is not a licence id"));
                 assert!(
                     known.needs_accept,
@@ -2330,7 +2309,15 @@ mod tests {
         let props = licences_for(&[MakeKind::Props]);
         assert_eq!(
             props.iter().map(|l| l.id).collect::<Vec<_>>(),
-            vec!["nvdiffrast", "dinov3", "comfyui_gpl"]
+            vec!["nvdiffrast", "dinov3"],
+            "a props project never reaches the ComfyUI host: the reference image is brought, \
+             and the lift is the only generator it runs"
+        );
+        assert!(
+            licences_for(&[MakeKind::Sfx])
+                .iter()
+                .any(|l| l.id == "comfyui_gpl"),
+            "a kind that does run on the host is still told whose licence it is running under"
         );
         assert_eq!(
             required_licences(&[MakeKind::Sfx])
@@ -2366,9 +2353,13 @@ mod tests {
     fn the_one_screen_names_every_backend_its_disk_and_every_licence_in_full() {
         let plan = SetupPlan::for_kinds(&[MakeKind::Characters], Tier::Full);
         let screen = plan.screen();
-        for name in ["trellis2", "skintokens", "qwen_image", "comfy", "blender"] {
+        for name in ["trellis2", "skintokens", "blender"] {
             assert!(screen.contains(name), "{name} missing from:\n{screen}");
         }
+        assert!(
+            !screen.contains("comfy"),
+            "a character needs no host now that the image models have left it:\n{screen}"
+        );
         assert!(screen.contains("total"), "{screen}");
         assert!(
             screen.contains("non-commercially"),
@@ -2380,7 +2371,7 @@ mod tests {
             "{screen}"
         );
         assert!(
-            (plan.total_disk_gb() - 58.6).abs() < 0.05,
+            (plan.total_disk_gb() - 23.0).abs() < 0.05,
             "{}",
             plan.total_disk_gb()
         );

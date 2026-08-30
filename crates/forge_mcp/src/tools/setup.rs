@@ -56,10 +56,10 @@ pub(crate) fn router() -> ToolRouter<ForgeServer> {
 /// The six kinds, as an object an agent fills in.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct MakeArg {
-    /// Static props from a reference image (trellis2 + `qwen_image`).
+    /// Static props from a brought reference image (trellis2).
     #[serde(default)]
     pub(crate) props: bool,
-    /// Rigged characters from a reference image (+ skintokens).
+    /// Rigged characters from a brought reference image (+ skintokens).
     #[serde(default)]
     pub(crate) characters: bool,
     /// Animation clips from a prompt (ardy).

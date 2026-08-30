@@ -43,8 +43,7 @@ skill guesses at what the table can say.
   setup` prints the bill for their answer, and `--dry-run` prints it
   without touching anything. For reference, per backend: `trellis2` ~20 GB
   and `ardy` ~35 GB and `skintokens` ~3 GB (environments and clones —
-  estimates), `qwen_image` 33.60 GB fp8 plus the lean tier's 13.07 GB Q4
-  GGUF, `acestep` 10.03 GB, `moss_sfx` 10.46 GB, `moss_tts` 16.28 GB
+  estimates), `acestep` 10.03 GB, `moss_sfx` 10.46 GB, `moss_tts` 16.28 GB
   (5.72 + 3.95 + 6.61), the `comfy` host ~2 GB for its venv and clone. The
   weights figures are each backend's own `[[models]] gb`, and a test holds
   the bill to them — the `acestep 7.5 GB` this list used to carry was an
@@ -85,8 +84,8 @@ What the answers change downstream:
 - `[make]` decides which backends `forge setup` installs and which doctor
   rows are `off`.
 - `[hardware] tier` changes **registers and variants, never features**:
-  `lean` runs the reference image model quantised (Q4_K_M GGUF) and
-  MOSS-TTS at 1.7B, and **lifts at 1024³ exactly like `full`** — a 1024³
+  `lean` runs MOSS-TTS at 1.7B rather than 8B, and **lifts at 1024³ exactly
+  like `full`** — a 1024³
   lift measures 4.7 GB, and 512³ costs the face rather than saving memory.
   `fake` sets `FORGE_FAKE=1` as a first-class answer: every `forge gen`
   writes a branded placeholder through the same doors and validators.
@@ -241,7 +240,7 @@ Exit 3.
 ```
 gpu       NVIDIA GeForce RTX 4090  3413 / 24564 MiB in use, 21151 MiB free
 holding   pid 140003 2.5 GB  <process>
-largest   qwen_image needs 24 GB (24576 MiB): does NOT fit — stop what holds the card before a generate
+largest   ardy needs 17 GB (17408 MiB): does NOT fit — stop what holds the card before a generate
 ```
 
 Exit 1 when the largest chosen backend would not fit in what is free,
@@ -252,8 +251,6 @@ these do not share it. **Peaks measured 2026-08-30, `nvidia-smi` at 10 Hz**
 
 | Backend | VRAM | Resident after the call? |
 |---|---|---|
-| `qwen_image` fp8 at 1024² | **23.3 GB measured** — alone | no; `POST /free` returns it |
-| `qwen_image` Q4 GGUF (lean) | **16.2 GB measured** — alone | no |
 | `ardy` sweep | **15.4 GB measured** | no |
 | `trellis2` at 1024³ | **4.7 GB measured** | no |
 | `skintokens` skin-only | **3.3–4.4 GB measured** | no |

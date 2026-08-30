@@ -257,9 +257,10 @@ def test_the_shipped_backends_are_one_model_list_and_say_how_they_run(repo_root)
     host = backends.load_backend("comfy", tree)
     assert host.executor == "tool" and host.role == "host"
     assert "models" not in host.comfy.extra, "[[comfy.models]] is folded into [[models]]"
-    assert host.models, "the host's weights are an ordinary model list"
-    assert all(m.is_comfy for m in host.models), "every one of them lives in the host's tree"
-    assert all(m.file and m.gb for m in host.models), "each names its file and what it costs to fetch"
+    assert not host.models, (
+        "the host owns no weights: since the image-model group left it (decisions.md, "
+        "2026-08-30) every model on this card's tree is named by the backend that runs it"
+    )
     assert host.comfy.extra["frontend"] == "1.49.6", "a key that belonged to the pack, not the table"
 
     music = backends.load_backend("acestep", tree)
@@ -269,12 +270,24 @@ def test_the_shipped_backends_are_one_model_list_and_say_how_they_run(repo_root)
     assert music.comfy.packs == [], "and need no pack"
     assert music.workflow("music.api.json").is_file(), "the graph it names is tracked beside it"
     assert [m.store for m in music.models] == ["comfy:models/checkpoints"]
-    # Every backend the toolkit ships says how it is run, one way or the other.
+    # Every backend the toolkit ships says how it is run, one way or the
+    # other — and every weight it puts on the host's tree is one row in one
+    # list, naming its file and what it costs to fetch.
     for name in backends.KNOWN:
         backend = backends.load_backend(name, tree)
         assert backend.executor in backends.EXECUTORS
         if backend.executor == "comfy":
             assert backend.host and not backend.env and not backend.python
+        extra = backend.comfy.extra if backend.comfy else {}
+        assert "models" not in extra, f"{name}: [[comfy.models]] is folded into [[models]]"
+        for model in backend.models:
+            if model.is_comfy:
+                # A row lands either as one file or as a named snapshot
+                # directory, and either way it says what it costs: the figure
+                # `forge setup` puts on the screen before a byte downloads is
+                # the sum of these.
+                assert model.file or model.local, f"{name}: {model.id} says what it lands as"
+                assert model.gb, f"{name}: {model.id} says what it costs to fetch"
 
 
 def test_one_pack_says_one_thing_wherever_it_is_named(repo_root):

@@ -113,7 +113,8 @@ class Model:
     #: The download in GB, for ``forge setup``'s screen before a byte moves.
     gb: float | None = None
     #: The node class that lists this file, when it is not the folder's usual
-    #: one (a ``.gguf`` is listed by ``UnetLoaderGGUF``, not ``UNETLoader``).
+    #: one — a file a custom node pack loads is listed by that pack's loader,
+    #: never by the native one for its folder.
     node: str | None = None
     #: The input field on that node.
     field: str | None = None

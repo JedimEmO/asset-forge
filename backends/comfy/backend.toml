@@ -2,8 +2,11 @@
 # it runs no forge module, holds no weights of its own and is not execed by
 # the launcher. `forge serve`'s comfy executor (Phase 1) posts a workflow to
 # 127.0.0.1:8188 and reads the result back; until then this directory exists
-# so `forge doctor` lists the host beside the generators, with its pin, its
-# licence and the models the reference spike fetched into it.
+# so `forge doctor` lists the host beside the generators, with its pin and
+# its licence. Every model on this card's tree is named by the backend that
+# runs it — acestep, moss_sfx, moss_tts — never by the host; the image-model
+# group that used to sit here left with the reference door
+# (designs/decisions.md, "The reference image stays brought", 2026-08-30).
 #
 # Described like Blender — a host program, env_kind "none", probed from the
 # outside — with one difference: ComfyUI *is* a pinned checkout, so `commit`
@@ -49,24 +52,20 @@ manager_version = "4.2.2"
 frontend = "1.49.6"                        # comfyui-frontend-package, pinned by requirements.txt
 snapshot = "snapshot.json"                 # `GET /api/manager/snapshot/get_current`, committed beside this file
 base_directory = "data"                    # relative to $PREFIX: models/, input/, output/, user/, custom_nodes/
-# Two custom node packs. Everything the fp8 image templates and ACE-Step 1.5
-# need is native to v0.34.2; the lean tier's Q4_K_M GGUF needs ComfyUI-GGUF,
-# and the three MOSS models come through TTS-Audio-Suite. Each entry is
+# One custom node pack. Everything ACE-Step 1.5 needs is native to v0.34.2;
+# the three MOSS models come through TTS-Audio-Suite. The entry is
 # { repo, commit, dir, pips, nodes }: `dir` is the directory name under
 # $PREFIX/data/custom_nodes/, `pips` what the pack needs in the comfy venv
 # beyond ComfyUI's own requirements. A pack lives in four places or nowhere
 # — here, in install.sh (cloned at its pin *before* the unit starts, because
 # packs are scanned once at startup), in snapshot.json (re-fetched from the
 # Manager, never hand-edited) and in hosting.md's pins row.
-[[comfy.packs]]
-repo = "https://github.com/city96/ComfyUI-GGUF"
-commit = "6ea2651e7df66d7585f6ffee804b20e92fb38b8a"   # 2026-01-12
-dir = "ComfyUI-GGUF"
-license = "Apache-2.0"
-pips = ["gguf==0.19.0", "protobuf==7.36.0"]
-nodes = ["UnetLoaderGGUF"]
-note = "loads qwen-image-Q4_K_M.gguf for reference_qwen_gguf.api.json — the lean tier's image model. The fp8 templates do not touch it."
-
+#
+# `city96/ComfyUI-GGUF` was the second, and it was here for one node:
+# `UnetLoaderGGUF`, which loaded the lean tier's Q4_K_M Qwen-Image. Nothing
+# in ACE-Step or the MOSS pack reads a .gguf, so it left with the image
+# models. What is still on a machine that installed it is named in
+# install.sh's closing summary — a fact, not an action.
 [[comfy.packs]]
 repo = "https://github.com/diodiogod/TTS-Audio-Suite"
 commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
@@ -81,9 +80,9 @@ license = "MIT"
 # WAN prompter) and audiotools (the DAC VAE), each a hard import that failed
 # at POST /prompt with the card already leased (2026-08-30). Two things may
 # not come in with them: the pack's own requirements.txt (numpy<2.3.0 would
-# downgrade the host's 2.5.2 under every image template) and
-# descript-audiotools' dependencies (protobuf<3.20 would downgrade the
-# 7.36.0 ComfyUI-GGUF pins above) — so audiotools alone goes in with
+# downgrade the host's 2.5.2) and descript-audiotools' dependencies
+# (protobuf<3.20 would downgrade the host's, which tensorboard and
+# transformers both want above it) — so audiotools alone goes in with
 # --no-deps and the seven modules its import chain reaches follow it one by
 # one. With those two avoided nothing moved: torch 2.13.0+cu130, torchaudio
 # 2.11.0, transformers 5.16.1, numpy 2.5.2 and protobuf 7.36.0 are what they
@@ -107,98 +106,16 @@ nodes = [
 ]
 note = "the three MOSS models — SoundEffect v2, TTS and VoiceGenerator — behind moss_sfx and moss_tts, downloaded into models/TTS/{moss_soundeffect_v2,moss_tts}/ and not into the HF cache. It registers no unload node at this pin AND POST /free does not unload what it loaded (22.85 -> 15.07 GB free across an sfx job; 5.4 GB resident after a voice, 7.3 GB after a speech), so `systemctl --user restart forge-comfy` is the only lever that returns the card — 4.4 s, measured 2026-08-30."
 
-# The models the host holds, in the ComfyUI folder each lives in under
-# $PREFIX/<base_directory>/models/. `store = "comfy:models/<dir>"` is what
-# says so — one model list, the same one doctor, install.sh and probe.py
-# read, rather than a [[comfy.models]] block beside it that could disagree.
-
-[[models]]
-id = "Comfy-Org/Qwen-Image_ComfyUI"
-store = "comfy:models/diffusion_models"
-file = "split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors"
-license = "Apache-2.0"
-gb = 20.43
-
-[[models]]
-id = "Comfy-Org/Qwen-Image_ComfyUI"
-store = "comfy:models/text_encoders"
-file = "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
-license = "Apache-2.0"
-gb = 9.38
-
-[[models]]
-id = "Comfy-Org/Qwen-Image_ComfyUI"
-store = "comfy:models/vae"
-file = "split_files/vae/qwen_image_vae.safetensors"
-license = "Apache-2.0"
-gb = 0.25
-
-[[models]]
-id = "city96/Qwen-Image-gguf"
-store = "comfy:models/diffusion_models"
-file = "qwen-image-Q4_K_M.gguf"
-revision = "e77babc55af111419e1714a7a0a848b9cac25db7"
-license = "Apache-2.0"
-gb = 13.07
-node = "UnetLoaderGGUF"
-field = "unet_name"
-note = "the lean tier's Qwen-Image: 16.2 GB measured at 1024 with --reserve-vram 8, against fp8's 23.3 GB, and 111 s against 113 s. Needs the ComfyUI-GGUF pack above; the text encoder stays the fp8 Qwen2.5-VL"
-
-[[models]]
-id = "Comfy-Org/Qwen-Image-InstantX-ControlNets"
-store = "comfy:models/controlnet"
-file = "split_files/controlnet/Qwen-Image-InstantX-ControlNet-Union.safetensors"
-license = "Apache-2.0"
-gb = 3.54
-note = "InstantX Qwen-Image ControlNet-Union: canny, depth, pose, soft edge — native ControlNetLoader, no custom node"
-
-[[models]]
-id = "Comfy-Org/flux1-schnell"
-store = "comfy:models/checkpoints"
-file = "flux1-schnell-fp8.safetensors"
-license = "Apache-2.0"
-gb = 17.24
-note = "the fp8 form ComfyUI documents for schnell is the all-in-one checkpoint (CheckpointLoaderSimple); there is no fp8 UNET-only file, only a 23.8 GB bf16 one"
-
-[[models]]
-id = "comfyanonymous/flux_text_encoders"
-store = "comfy:models/text_encoders"
-file = "clip_l.safetensors"
-license = "Apache-2.0"
-gb = 0.25
-
-[[models]]
-id = "comfyanonymous/flux_text_encoders"
-store = "comfy:models/text_encoders"
-file = "t5xxl_fp8_e4m3fn.safetensors"
-license = "Apache-2.0"
-gb = 4.89
-
-[[models]]
-id = "black-forest-labs/FLUX.1-schnell"
-store = "comfy:models/vae"
-file = "ae.safetensors"
-license = "Apache-2.0"
-gb = 0.34
-note = "gated: auto — an HF token is required even though the licence is Apache-2.0"
-
-[[models]]
-id = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
-store = "comfy:models/controlnet"
-file = "diffusion_pytorch_model.safetensors"
-local = "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"
-license = "FLUX.1-dev Non-Commercial License"
-gb = 4.28
-note = "the only maintained pose ControlNet for the FLUX family; trained on FLUX.1-dev, applied to schnell off-base. Both facts are the spike's to weigh"
+# No `[[models]]` rows. The host holds no weights on its own account: the
+# ACE-Step checkpoint is `backends/acestep`'s one download, the three MOSS
+# models are fetched by the node pack on first run, and each of those rows
+# carries `store = "comfy:models/<dir>"` so doctor reads every weight on
+# this card's tree out of one list — the backend's own, never the host's.
 
 [[notices]]
 title = "ComfyUI"
 text = "GPL-3.0-or-later. It runs as its own systemd --user service and is driven over HTTP; nothing of it is imported into the toolkit, and what it writes is the project's own. Started with --disable-api-nodes, so no node in it can call a paid API or reach the internet from the graph."
 
 [[notices]]
-title = "FLUX pose ControlNet"
-text = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0 is under the FLUX.1-dev Non-Commercial License and was trained on FLUX.1-dev, not schnell. It is here only so the Phase 0 spike can condition both candidates on a pose; no reference record may name it until that licence is weighed. The Qwen-Image side (InstantX ControlNet-Union) is Apache-2.0 and on-base."
-
-[[notices]]
 title = "resident service"
-text = "the unit is up across calls and holds ~0.4 GB of the card for its CUDA context even with no model loaded; a loaded image model stays resident until the workflow's unload node or POST /free. Stop it (systemctl --user stop forge-comfy) before a 1024-cubed lift."
+text = "the unit is up across calls and holds ~0.4 GB of the card for its CUDA context even with no model loaded; a model a graph loaded stays resident until the workflow's unload node or POST /free, and the MOSS pack has neither — `systemctl --user restart forge-comfy` is the only lever that returns what it loaded. Stop it (systemctl --user stop forge-comfy) before a 1024-cubed lift."

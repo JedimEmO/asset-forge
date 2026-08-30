@@ -97,8 +97,8 @@ beside the installs — because the install is what is licensed, and
 `forge.toml` is hand-edited, which would let an acceptance be *typed*
 rather than *given*.
 
-Tiers change registers and variants, never features: `lean` runs the
-reference image model quantised (Q4_K_M GGUF) and MOSS-TTS at 1.7B, and
+Tiers change registers and variants, never features: `lean` runs MOSS-TTS at
+1.7B rather than 8B, and
 **lifts at 1024³ exactly like `full`** — a 1024³ lift measures 4.7 GB, and
 512³ costs the face rather than saving memory.
 
@@ -163,20 +163,28 @@ game reads.
 | Rust and `just` | rustup (the repo pins 1.96.1), `just`, and Bevy's headers — the prerequisites block above the Quickstart |
 | Disk | what the kinds you chose need, and no more; `forge setup` prints the bill for your answer before fetching |
 
-The generators do not share the card. The image model is the one thing that
-wants all of it (23.3 GB fp8, 16.2 GB as the lean tier's Q4 GGUF, measured
-2026-08-30, alone either way); the 1024³ lift is the cheapest of the three
-at 4.7 GB, ARDY's sweep is 15.4 GB, and the ComfyUI host holds ~0.4 GB of
+The generators do not share the card. ARDY's sweep is the hungriest at
+15.4 GB (measured 2026-08-30); the 1024³ lift is the cheapest at
+4.7 GB, and the ComfyUI host holds ~0.4 GB of
 CUDA context for as long as its unit is up. `just gpu` says who holds the
 card and whether the largest chosen backend would fit; a `backend.toml`'s
 `vram_gb` is a budget and is never a measurement.
 
 ## The reference image
 
-The reference PNG is an **input**. No image model ships here; the lift record
-(`<name>.lift.json`, beside the PNG) claims the file's sha256 and a row in
-[`assets-src/SOURCES.md`](assets-src/SOURCES.md) — where it came from, on
-what terms — never its regeneration. A PNG without a row fails `just verify`.
+The reference PNG is an **input**. No image model ships here — one was
+measured on 2026-08-30 and set aside, because a picture drawn by a person in
+the tool they already have beats two minutes of the whole card and a gate
+that cannot see what matters (`designs/decisions.md`, "The reference image
+stays brought"). It comes in through one door, `import_reference` /
+`forge ref import`, which holds it to a stated format, keys it, pre-checks it
+and records its stated source. The sample library's references were made in
+Grok, and `SOURCES.md` says so.
+
+The lift record (`<name>.lift.json`, beside the PNG) claims the file's sha256
+and a row in [`assets-src/SOURCES.md`](assets-src/SOURCES.md) — where it came
+from, on what terms — never its regeneration. A PNG without a row fails
+`just verify`.
 
 What the lift needs from the picture, judged by eye before any GPU minute:
 
@@ -482,8 +490,7 @@ use**.
 
 The sample library under `assets/` and `assets-src/` is shipped so the tools
 have something to show on a fresh clone. Its meshes were lifted with
-TRELLIS.2 (MIT, code and weights) out of reference images made with a cloud
-image model before this repository existed; its clips come from
+TRELLIS.2 (MIT, code and weights) out of reference images drawn in Grok; its clips come from
 [ARDY](https://github.com/nv-tlabs/ardy) (code Apache-2.0, checkpoints under
 the NVIDIA Open Model License; outputs are usable); its sounds from MOSS and
 ACE-Step (Apache-2.0 and MIT). The per-image record, the licence answer for

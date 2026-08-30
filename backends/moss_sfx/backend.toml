@@ -59,9 +59,10 @@ license = "MIT"
 # WAN prompter) and audiotools (the DAC VAE), each a hard import that fails
 # at POST /prompt with the card already leased. Measured on the first real
 # `forge gen sfx`, 2026-08-30. Neither the pack's requirements.txt (numpy
-# <2.3.0, which would downgrade the host's 2.5.2 under every image template)
-# nor descript-audiotools' own dependencies (protobuf <3.20, which would
-# downgrade ComfyUI-GGUF's 7.36.0) may be installed: audiotools goes in with
+# <2.3.0, which would downgrade the host's 2.5.2) nor descript-audiotools'
+# own dependencies (protobuf <3.20, which would downgrade the host's, and
+# tensorboard and transformers both want it well above that) may be
+# installed: audiotools goes in with
 # --no-deps and the seven modules its import chain reaches follow it.
 # Unpinned because what is pinned is the pack; the versions that ran are in
 # every record. designs/hosting.md, "ComfyUI", 2026-08-30.

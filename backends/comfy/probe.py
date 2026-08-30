@@ -8,8 +8,9 @@ environment but doctor never enters it — the thing to check is the service
 on 127.0.0.1:8188 and what it says about itself. Two calls do it:
 ``GET /system_stats`` (version, argv, the card it sees) and
 ``GET /object_info`` (every node class, with each loader's file list), which
-is also how the models are checked — a weight ComfyUI cannot see in its
-folders is a weight that is not installed, whatever is on disk.
+is also how a model would be checked — a weight ComfyUI cannot see in its
+folders is a weight that is not installed, whatever is on disk. The host
+states no weights of its own; the backends it hosts do.
 
 The last stdout line is the object doctor reads: ``{"tool": "comfy", "ok":
 bool, "bin": "http://127.0.0.1:8188", "version": "0.34.2", "build_hash":
@@ -33,23 +34,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 TIMEOUT_S = 20.0
-#: The node classes the reference spike's workflows load their models with.
-#: Every one but ``UnetLoaderGGUF`` is native to the pinned ComfyUI; that one
-#: comes from the ComfyUI-GGUF pack, so its absence names a missing pack.
-WANTED_NODES = (
-    "UNETLoader",
-    "CLIPLoader",
-    "VAELoader",
-    "ControlNetLoader",
-    "CheckpointLoaderSimple",
-    "TextEncodeQwenImageEdit",
-    "ModelSamplingFlux",
-    "ControlNetApplyAdvanced",
-    "UnetLoaderGGUF",
-)
 #: Which loader's file list a model folder shows up in, when the model does
-#: not name its own (a ``.gguf`` in ``diffusion_models`` is listed by the
-#: pack's ``UnetLoaderGGUF``, never by the native ``UNETLoader``).
+#: not name its own. The host states no ``[[models]]`` of its own — every
+#: weight on this card's tree belongs to the backend that runs it — but the
+#: map stays because the loop below is the general one.
 FOLDER_NODE = {
     "diffusion_models": ("UNETLoader", "unet_name"),
     "text_encoders": ("CLIPLoader", "clip_name"),
@@ -57,6 +45,25 @@ FOLDER_NODE = {
     "controlnet": ("ControlNetLoader", "control_net_name"),
     "checkpoints": ("CheckpointLoaderSimple", "ckpt_name"),
 }
+
+
+def wanted_nodes(conf: dict) -> tuple[str, ...]:
+    """The node classes the host's own description claims are registered.
+
+    Not a literal list any more. Until the image models left, this was the
+    eight loaders the reference templates named plus ``UnetLoaderGGUF``; with
+    those gone the host asserts nothing about ComfyUI's native surface — a
+    guest backend checks the classes *its* graphs name — and what is left for
+    the host to hold is its own claim: the packs it installs, and the classes
+    each of them says it registers. A pack that clones but does not register
+    is the failure this catches, and it is the one a clone check cannot see.
+    """
+    seen: list[str] = []
+    for pack in (conf.get("comfy") or {}).get("packs") or []:
+        for node in pack.get("nodes") or []:
+            if node not in seen:
+                seen.append(str(node))
+    return tuple(seen)
 
 
 def config() -> dict:
@@ -211,9 +218,10 @@ def main() -> int:
         info = {}
     else:
         result["extras"]["node_classes"] = len(info)
-    for node in WANTED_NODES:
+    wanted = wanted_nodes(conf)
+    for node in wanted:
         result["imports"][node] = node in info
-    missing_nodes = sorted(node for node in WANTED_NODES if node not in info)
+    missing_nodes = sorted(node for node in wanted if node not in info)
     if missing_nodes:
         problems.append(f"node classes absent: {', '.join(missing_nodes)}")
 
@@ -230,13 +238,13 @@ def main() -> int:
     # `[[comfy.models]]` block this used to read existed because `store` had
     # no word for a comfy folder; it has one now, and two lists that can
     # disagree is exactly the shape doctor must not have.
-    wanted = [
+    weights = [
         model
         for model in (conf.get("models") or [])
         if str(model.get("store") or "").startswith("comfy:")
     ]
     absent: list[str] = []
-    for model in wanted:
+    for model in weights:
         folder = str(model["store"]).split("/")[-1]
         name = str(model.get("local") or Path(str(model.get("file") or "")).name)
         if name in listed(folder, model.get("node"), model.get("field")):
@@ -245,7 +253,7 @@ def main() -> int:
         # from one that is not there at all: the first is a paths problem.
         on_disk = bool(base and (base / "models" / folder / name).is_file())
         absent.append(f"{folder}/{name}" + (" (on disk, not listed — check extra_model_paths.yaml)" if on_disk else ""))
-    result["extras"]["models"] = f"{len(wanted) - len(absent)}/{len(wanted)}"
+    result["extras"]["models"] = f"{len(weights) - len(absent)}/{len(weights)}"
     if absent:
         problems.append("models absent: " + "; ".join(absent))
         result["hints"].append(f"bash {HERE / 'install.sh'}  — re-running fetches only what is missing")

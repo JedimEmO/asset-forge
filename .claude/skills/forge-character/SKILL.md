@@ -35,6 +35,16 @@ accepted (`doctor` says `hf auth login --token` when it is not).
 
 ## Step 0 — judge the PNG before any GPU time
 
+**The reference is brought, not made here.** No image model ships in this
+toolkit — one was measured on 2026-08-30 and set aside, because a picture a
+person draws in the tool they already have beats two minutes of the whole
+card and a fit gate that cannot see limb volume (`designs/decisions.md`,
+"The reference image stays brought"). Draw it, or have the user draw it, and
+bring it in through `import_reference` / `forge ref import` (Phase 3; until
+that door lands, copy the PNG in and write its `SOURCES.md` row by hand as
+below). The sample library's references were made in **Grok**, and
+`SOURCES.md` says so.
+
 `Read` the PNG (the Read tool shows images). The gates downstream measure
 geometry, not intent: the image has to *be* a T-pose, not describe one. A
 lift is minutes of a 22 GB card; a look is free.

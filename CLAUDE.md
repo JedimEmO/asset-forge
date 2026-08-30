@@ -33,9 +33,8 @@ record to make a gate pass is the same defect in a smaller file.
 
 One 24 GB card, and nothing on it co-resides. Peaks measured 2026-08-30
 (`designs/hosting.md` § GPU co-residency and § the first real run of the
-audio path): the image model is the expensive one — Qwen-Image fp8
-**23.3 GB**, its Q4 GGUF form **16.2 GB**, each alone on the card — then
-ARDY at **15.4 GB**, ACE-Step at **13.1 GB**, MOSS-SoundEffect at
+audio path): ARDY's sweep is the expensive one at
+**15.4 GB**, then ACE-Step at **13.1 GB**, MOSS-SoundEffect at
 **10.0 GB**, MOSS-TTS at **7.1 GB** over the voice designer's **5.3 GB**
 (the pack unloads neither, so they add up); TRELLIS.2 at 1024³ is
 **4.7 GB** and SkinTokens **3.3–4.4 GB**. Each `backend.toml`'s `vram_gb`
@@ -64,7 +63,10 @@ believe it.
   from the clip it is about to replace.
 - A reference PNG claims integrity (sha256) and a row in
   `assets-src/SOURCES.md`, never regeneration. A PNG without a row fails
-  `forge verify`.
+  `forge verify`. **The reference is brought, not made here** — no image
+  model ships in this toolkit; it comes through `import_reference` /
+  `forge ref import` (Phase 3), and the sample library's are drawn in Grok
+  and said to be, in `SOURCES.md`.
 - Bodies, models and audio claim integrity; clips claim reproduction
   (`forge audit`, ≤ 1 mm). Do not promise the wider claim for the narrower
   kind.

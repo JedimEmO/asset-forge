@@ -273,9 +273,9 @@ unit = "forge-comfy.service"
 base_directory = "data"
 
 [[comfy.packs]]
-repo = "https://github.com/city96/ComfyUI-GGUF"
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
 commit = "{pack}"
-dir = "ComfyUI-GGUF"
+dir = "TTS-Audio-Suite"
 """
 
 
@@ -344,7 +344,7 @@ def comfy_tree(tmp_path, monkeypatch):
     os.symlink(clone, host_dir / ".checkout")
 
     base = tmp_path / "prefix" / "data"
-    pack = base / "custom_nodes" / "ComfyUI-GGUF"
+    pack = base / "custom_nodes" / "TTS-Audio-Suite"
     pack_commit = _git_init(pack)
     os.symlink(tmp_path / "prefix", host_dir / ".env")
 
@@ -405,7 +405,7 @@ def test_the_comfy_ladder_reads_missing_partial_broken_and_ok(comfy_tree):
         tts = report["backends"]["tts"]
         names = {check["name"]: check for check in tts["checks"]}
         assert tts["status"] == "partial", names
-        assert names["commit"]["ok"] and names["pack:ComfyUI-GGUF"]["ok"]
+        assert names["commit"]["ok"] and names["pack:TTS-Audio-Suite"]["ok"]
         assert names["nodes"]["ok"] and names["workflow:speech.api.json"]["ok"]
         weight = names["model:OpenMOSS-Team/MOSS-TTS/moss_tts_4b.safetensors"]
         assert not weight["ok"] and "8.1 GB to fetch" in weight["detail"]
