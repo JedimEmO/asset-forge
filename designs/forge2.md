@@ -355,18 +355,41 @@ also bought: the keyer, not the prompt, decides whether a drawn reference is
 liftable, and half the repository's `vram_gb` figures were budgets reading as
 facts. Phases 1–4 stand as written.
 
-**Phase 1 — the daemon (2 weeks). Onboarding, doctor, the licence gate and
-`mcp-session` landed 2026-08-30.** `forge.toml` carries `[make]` and
-`[hardware]`; `forge init` asks the three questions on a TTY and takes the
-defaults with one line of assumptions where there is none; `forge setup`
-prints one screen — backends, disk, total, every licence in full — before a
-byte downloads, refuses a bare `--yes`, and appends acceptances to
-`$FORGE_BACKENDS_HOME/licences.json`; doctor has its fifth word (`off`), its
-`executor`/`chosen` columns, the comfy ladder against a shared
-`/object_info`, and exits 1 only for a chosen backend; `init_project`,
-`licences` and `setup` are MCP tools; and `mcp-session` is in `just ci` and
-in GitHub's test job. Still open in this phase: the daemon itself, the two
-executors, `forge_record: 2`, and the retirement of the three audio venvs.
+**Phase 1 — the daemon (2 weeks). Landed 2026-08-30, and audited the same
+day.** `forge.toml` carries `[make]` and `[hardware]`; `forge init` asks the
+three questions on a TTY and takes the defaults with one line of assumptions
+where there is none; `forge setup` prints one screen — backends, disk, total,
+every licence in full — before a byte downloads, refuses a bare `--yes`, and
+appends acceptances to `$FORGE_BACKENDS_HOME/licences.json`; doctor has its
+fifth word (`off`), its `executor`/`chosen` columns, the comfy ladder against
+a shared `/object_info`, and exits 1 only for a chosen backend. **`forge
+serve` is up**: the FIFO, the `flock(2)` card lease, the job table, both
+executors, the HTTP API with MCP nested at `/mcp`, and `forge jobs` /
+`forge job show|log|cancel` / `forge stop` as its terminal doors. **The
+three audio venvs are gone**: ACE-Step is native to the host, the three MOSS
+models come through TTS-Audio-Suite, and `forge_record: 2` carries
+`executor`, `comfyui_commit`, `workflow_sha256` and `packs`.
+`init_project`, `licences` and `setup` are MCP tools; `mcp-session` runs the
+agent's whole path over both transports and, since the audit, from a
+directory that is not a project yet.
+
+**What the audit found, and what it means for the phase** (the fixes are in
+`decisions.md` and `designs/serve.md`, all dated 2026-08-30). Most of it was
+one shape — a fact that existed in one place and was defaulted in another:
+the terminal door submitted every generate with no backend while the MCP
+door named one, tier `fake` never reached the queue, the card was called
+back against a number an earlier job's leftovers were inside of, and the
+setup screen billed 9.5 GB in front of a 73.7 GB download. Two things are
+**still open**, and neither is a defect of the daemon: `forge gen speech`
+cannot make a line, because MOSS-TTS 1.7B does not run under the host's
+transformers 5 and the pack answers with silence (`backends/moss_tts`'s
+notice names the pin that would lift it); and `forge gen music` renders but
+does not promote, because ACE-Step 1.5 turbo comes off the host at 0.0 dBFS
+and the clipping gate is right to refuse it. The MCP `setup` tool also
+**plans and gates rather than installing** — `serve.md` §7 has it returning
+a job, and the queue schedules `forge gen` command lines, so an install
+executor is a decision of its own; the tool's description says what it does
+instead of what the plan said it would.
 
 **Phase 1, as planned —** `forge serve`: the queue, the card
 lock, the job table, two executors. `env` is today's launcher driven

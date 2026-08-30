@@ -48,36 +48,32 @@ _build:
 # the bill first and refuses to start without `--yes`.
 #
 # Install one backend under backends/<name>/: `just setup trellis2 --yes`
-setup backend="all" *flags:
+setup backend="all" *flags: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
     if [ "{{backend}}" = all ]; then
-        # The bill, before anything is fetched. Weight sizes are the measured
-        # ones from backends/README.md and the backend.toml notes; the env and
-        # clone trees on top are estimates. Everything heavy goes under
-        # ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends} and the HF cache.
-        cat <<'BILL'
-    `just setup` installs all five backends. Disk, before you start:
-
-      trellis2   conda env (CUDA 12.4, torch cu124) + TRELLIS.2-4B + DINOv3      ~20 GB
-      ardy       venv + clone + text encoder (~16 GB downloaded, ~31 GB written) ~35 GB
-      acestep    venv + patched clone + the minimal model set (~7.3 GB)          ~10 GB
-      moss_sfx   venv + MOSS-SoundEffect-v2.0 (~11 GB)                           ~12 GB
-      moss_tts   venv + MOSS-TTS 4B (~8 GB) + the voice designer (~4 GB)         ~13 GB
-
-      total      ~80 GB and change, under ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends}
-                 and the Hugging Face cache. `--no-models` defers each backend's
-                 weights to its first generate.
-
-    BILL
+        # The bill, before anything is fetched — printed by the door that
+        # knows it. A heredoc here said `acestep ~10 GB, moss_sfx venv +
+        # ~11 GB, moss_tts 4B ~8 GB` long after none of those was true, and
+        # a bill nobody can re-derive is exactly the drift `forge setup`
+        # exists to stop: every weights figure it prints is the sum of that
+        # backend's own `[[models]] gb`.
+        "{{forge}}" setup props characters clips sfx music voice --dry-run || true
+        echo
+        echo "That screen is 'forge setup''s own, for all six kinds. This recipe is the" >&2
+        echo "backend-shaped door under it: it runs each backends/*/install.sh in turn with" >&2
+        echo "the flags you passed, which is NOT what 'forge setup' does — that one installs" >&2
+        echo "only what your project's [make] chose, tells the comfy host which model group" >&2
+        echo "to fetch, and hands an installer --yes only for licences you named." >&2
         case " {{flags}} " in
             *" --yes "*|*" -y "*) ;;
             *)
-                echo "setup all fetches the ~80 GB above and accepts licence prompts along the way." >&2
-                echo "Re-run as \`just setup all --yes\` after reading the bill (add --no-models to" >&2
+                echo >&2
+                echo "Re-run as 'just setup all --yes' after reading the bill (add --no-models to" >&2
                 echo "make the envs now and download weights on first use), or take one backend at" >&2
-                echo "a time: \`just setup trellis2 --yes\`." >&2
+                echo "a time: 'just setup trellis2 --yes'. 'forge setup' is the kind-shaped door," >&2
+                echo "and the one that asks about each licence by name." >&2
                 exit 2 ;;
         esac
         for script in backends/*/install.sh; do
@@ -115,9 +111,11 @@ doctor *flags: _build
 
 # Look before you spend: the generators do not share 24 GB, and a second one
 # started blind ends in an OOM, not a queue. Exits 1 when the largest chosen
-# backend would not fit in what is free, naming who holds the rest —
-# `systemctl --user stop forge-comfy` is the usual answer, since the host
-# keeps whatever a workflow last loaded until its unload node or POST /free.
+# backend would not fit in what is free, naming who holds the rest.
+# `forge gpu --free` is the door — and for anything TTS-Audio-Suite loaded
+# it is not enough: the pack has no unload node at this pin and POST /free
+# does not touch its models, so `systemctl --user restart forge-comfy` (4.4 s,
+# measured) is the lever. Native ACE-Step gives the card back by itself.
 #
 # Who holds the GPU right now.
 [no-exit-message]
@@ -276,8 +274,10 @@ sfx name prompt *flags: _build
         --record out/audio/sfx/{{name}}.json {{flags}}
 
 # ACE-Step runs inside the ComfyUI host now, so there is no resident server
-# of its own to stop and no `--stop-server`: the workflow ends in its unload
-# node, and `systemctl --user stop forge-comfy` is what gives the card back.
+# of its own to stop and no `--stop-server`: it is native to the host, and
+# measured 2026-08-30 it gives the card back by itself when the graph ends.
+# At this pin a track renders and does NOT promote — the host normalises it
+# to 0.0 dBFS and the clipping gate refuses it (designs/hosting.md).
 #
 # One music track from a prompt, to out/audio/music/.
 music name prompt *flags: _build

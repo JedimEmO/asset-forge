@@ -40,10 +40,15 @@ skill guesses at what the table can say.
   backends; doctor lists them and nothing installs them. Blender is only
   needed if you chose `props` or `characters`.
 - Disk: **do not quote a total until you know what they make.** `forge
-  setup` prints the bill for their answer. For reference, per backend:
-  `trellis2` ~20 GB, `ardy` ~35 GB, `qwen_image` ~33.6 GB fp8 (~26 GB on
-  the lean tier's Q4 GGUF), `moss_sfx` ~11 GB, `moss_tts` ~12 GB,
-  `acestep` ~7.5 GB, the `comfy` host ~2 GB, `skintokens` ~3 GB.
+  setup` prints the bill for their answer, and `--dry-run` prints it
+  without touching anything. For reference, per backend: `trellis2` ~20 GB
+  and `ardy` ~35 GB and `skintokens` ~3 GB (environments and clones —
+  estimates), `qwen_image` 33.60 GB fp8 plus the lean tier's 13.07 GB Q4
+  GGUF, `acestep` 10.03 GB, `moss_sfx` 10.46 GB, `moss_tts` 16.28 GB
+  (5.72 + 3.95 + 6.61), the `comfy` host ~2 GB for its venv and clone. The
+  weights figures are each backend's own `[[models]] gb`, and a test holds
+  the bill to them — the `acestep 7.5 GB` this list used to carry was an
+  estimate of a model set that is not what ships.
 
 ## Steps
 
@@ -252,16 +257,26 @@ these do not share it. **Peaks measured 2026-08-30, `nvidia-smi` at 10 Hz**
 | `ardy` sweep | **15.4 GB measured** | no |
 | `trellis2` at 1024³ | **4.7 GB measured** | no |
 | `skintokens` skin-only | **3.3–4.4 GB measured** | no |
-| `moss_tts` (4B) | ~12 GB (budget) | no |
-| `moss_sfx` | ~6–8 GB (budget) | no |
-| `acestep` | ~8 GB (budget) | no |
+| `moss_tts` speech (1.7B) | **7.1 GB measured**, on top of the designer's 5.4 GB if one just ran | **yes, 7.3 GB** |
+| `moss_tts` voice design | **5.3 GB measured** | **yes, 5.4 GB** |
+| `moss_sfx` | **10.0 GB measured** | **yes, 9.1 GB** |
+| `acestep` | **13.1 GB measured** | **no** — the card comes back by itself |
 | the `comfy` unit, idle | ~0.4 GB of CUDA context | **yes**, until the unit stops |
 | studio viewer on the real adapter | small; not measured | while open |
 
-The usual fix is `systemctl --user stop forge-comfy` (the host holds
-whatever a workflow last loaded until its unload node or `POST /free`), or
-closing the studio. Never two generates at once; never one while a studio
-window with a model loaded is up on the real adapter; never 1536³ on 24 GB.
+**Giving the card back.** `forge gpu --free` is the door. It calls
+`POST /free`, which returns the card for **native** models (ACE-Step needs
+even that only rarely) and does **nothing** for what TTS-Audio-Suite
+loaded: the pack registers no unload node at this pin, and 9.1 GB stayed on
+the card after an effect. The lever that works there is `systemctl --user
+restart forge-comfy` — 4.4 s, measured 2026-08-30 — which the daemon's own
+release ladder does for you, and if even that does not free the card the
+lease is **withheld** until something proves it is free. `forge gpu --free`
+says "the card is back" only when free VRAM reaches the card's idle floor,
+never merely because it matches what the call started with. Otherwise:
+close the studio. Never two generates at once; never one while a studio
+window with a model loaded is up on the real adapter; never 1536³ on
+24 GB.
 
 ## The traps (the why is in `designs/hosting.md`, dated; read it before fighting one)
 
@@ -287,10 +302,17 @@ window with a model loaded is up on the real adapter; never 1536³ on 24 GB.
   `assemble_text_encoder.py` does all three; ~31 GB.
 - **The three audio backends run inside the ComfyUI host**, so they have no
   venv of their own and no server of their own to stop: ACE-Step is native
-  in the host, MOSS speaks through TTS-Audio-Suite, and what holds the card
-  is the unit — `systemctl --user stop forge-comfy`, or the workflow's
-  unload node, or `POST /free`. The 8B MOSS Delay model still OOMs; the 4B
-  is what runs.
+  in the host and MOSS speaks through TTS-Audio-Suite. What holds the card
+  is the unit, and the only lever for the MOSS pack is `systemctl --user
+  restart forge-comfy` — there is **no unload node** in the pack at this
+  pin and `POST /free` does not touch what it loaded. The pack's own
+  weights land in `$PREFIX/data/models/TTS/`, not in the HF cache, and it
+  fetches them on the node's first run — nothing an installer does. Two
+  things do not work at this pin and are not setup problems: `speech` (the
+  1.7B does not run under the host's transformers 5 and the pack returns
+  silence; the notice on `backends/moss_tts` names the pin that would lift
+  it) and promoting `music` (ACE-Step turbo comes off the host at 0.0 dBFS
+  and the clipping gate is right to refuse it).
 - **`comfy`:** a systemd `--user` unit on `127.0.0.1:8188`, started with
   `--base-directory` (without it the service writes into the clone and
   finds no models), `--disable-api-nodes` (no node can call a paid API) and

@@ -15,11 +15,25 @@ TTS-Audio-Suite — so none of them has a venv or a server of its own. Nothing a
 a sound is looked at before it ships. None of the three is bit-reproducible,
 so a shipped sound claims integrity (sha256) and provenance, never
 regeneration: the record says what was asked and what the backend used, and
-the file is the bytes that were judged. The sfx, inspect and promote lines
-quoted below were captured on a real run (2026-08-23, a sword whoosh, two
-seeds); the music lines on the sample library's render the same day; the
-speech lines on the sample's `warden_greeting`, cloned from the designed
-`crypt_warden` voice the same evening.
+the file is the bytes that were judged.
+
+**Two things are true at this pin and neither is a setup problem** (both
+measured 2026-08-30, `designs/hosting.md` § the first real run of the audio
+path):
+
+- **`just speech` cannot make a line.** MOSS-TTS 1.7B does not run under
+  the host's transformers 5, and the pack turns that into *silence* rather
+  than an error — the graph completes, and the audio gate now refuses the
+  file and writes no record. `backends/moss_tts`'s `[[notices]]` names both
+  API breaks and the pin that would lift them. `just voice` (the designer)
+  is unaffected and works.
+- **`just music` renders but does not promote.** ACE-Step 1.5 turbo comes
+  off the host at exactly 0.0 dBFS whatever the content, with runs of 10 to
+  186 pinned samples, and the clipping gate is right to refuse it. The fix
+  is a stated gain knob in the graph, not a file edited by hand.
+
+The timings below were measured on that run; the log lines are the ones
+these modules print.
 
 ## Prerequisites (check, don't assume)
 
@@ -27,9 +41,9 @@ speech lines on the sample's `warden_greeting`, cloned from the designed
 
   | Recipe | Row | What each word means here |
   |---|---|---|
-  | `just sfx` | `moss_sfx` `[comfy]` | `partial`: the weight (`MOSS-SoundEffect-v2.0`, ~11 GB) is not in the host's model folder yet, and the row names it with its GB |
-  | `just music` | `acestep` `[comfy]` | `partial`: the ~7.5 GB checkpoint set is not on disk |
-  | `just speech` | `moss_tts` `[comfy]` | `partial`: `MOSS-TTS-Local-Transformer-v1.5` (~8 GB) is absent; the same row covers `just voice` (`forge-voice`) and its ~4 GB `MOSS-VoiceGenerator` |
+  | `just sfx` | `moss_sfx` `[comfy]` | `partial`: `MOSS-SoundEffect-v2.0` (10.46 GB) is not in the host's `models/TTS/moss_soundeffect_v2/` yet, and the row names it with its GB. The pack downloads it on the node's first run — **not** into the HF cache |
+  | `just music` | `acestep` `[comfy]` | `partial`: the 10.03 GB all-in-one checkpoint is not in `models/checkpoints/`; `bash backends/acestep/install.sh` is the one thing that fetches it |
+  | `just speech` | `moss_tts` `[comfy]` | `ok` here does **not** mean a line can be spoken — the row is node classes and weight files, and neither is what is broken (see above). The same row covers `just voice` (`forge-voice`); the three weights are 5.72 + 3.95 + 6.61 GB under `models/TTS/moss_tts/` |
 
   All three are `comfy` backends, so their rows are judged against the
   service: `missing` means **nothing is listening at `[hardware]
@@ -42,14 +56,21 @@ speech lines on the sample's `warden_greeting`, cloned from the designed
   project did not choose that kind. If the user wants it, that is a
   `[make]` line in `forge.toml` (or `init_project` with `adopt: true`),
   then `forge setup`.
-- **The GPU is free enough.** `just gpu`. MOSS-SoundEffect ~6–8 GB,
-  MOSS-TTS (the 4B) ~12 GB, ACE-Step ~8 GB — all three budgets, not
-  measurements. What stays on the card is **the ComfyUI unit**: ~0.4 GB of
-  CUDA context while it is up, plus whatever workflow last loaded, until
-  its unload node, `POST /free`, or `systemctl --user stop forge-comfy`.
-  None of them co-resides with the image model (23.3 GB measured) or an
-  ARDY sweep (15.4 GB measured); a studio window on the real adapter holds
-  the card too.
+- **The GPU is free enough.** `just gpu`. Measured 2026-08-30:
+  MOSS-SoundEffect **10.0 GB**, ACE-Step **13.1 GB**, MOSS-TTS **7.1 GB**
+  *on top of* the voice designer's **5.3 GB** — the pack unloads neither,
+  so a speech after a voice is the pair. Each `backend.toml`'s `vram_gb`
+  sits above its peak (11, 14, 13) and is a budget, never a measurement.
+  None of them co-resides with the image model (23.3 GB) or an ARDY sweep
+  (15.4 GB); a studio window on the real adapter holds the card too.
+- **Give the card back afterwards.** `forge gpu --free` is the door, and
+  for the MOSS pack it is not enough: `POST /free` does not unload what
+  TTS-Audio-Suite loaded (9.1 GB stayed after an effect, 7.3 GB after a
+  speech, 5.4 GB after a voice), so **`systemctl --user restart
+  forge-comfy` is the lever** — 4.4 s, measured. Native ACE-Step needs
+  nothing at all: its card comes back by itself. `forge gpu --free` says
+  which of the two happened, and refuses to call the card back unless free
+  VRAM reaches the card's idle floor.
 - For speech: **a voice**. Designed, as a rule — `forge-voice` makes
   `assets-src/voices/<name>/ref.wav` from a description and a seed, with
   its record beside it, and `--voice <name>` finds it by name. A clip you
@@ -77,18 +98,24 @@ audio kind** (step 3 refuses a stem that exists in another kind). Outputs:
 `agent:<name>`; without it the record says `unknown`, and that is what it
 will say forever.
 
+Every one of the three posts a graph to the host and fetches what came out:
+ComfyUI v0.34.2 has no WAV save node, so each template ends in `SaveAudio`
+(FLAC) and the Python half transcodes it to 16-bit PCM with **ffmpeg**
+before anything measures it. A missing ffmpeg is exit 6, refused before the
+card is leased.
+
 | Recipe | Log line | Healthy | Not |
 |---|---|---|---|
-| sfx | `[sfx] loading OpenMOSS-Team/MOSS-SoundEffect-v2.0` | most of a call is this load (the backend's own `Loading DiT from …`, `DiT loaded: missing=0, unexpected=0`, `Pipeline assembled on cuda` follow); ~100 s more the first time while the weights arrive | exit 3 in ~100 ms: not installed → `forge-setup` |
-| sfx | `[sfx] 2 s, 100 steps, cfg 4, seed 7: a heavy steel sword swung fast …` | the knobs, the seed and the prompt; the seed is fresh and random (`seed 457087253`) unless you said `--seed`; either way it is in the record. `--seconds 1.5` is accepted and prints `1.5 s` | — |
-| sfx | `[sfx] OK …/out/audio/sfx/<name>.wav (seed 7)` then `record   …/<name>.json`, `output   …/<name>.wav`, `model    OpenMOSS-Team/MOSS-SoundEffect-v2.0`, `seed     7`, `elapsed  38.2 s` | ~30–40 s a call with the weights cached | — |
-| music | `[music] ACE-Step server not running — starting it` | first call of the session; the model load is minutes; the server's log is `~/.local/state/asset-forge/acestep-server.log` | the start never answers `/health` within the timeout → read that log |
-| music | `[music] server up after 6s (pid N)` | 6 s is a warm server; minutes is a cold one | — |
-| music | `[music] OK … (1.9 MB, 10.0 s)` | the seconds are what `--duration` asked for; the record carries what the server measured | seconds far from `--duration`: look at the plot's tail before shipping it |
-| speech | `[tts] loading OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5 on cuda (sdpa)` after transformers' own `Loading weights: 100%\|…\| 438/438` and `Falling back to SDPA because flash_attention_2 is unavailable` | the 4B Local-Transformer; most of a call (34 s all in, warm) | an OOM here means the 8B was named through `MOSS_TTS_MODEL`: it does not fit 24 GB with the tokenizer resident |
-| speech | `[tts] reference …/assets-src/voices/crypt_warden/ref.wav: 7.28 s at 24000 Hz -> 91 codes` | the clip read and tokenized here (soundfile in, the processor's own tokenizer; 12.5 codes a second); `--voice crypt_warden` resolved to that path | stderr `… is N s; 5–15 s clones best` before it: the reference is outside the band; it still runs, and it clones worse |
-| speech | `[tts] English, cloning crypt_warden: Few come this deep. Fewer leave. …` | the language, the voice, the line | `inferred language` with `--language auto`; a tag you typed that is not on the card's list is passed through after a warning |
-| speech | `[tts] OK …/out/audio/voice/warden_greeting.wav` then `record …/warden_greeting.json`, `output …/warden_greeting.wav`, `model OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5`, `voice crypt_warden`, `elapsed 33.9 s` | the line is 48 kHz stereo, the model's output rate; the record carries the reference and, for a designed voice, its `voice.json`, both hashed | `Could not load libtorchcodec` (exit 5): the reference went to the processor as a path — it must not; see `designs/hosting.md` |
+| sfx | `[sfx] 3 s, 100 steps, cfg 4, seed 1627167584: a heavy iron chain drags …` | the knobs, the seed and the prompt; the seed is fresh and random unless you said `--seed`, and either way it is in the record | exit 3 in ~100 ms: not installed → `forge-setup` |
+| sfx | `[sfx] 30s on the host (the first render of a session compiles the DiT)` | only if `TORCHDYNAMO_DISABLE=1` were off — it is on in the unit, so nothing compiles and this line means the host is simply busy | a graph that never finishes: `journalctl --user -u forge-comfy -n 50` |
+| sfx | `[sfx] OK out/audio/sfx/<name>.wav (seed N, peak -0.0 dBFS)` | **26.1 s** measured cold, 20.1 s with the model already loaded, 39.0 s over MCP behind another job | exit 5 `the effect is silent` / `is clipped`: the gate refused the render and wrote **no record** — re-render |
+| music | `[music] 30 s at 96 bpm in Am, seed 1421`, then `[music] prompt b1f0… on http://127.0.0.1:8188` | the knobs and the prompt id the host gave; no server is started, because there is no server any more | — |
+| music | `[music] OK out/audio/music/<name>.ogg (1.9 MB, 30.014668 s)` | **18.3 s** measured (16.4–18.3 over five renders); the seconds are the file's, not the request's | exit 5 `the track is clipped: N consecutive samples pinned at full scale` — expected at this pin, see above |
+| speech | `[tts] reference assets-src/voices/warden/ref.wav uploaded as forge_voice_warden_ref.wav` | the clip travels as an **uploaded file**, `LoadAudio` reads it by that name and the host decodes it in its own venv (PyAV) — no path, no torchcodec, no codes handed over | — |
+| speech | `[tts] seed 1357188160, en: Few come this deep. Fewer leave.` | the seed, the language and the line | — |
+| speech | `[tts] OK …` | **58.1 s** first (weights + load), 22–28 s after | at this pin it does not get here: exit 5 `the line is silent: peak -120.0 dBFS`, and no record. That is the transformers-5 break, not your call |
+| voice | `[voice] designing warden at seed 1357188160: gravel-voiced, sixties, unhurried, dry` | `forge-voice`'s door; the designer works at this pin | — |
+| voice | `[voice] OK assets-src/voices/warden/ref.wav (seed N, peak -4.8 dBFS, 6.08 s)` | **24.1 s** measured | — |
 
 **Prompt rules.**
 
@@ -113,16 +140,17 @@ will say forever.
 - **One-shots never need a long lead-in**; 50 ms of silence before the
   first sound is a warning at step 2 and a late-feeling hit in a game.
 
-**What the first call costs, per backend.** MOSS-SoundEffect: the
-weights (~11 GB) if absent, then the model load every call;
-`torch.compile` of the DiT is **off** by default (`TORCHDYNAMO_DISABLE=1`
-in `backends/moss_sfx/backend.toml`) because it runs for minutes and dies
-with the process — export `TORCHDYNAMO_DISABLE=0` only for a long
-`--batch-file` session. ACE-Step: the host loads the model on the first
-track of a session and keeps it until the workflow's unload node or
-`POST /free`; `systemctl --user stop forge-comfy` gives the whole card back
-at the end of a session. MOSS-TTS: the weights (~8 GB) if absent, then the
-4B load every call.
+**What the first call costs, per backend.** MOSS-SoundEffect: the weights
+(10.46 GB) if absent, then a model load the host keeps for the session.
+`torch.compile` of its DiT is **off**, and not as a preference:
+`Environment=TORCHDYNAMO_DISABLE=1` is in `backends/comfy/forge-comfy.service`
+because with the compile on every effect spent ~60 s compiling and then died
+with `cudaMallocAsync does not yet support checkPoolLiveAllocations`
+(2026-08-30). It is the host's knob now, not `backends/moss_sfx`'s `[env]`,
+and **do not export `TORCHDYNAMO_DISABLE=0`** — the crash is what it
+prevents. ACE-Step: the host loads the checkpoint on the first track and
+gives the card back by itself. MOSS-TTS: 5.72 + 3.95 + 6.61 GB if absent,
+then a load that stays until the unit is restarted.
 
 ### 2. Judge — `just audio out/audio/<kind>/<name>.<ext>`
 
@@ -231,14 +259,16 @@ forge promote audio sfx out/audio/sfx/<name>.wav <name> \
 | a comfy row reads `missing` and the generate exits 3 | nothing is listening at `[hardware] comfy_url` | `systemctl --user start forge-comfy`, then `systemctl --user status forge-comfy` |
 | `generate_audio` came back with a job id and no file | correct — a generate returns a job | `wait(job, max_s)`; the result names the file and its record |
 | `FAIL model:… absent` in doctor, then a long first call | the weights are downloading (sfx ~11 GB, tts ~8 GB) | wait once; doctor reads `ok` after |
-| CUDA out of memory | the card was held — by whatever the ComfyUI host last loaded, a studio window, or a generate you forgot | `just gpu`; `systemctl --user stop forge-comfy`; never two generates at once |
-| `the ACE-Step server did not answer /health within N s — see …/acestep-server.log` | the server failed to load | read `~/.local/state/asset-forge/acestep-server.log`; the ready timeout is `[server] ready_timeout_s` in `backends/acestep/backend.toml`, and `--timeout S` is the wait for a track, not for the start |
+| CUDA out of memory | the card was held — by whatever the ComfyUI host last loaded, a studio window, or a generate you forgot | `just gpu`; `forge gpu --free`, and for the MOSS pack `systemctl --user restart forge-comfy`; never two generates at once |
+| the job sits `blocked` with `blocked_by: comfy — …` | the release ladder could not prove the card came back and is **withholding** the lease | that is the safety net working: `systemctl --user restart forge-comfy`, then `forge gpu --free`, which clears the withholding only when free VRAM reaches the card's idle floor |
+| `the line is silent: peak -120.0 dBFS`, exit 5, no record | MOSS-TTS 1.7B does not run under the host's transformers 5; the pack caught its own error and returned a silent tensor | nothing you can pass fixes it — `backends/moss_tts`'s notice names the pin that would. Say so; do not ship the file |
+| `the track is clipped: N consecutive samples pinned at full scale`, exit 5 | ACE-Step turbo normalises to peak on the host side | expected at this pin: `music` renders and does not promote. The fix is a stated gain knob in the graph (`AudioAdjustVolume` between `VAEDecodeAudio` and `SaveAudio`), never a file edited by hand |
 | `clipped: N consecutive samples …`, exit 1 | the render overshot | re-render: another `--seed`, a lower `--cfg`; never normalise the file by hand — the record would then describe a sound that is not the file |
 | the tail ends at a wall in the plot | `--seconds`/`--duration` shorter than the decay | re-render longer |
 | `N ms of silence before the first sound` on a one-shot | the hit will feel late in a game | re-render with another seed; a re-prompt that names the attack ("sharp transient") helps |
 | a voice that does not sound like the reference | the reference is too short, too long, noisy or two people | 5–15 s, one clean speaker; the stderr length warning names it; a designed voice is rerolled in `forge-voice` |
 | `--voice kessa: no designed voice at …/assets-src/voices/kessa/ref.wav` (exit 4) | a bare name that nothing designed | `forge-voice` (`just voice kessa "…"`), or a path to a clip you brought |
-| `Could not load libtorchcodec` (exit 5) after the 4B loaded | the reference reached the processor as a path; torchaudio's loader cannot open files in this env | the inner half reads the clip with soundfile and tokenizes it itself — this is a regression in `speech.py`, not a setup step |
+| `ffmpeg is not on PATH` (exit 6) | the host saves FLAC and every audio verb transcodes it here | install ffmpeg; it is refused before the card is leased, not after a render |
 | `--language xx` warning | passed through as a tag, not rejected | fine if the model handles it; the record keeps what you said |
 | `<name> is already a <kind>` | stems are one namespace across sfx/music/voice | another name |
 | the user says it sounds wrong | the plot passed and the ear did not | back to step 1: the prompt or the seed; the knobs do not change what a model heard |
@@ -261,8 +291,15 @@ only when the user asks.
   naming OmniVoice exits 2 and says it is a v1.1 add.
 - A designed voice speaks English or Chinese; a line in one of MOSS-TTS's
   other 29 languages needs a brought clip.
-- The 8B MOSS-TTS Delay model OOMs on 24 GB; the 4B Local-Transformer is
-  what runs.
-- The ACE-Step checkout is expected to be dirty (the soundfile patch);
-  doctor notes it and it is not a defect.
+- The 8B MOSS-TTS Delay model OOMs on 24 GB, so `speech.api.json` states
+  the **1.7B** — which is a different voice from the 4B the venv ran, and
+  which does not run at all under the host's transformers 5. A voice
+  re-cloned after that move does not match one cloned before it.
+- **`just speech` makes no line at this pin and `just music` makes none
+  that promotes.** Both are the host's, both are dated in
+  `designs/hosting.md`, and neither is fixed by re-prompting. `sfx` and
+  `voice` work.
 - `just audio` cannot tell a good sound from a bad one — only a broken one.
+  What the generators now refuse for themselves is the same three checks,
+  run before the record is written: silence, a full-scale run, a render
+  far shorter than the length asked for.
