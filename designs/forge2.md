@@ -511,9 +511,13 @@ ratios there are invented (vex_runner "measured" 0.85 and 0.58 for a
 product that is right); the estimator measures runs — torso, clavicle
 plus shoulder, upper arm, forearm, hand, hip, thigh, shin, foot — as the
 weight-product centroid of each transition band projected onto the
-frozen direction, and mirrors left/right (the raw pair differed by up to
-19 %, which is the gate: refuse above 10 % after mirroring, or a ratio
-outside 0.4–2.5). The second pass does not converge: weights are made
+frozen direction, and mirrors left/right. The raw pair differed by 17–19 % on the witch
+and 23–24 % on `vex_runner`, so a 10 % symmetry gate would refuse the
+body that ships; and the root fits 5.8 cm high on `vex_runner` — the
+weights place a limb's *end* well and a body's *centre* badly. So the
+root and the shoulder line come from geometry (crotch, lowest vertices,
+the arm tube's centroid; cheap in a T-pose), the limb runs from the
+weights, and the symmetry tolerance is set from measured bodies. The second pass does not converge: weights are made
 against the skeleton handed in, so re-measuring after moving a joint
 moves it again the same way (torso 0.89 twice, head 118 mm). One fit
 from the unfitted skin; a second is a diagnostic. Correction two: **the

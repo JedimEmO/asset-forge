@@ -896,6 +896,15 @@ downhill 74 mm a time, because weights are made against the skeleton
 handed in; the only door with the 0.1 mm translation rule is the
 exporter, so that is the door that changes; the contact-pose overshoot
 is real (a two-handed grip lands at her face) and is the price every
-shared-animation game pays until an IK pass. The gate this ships with:
-refuse a run ratio outside 0.4–2.5 or a left/right split over 10 %, and
-add feet-on-the-ground on contact frames to rig check. 2026-08-30.
+shared-animation game pays until an IK pass. Two more things the same spike measured, so the
+gate is not written yet: the arm boundaries inside a sleeve disagree
+left to right by 17–19 % on the witch and 23–24 % on `vex_runner`, so a
+10 % symmetry gate refuses every body including the one that ships (the
+spike ran at 25 %, stated), and the root fits 5.8 cm high on
+`vex_runner` (a `motion_scale` of 1.06 for a body that already works) —
+the weights are a good prior for where a limb *ends* and a poor one for
+where a body's *centre* is. So: limb runs from the weights, mirrored; the
+root and the shoulder line from geometry (the crotch and the lowest
+vertices, the arm tube's centroid), which the T-pose makes cheap; the
+symmetry tolerance set from the two bodies measured, not guessed; and
+feet-on-the-ground on contact frames added to rig check. 2026-08-30.
