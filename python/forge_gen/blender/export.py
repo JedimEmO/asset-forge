@@ -27,11 +27,17 @@ What is checked, and why each one is worth a run of Blender:
   ``forge rig check`` and the game hold the body to — so a bone inserted
   above the root, or any contract bone reparented, is refused here the way
   it would be refused there.
-* **The rest pose is the contract's.** Bone positions are compared against
-  the profile's ``rig.blend`` itself, joint for joint, to ``[export]
-  rest_tolerance_m``. A rig nudged "just a little" to fit a mesh binds
-  perfectly and then plays every clip off a pose it was never baked
-  against.
+* **The rest pose points where the contract points, and is as long as this
+  body is.** Bone segments are compared against the profile's ``rig.blend``
+  itself, joint for joint — the **direction** of each local rest translation
+  within ``rest_direction_tolerance_deg``, its **length** inside
+  ``[length_ratio_min, length_ratio_max]`` of the contract's, and a segment
+  under ``rest_zero_length_m`` by position at ``rest_tolerance_m``, since a
+  zero-length segment has no direction to check. This is the one rule the
+  fitted skeleton trades: bone *lengths* belong to the body, and a rig
+  nudged in *direction* binds perfectly and then plays every clip off a pose
+  it was never baked against, because clips are baked against rest
+  **rotations** and a direction is a restatement of one.
 * **Extra bones only where the profile allows them.** ``[export]
   extra_bones`` is ``leaf`` (a childless bone below a contract bone — a
   holster, a marker), ``run`` (an unbranched chain — hair, a tail, a cape
@@ -55,6 +61,7 @@ on the artist's disk is a .glb that renders pink on everybody else's.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import struct
@@ -110,6 +117,33 @@ def _load_profile(directory: str | None) -> profile_mod.Profile:
         raise UsageError(str(err)) from err
 
 
+#: The three numbers the direction rule reads, and where each one lives.
+#: ``contract.json`` is the projection ``forge rig export-contract`` writes
+#: and the file the Rust half reads, so it is asked first; ``profile.toml``
+#: is the source those numbers are written in once, and answers when a
+#: contract has not been regenerated yet. A pytest holds the two equal, so
+#: this order can never be the difference between two verdicts.
+BONE_TOLERANCES = ("rest_direction_tolerance_deg", "length_ratio_min", "length_ratio_max", "rest_zero_length_m")
+
+
+def _bone_tolerances(profile: profile_mod.Profile) -> dict:
+    """``{name: value}`` for :data:`BONE_TOLERANCES`, from the contract, else the profile."""
+    export = profile.section("export")
+    out = {}
+    for key in BONE_TOLERANCES:
+        if key in profile.contract:
+            out[key] = float(profile.contract[key])
+        elif key in export:
+            out[key] = float(export[key])
+        else:
+            raise UsageError(
+                f"{profile.dir}: neither contract.json nor profile.toml's [export] names {key} — "
+                "the rest-direction rule has no number to hold a bone to. Add it to profile.toml and "
+                "run `forge rig export-contract`"
+            )
+    return out
+
+
 def _spec(args) -> dict:
     profile = _load_profile(args.profile)
     bones = profile.section("bones")
@@ -127,6 +161,7 @@ def _spec(args) -> dict:
         "armature_node": str(bones["armature_node"]),
         "armature_data": bones.get("armature_data"),
         "rest_tolerance": float(export["rest_tolerance_m"]),
+        **_bone_tolerances(profile),
         "transform_tolerance": float(export["transform_tolerance"]),
         "max_influences": int(export.get("max_influences", 4)),
         "y_up": bool(export.get("y_up", True)),
@@ -192,25 +227,9 @@ def _measured(info: dict, *, blender_version: str | None) -> dict:
     }
 
 
-def _inverse_rigid(position: tuple, rotation: tuple) -> list[float]:
-    """Column-major 4×4 inverse of ``T(position) · R(rotation)``: ``R^T · T(-position)``."""
-    x, y, z, w = rotation
-    # Rotation matrix rows (R), then transpose by reading columns as rows.
-    r = [
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-    ]
-    rt = [[r[j][i] for j in range(3)] for i in range(3)]
-    t = [-sum(rt[i][k] * position[k] for k in range(3)) for i in range(3)]
-    # glTF stores column-major: element [row][col] at index col*4 + row.
-    out = [0.0] * 16
-    for row in range(3):
-        for col in range(3):
-            out[col * 4 + row] = rt[row][col]
-        out[3 * 4 + row] = t[row]
-    out[15] = 1.0
-    return out
+#: One copy of the inverse-bind arithmetic, in ``placeholders`` beside the
+#: other thing that writes a skinned placeholder.
+_inverse_rigid = placeholders.inverse_rigid
 
 
 def fake_body_glb(path: str | os.PathLike, profile: profile_mod.Profile, *, name: str = "Body") -> Path:
@@ -466,7 +485,6 @@ def _check_bones(arm_obj, reference: dict, problems: list, spec: dict) -> list[s
         )
 
     matrix = arm_obj.matrix_world
-    tolerance = spec["rest_tolerance"]
     for name, (want_parent, want_head, want_tail) in sorted(reference.items()):
         bone = bones.get(name)
         if bone is None:
@@ -477,16 +495,24 @@ def _check_bones(arm_obj, reference: dict, problems: list, spec: dict) -> list[s
                 f"{name} is parented to {got_parent or '<none>'}, the contract says {want_parent or '<none>'} — "
                 "reparenting rewrites its animation target path and every curve aimed at it finds nothing"
             )
-        drift = max(
-            _distance(matrix @ bone.head_local, want_head),
-            _distance(matrix @ bone.tail_local, want_tail),
+        # The segment each bone hangs on, which is exactly what the glTF node
+        # carries as its rest translation: head to head, from the contract
+        # parent — or from the armature's own origin for the one rootless
+        # bone. Tails are not compared at all: a tail follows its child's
+        # head, it is no part of the contract, and on a fitted skeleton every
+        # one of them has legitimately moved.
+        origin = (0.0, 0.0, 0.0)
+        want_parent_head = reference[want_parent][1] if want_parent is not None and want_parent in reference else origin
+        got_parent_head = (
+            tuple(matrix @ bones[want_parent].head_local) if want_parent is not None and bones.get(want_parent) is not None else origin
         )
-        if drift > tolerance:
-            problems.append(
-                f"{name} sits {drift * 1000.0:.2f} mm off the contract rest pose — clips are baked against "
-                "these exact rest transforms, so a re-posed rig binds perfectly and animates wrongly. Move "
-                "the mesh to meet the rig, never the rig to meet the mesh"
-            )
+        _check_one_segment(
+            name,
+            want=_subtract(want_head, want_parent_head),
+            got=_subtract(tuple(matrix @ bone.head_local), got_parent_head),
+            spec=spec,
+            problems=problems,
+        )
 
     policy = spec["extra_bones"]
     extras: list[str] = []
@@ -645,6 +671,67 @@ def _describe(matrix) -> str:
 
 def _distance(vector, other) -> float:
     return max(abs(a - b) for a, b in zip(vector, other))
+
+
+def _subtract(vector, other) -> tuple:
+    return tuple(a - b for a, b in zip(vector, other))
+
+
+def _length(vector) -> float:
+    return sum(component * component for component in vector) ** 0.5
+
+
+def _angle_deg(want, got) -> float:
+    """The angle between two vectors, in degrees, clamped against float noise."""
+    dot = sum(a * b for a, b in zip(want, got)) / (_length(want) * _length(got))
+    return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+
+def _check_one_segment(name: str, *, want, got, spec: dict, problems: list) -> None:
+    """One bone's rest translation against the contract's: direction, then length.
+
+    The trade the fitted skeleton is built on, stated in one place. A bone's
+    **length** is a fact about the body — a four-head witch's upper arm is
+    not the reference's — so it is only held inside a wide band, wide enough
+    that 0.02 of the reference reads as a collapsed skeleton rather than a
+    short body. A bone's **direction** is a restatement of its rest rotation,
+    which every clip in the library was baked against, so it is held to a
+    degree; the whole fitted skeleton the spike built measured 0.0000° of
+    drift, and a degree is a generous ceiling on a quantity that moved by
+    nothing.
+
+    A segment shorter than ``rest_zero_length_m`` at either end has no
+    direction to check and is compared by position at ``rest_tolerance_m``,
+    which is what the rule was before the fit and still is for a bone that
+    sits exactly on its parent.
+    """
+    zero = spec["rest_zero_length_m"]
+    want_length, got_length = _length(want), _length(got)
+    if want_length < zero or got_length < zero:
+        drift = _distance(want, got)
+        if drift > spec["rest_tolerance"]:
+            problems.append(
+                f"{name} sits on its parent in the contract ({want_length * 1000.0:.3f} mm) but "
+                f"{got_length * 1000.0:.3f} mm from it here — a zero-length segment has no direction to check, "
+                f"so it is held to position at {spec['rest_tolerance'] * 1000.0:.2f} mm and it is "
+                f"{drift * 1000.0:.2f} mm off"
+            )
+        return
+    angle = _angle_deg(want, got)
+    if angle > spec["rest_direction_tolerance_deg"]:
+        problems.append(
+            f"{name}'s rest translation points {angle:.1f} deg off the contract's "
+            f"({got[0]:+.3f}, {got[1]:+.3f}, {got[2]:+.3f} against {want[0]:+.3f}, {want[1]:+.3f}, {want[2]:+.3f}). "
+            "Clips are baked against rest ROTATIONS, and a rotated bone binds perfectly and animates wrongly. "
+            "Lengths are yours; directions are not."
+        )
+    ratio = got_length / want_length
+    if not spec["length_ratio_min"] <= ratio <= spec["length_ratio_max"]:
+        problems.append(
+            f"{name} is {ratio:.2f}x the contract's length ({got_length * 100.0:.1f} cm against "
+            f"{want_length * 100.0:.1f} cm), outside [{spec['length_ratio_min']:.2f}, {spec['length_ratio_max']:.2f}] — "
+            "a bone at a fiftieth of its reference is a collapsed skeleton, not a short body"
+        )
 
 
 if __name__ == "__main__":

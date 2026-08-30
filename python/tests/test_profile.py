@@ -103,3 +103,91 @@ def test_disagreements_are_refused(repo_root, tmp_path):
     motion.write_text(motion.read_text().replace('"Hips",', '"Pelvis",', 1))
     with pytest.raises(profile.ProfileError, match="Pelvis"):
         profile.load_profile(copy)
+
+
+def test_a_profile_that_still_names_a_retired_gate_is_refused(repo_root, tmp_path):
+    """A knob nothing reads is worse than a missing one.
+
+    ``reach_min``/``reach_max`` measured a body's half-span against the
+    *skeleton's* wrists, and the fitted skeleton moves those wrists to the
+    body — the gate was measuring its own output. Deleting the code is not
+    enough: a hand-written or hand-copied profile that keeps the line goes on
+    claiming a rule the pipeline stopped enforcing, so the reader refuses it
+    by name.
+    """
+    copy = tmp_path / "humanoid"
+    shutil.copytree(repo_root / "rigs" / "humanoid", copy)
+    toml = copy / "profile.toml"
+    text = toml.read_text()
+    lines = [line.split("=")[0].strip() for line in text.splitlines() if "=" in line and not line.lstrip().startswith("#")]
+    assert "reach_min" not in lines and "reach_max" not in lines, "the shipped profile has no dead gate in it"
+    assert profile.load_profile(copy).name == "humanoid"
+
+    for key in ("reach_min", "reach_max"):
+        toml.write_text(text.replace("[fit]\n", f"[fit]\n{key} = 0.8\n", 1))
+        with pytest.raises(profile.ProfileError, match=key):
+            profile.load_profile(copy)
+    toml.write_text(text)
+
+
+def test_the_new_fit_and_export_numbers_are_where_the_gates_read_them(repo_root):
+    """Every scalar designs/skin.md froze, in the file that is its source."""
+    prof = profile.load_profile(repo_root / "rigs" / "humanoid")
+    fit = prof.section("fit")
+    assert fit["limb_radius_min_fraction"] == 0.22
+    assert fit["asymmetry_arms"] == 0.35
+    assert fit["asymmetry_other"] == 0.20
+    assert fit["arm_height_tolerance_m"] == 0.15
+    assert len(fit["landmarks"]) == 15
+    assert set(fit["landmarks"]) <= {bone["name"] for bone in prof.bones}, "a landmark is a contract bone"
+    export = prof.section("export")
+    assert export["rest_direction_tolerance_deg"] == 1.0
+    assert export["length_ratio_min"] == 0.4
+    assert export["length_ratio_max"] == 2.5
+    assert export["rest_zero_length_m"] == 0.0001
+    assert prof.section("bones")["contact_foot_tolerance_m"] == 0.05
+    # And the knobs that went with the bind half are gone.
+    assert "shell_fraction" not in prof.section("rig")
+    assert prof.section("rig")["unweighted_abort_fraction"] == 0.2, "the shell-abort gate stays; it is on the skinner's output now"
+
+
+#: Every scalar name that appears in both ``profile.toml`` and
+#: ``contract.json``, with the ``[section]`` it lives in on the profile side.
+#: ``contract.json`` is a projection written by ``forge rig export-contract``,
+#: and nothing held the two equal until this test: a regeneration that quietly
+#: dropped a number, or a profile edited without one, would leave the Rust and
+#: Python halves of the same gate reading different values.
+SHARED_SCALARS = {
+    "foot_tolerance_m": "bones",
+    "rest_rotation_tolerance": "bones",
+    "contact_foot_tolerance_m": "bones",
+    "rest_direction_tolerance_deg": "export",
+    "length_ratio_min": "export",
+    "length_ratio_max": "export",
+    "rest_zero_length_m": "export",
+}
+
+
+def test_every_scalar_profile_toml_and_contract_json_share_is_equal(repo_root):
+    prof = profile.load_profile(repo_root / "rigs" / "humanoid")
+    shared = 0
+    for key, section in SHARED_SCALARS.items():
+        if key not in prof.contract:
+            continue
+        shared += 1
+        assert prof.contract[key] == prof.section(section)[key], f"{key}: contract.json and profile.toml disagree"
+    assert shared >= 2, "at least the two that have always been in both are still in both"
+
+    # The ones the contract restates under its own names.
+    bones = prof.section("bones")
+    assert prof.contract["stature_m"] == {
+        "reference": bones["reference_stature_m"],
+        "min": bones["min_stature_m"],
+        "max": bones["max_stature_m"],
+    }
+    assert prof.contract["root"] == bones["root"]
+    assert prof.contract["front"] == bones["front"]
+    assert prof.contract["name"] == prof.toml["profile"]["name"]
+    assert prof.contract["version"] == prof.toml["profile"]["version"]
+    assert prof.contract["reference_clip"] == bones["reference_clip"]
+    assert len(prof.contract["bones"]) == bones["count"]

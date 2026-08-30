@@ -205,15 +205,45 @@ prop name *flags: _build
     {{forge}} gen mesh assets-src/refs/props/{{name}}.png --preset prop \
         --out out/lifts/{{name}}.glb --record assets-src/refs/props/{{name}}.lift.json {{flags}}
 
-# Refuses a mesh that is not near the T-pose; the fix is always the reference
-# image, never the weights. Writes assets-src/blender/<name>.blend and its
-# rig record beside it. Then `just promote-mesh <name>`.
+# Refuses a mesh whose arms are not horizontal against its OWN shoulder line,
+# and an arm thinner than the bone it hangs on; the fix is always the
+# reference image, never the weights. Writes out/prepare/<name>.glb and its
+# record beside it — no vertex groups, because the weights are what the
+# skinner is being asked for. Then `just skin <name>`.
 #
-# Lifted glb -> rigged .blend + rig record in headless Blender.
-rig-mesh name *flags: _build
-    mkdir -p assets-src/blender
-    {{forge}} gen rig out/lifts/{{name}}.glb --out assets-src/blender/{{name}}.blend \
-        --record assets-src/blender/{{name}}.rig.json --name {{name}} {{flags}}
+# Lifted glb -> normalised mesh + a skeleton, no weights: `just prepare vex_runner`
+prepare name *flags: _build
+    mkdir -p out/prepare
+    {{forge}} gen prepare out/lifts/{{name}}.glb --out out/prepare/{{name}}.glb \
+        --record out/prepare/{{name}}.prepare.json {{flags}}
+
+# Needs the GPU: SkinTokens runs twice, ~27 s each, and nothing else may be
+# resident. Five steps behind one door — skin, fit the skeleton to this body,
+# build the per-body armature, prepare and skin again against it, re-attach by
+# joint order — writing assets-src/blender/<name>.{blend,rig.json,fit.json}.
+# There is no --passes: the second fit walks the torso downhill.
+#
+# Prepared glb -> weights on a skeleton fitted to this body: `just skin vex_runner`
+skin name *flags: _build
+    mkdir -p out/skin assets-src/blender
+    {{forge}} gen skin out/prepare/{{name}}.glb {{flags}}
+
+# The whole mesh half of a body, one card, one job at a time.
+#
+# Lift -> prepare -> skin, in order: `just body vex_runner`
+body name *flags: _build
+    just --justfile {{justfile()}} --working-directory . prepare {{name}}
+    just --justfile {{justfile()}} --working-directory . skin {{name}} {{flags}}
+
+# Dies by name for one release rather than by "no such recipe", the courtesy
+# `install.sh --models` got.
+#
+# GONE: rig-mesh became `just prepare` + `just skin`.
+rig-mesh name *flags:
+    #!/usr/bin/env bash
+    echo "rig-mesh became 'just prepare {{name}}' + 'just skin {{name}}' when the skinner changed:" >&2
+    echo "bone heat is gone, SkinTokens makes the weights, and the skeleton is fitted to the body." >&2
+    exit 2
 
 # Metres; floor, ceiling or grip at the origin; matte — then straight into
 # the library as a model with both records. `--height`/`--length` is the one
@@ -442,8 +472,8 @@ catalog *flags: _build
 # PNG, the rig beside the .blend, the export beside the .glb. Refuses an
 # existing name unless told `--overwrite`.
 #
-# Export, validate and file one rigged body: `just promote-mesh vex_runner`
-promote-mesh name *flags: _build
+# Export, validate and file one rigged body: `just promote-body vex_runner`
+promote-body name *flags: _build
     mkdir -p out/export
     {{forge}} gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
         --record out/export/{{name}}.export.json
@@ -453,6 +483,16 @@ promote-mesh name *flags: _build
         --lift-record assets-src/refs/characters/{{name}}.lift.json \
         --rig-record assets-src/blender/{{name}}.rig.json \
         --export-record out/export/{{name}}.export.json {{flags}}
+
+# Dies by name for one release rather than by "no such recipe", the courtesy
+# `install.sh --models` got.
+#
+# GONE: promote-mesh became promote-body.
+promote-mesh name *flags:
+    #!/usr/bin/env bash
+    echo "promote-mesh became 'just promote-body {{name}}' when the skinner changed;" >&2
+    echo "the rig step is now 'just prepare {{name}}' + 'just skin {{name}}'." >&2
+    exit 2
 
 # Native bake, no Blender. The shipped recipe is the starting point when the
 # name exists; the flags you state land on top; the whole recipe is echoed.
@@ -756,10 +796,11 @@ ci-fake: _build mcp-check
     echo "== mesh -> prop -> promote model"
     jf prop box --seed 1 --verts 2000
     jf prop-import box --height 1.0
-    echo "== mesh -> rig -> export -> rig check -> promote body"
+    echo "== mesh -> prepare -> skin -> export -> rig check -> promote body"
     jf character figure --seed 1 --verts 25000
-    jf rig-mesh figure
-    jf promote-mesh figure
+    jf prepare figure
+    jf skin figure
+    jf promote-body figure
     echo "== motion sweep -> review -> promote clip"
     jf sweep "a person walks forward" --duration 2 --samples 1 --seeds 0
     take=$(ls out/sweeps/0-*/*.npz | head -n1)

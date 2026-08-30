@@ -28,21 +28,32 @@ max_stature_m = 2.2                # rig check refuses a body taller than this (
 foot_tolerance_m = 0.05            # how far the lowest skinned vertex may sit from y = 0; feet on the ground is part of the contract
 rest_rotation_tolerance = 0.001    # per-component quaternion gap above which a bone's rest rotation counts as re-posed (float noise is ~1e-6)
 reference_clip = "walk"            # the library clip rig check binds to the subject: it drives all 27 joints, so binding is fully exercised
+contact_foot_tolerance_m = 0.05    # rig check: the PLANTED foot's own lowest skinned vertex, on the reference clip's contact frames (the fitted witch measured -1.5..+3.0 cm)
 
 [fit]
-# The T-pose gate: the rest pose is frozen, so the auto-rig refuses a mesh that
-# is not already in it. The fix is always the reference image, never the weights.
-reach_min = 0.8                    # mesh half-span over the skeleton's wrist x; below this the arms are not out to the sides
-reach_max = 1.45                   # above this the arms are not straight out either; the ceiling makes room for oversized mitts
-arm_height_tolerance_m = 0.15      # the widest geometry must sit within this of the wrist height, or the arms are not horizontal
+# The T-pose gate (forge gen prepare): the rest ROTATIONS are frozen, so the
+# door refuses a mesh that is not already in the rest pose. The fix is always
+# the reference image, never the weights. Bone LENGTHS are not gated here at
+# all any more — they are measured per body by `forge gen skin`'s fit, which
+# is why reach_min/reach_max are gone: they measured a body's span against
+# wrists the fit was about to move to it, and profile.py now refuses a
+# profile that still names either.
+arm_height_tolerance_m = 0.15      # the arm tips must sit within this of the body's OWN shoulder line, or the arms are not horizontal
 arm_tip_fraction = 0.9             # a vertex beyond this fraction of the half-span counts as arm-tip geometry for the height test
+limb_radius_min_fraction = 0.22    # an ARM run's median cross-section over its length: a printed NOTE, never a refusal — moss_witch_v4 ships at 0.22/0.16 and the sliver read 0.20-0.21, so nothing separates them (2026-08-30)
+landmarks = ["Neck", "LeftArm", "RightArm", "LeftForeArm", "RightForeArm",
+             "LeftHand", "RightHand", "LeftUpLeg", "RightUpLeg", "LeftLeg",
+             "RightLeg", "LeftFoot", "RightFoot", "LeftToeBase", "RightToeBase"]
+asymmetry_arms = 0.35              # raw L/R gap the fit allows on upper arm and forearm; worst measured 28.7% (drow_warlock)
+asymmetry_other = 0.20             # and everywhere else; worst measured 16.2% (the hip, on two bodies)
 
 [rig]
-# The auto-rig (forge gen rig): budget, cleanup and the bind ladder.
+# Preparing a body for the skinner (forge gen prepare): budget and cleanup.
+# The bind-ladder knobs went with bone heat: SkinTokens makes the weights now
+# and there is no shell or proxy pass to tune.
 tri_budget = 60000                 # default triangle cap for a body; a heavier lift is decimated to it
 decimate_margin = 0.8333333333333334 # decimate to budget * margin (1500/1800) so the result lands comfortably under the cap
-unweighted_abort_fraction = 0.2    # if bone heat leaves more than this share of vertices weightless, the bind failed — abort, do not ship a statue
-shell_fraction = 0.02              # an island smaller than this share of the mesh is a detached shell and is weighted to the surface it sits on
+unweighted_abort_fraction = 0.2    # if more than this share of vertices come back weightless, the skin failed — abort, do not ship a statue
 dust_diagonal_m = 0.025            # a disconnected shell smaller than this across is generation debris and is dropped
 
 [prop]
@@ -66,6 +77,10 @@ max_influences = 4                 # weights per vertex, normalised to 1.0
 y_up = true                        # exported with +Y up, the glTF convention the contract is stated in
 materials = "EXPORT"               # a lifted mesh is its look; the glb is where the textures ship, every image packed
 animations = false                 # a body carries no clips; clips are separate files bound by name path
+rest_direction_tolerance_deg = 1.0 # a fitted bone's local rest translation may point this far off the contract's; measured drift over a whole fitted skeleton was 0.0000 deg
+length_ratio_min = 0.4             # and may be this short a multiple of the contract's length — shorter is a collapsed skeleton, not a short body
+length_ratio_max = 2.5             # and this long a multiple; the fit's own band
+rest_zero_length_m = 0.0001        # a segment shorter than this has no direction to check, so it is compared by position at rest_tolerance_m
 
 [fingers]
 # How the finger leaves hang off the driven hands (forge gen rig-build). Offsets

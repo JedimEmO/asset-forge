@@ -1,20 +1,42 @@
-"""Skin a prepared mesh to the armature inside it, through SkinTokens, and judge what came back.
+"""Skin a prepared mesh, fit the skeleton to it, and skin it again on the skeleton that fits.
 
-    python3 python/forge_gen/spike_skin.py out/prepare/vex_runner.glb
-            [--out out/spike/<stem>.skinned.glb] [--record <name>.rig.json]
-            [--name vex_runner] [--profile DIR] [--project .]
+    forge-gen skin out/prepare/<name>.glb
+            [--source out/lifts/<name>.glb] [--out out/skin/<name>.skinned.glb]
+            [--blend assets-src/blender/<name>.blend] [--record <name>.rig.json]
+            [--work out/skin/<name>] [--name vex_runner] [--profile DIR]
             [--top-k 5 --top-p 0.95 --temperature 1.0 --repetition-penalty 2.0
              --num-beams 10] [--model-ckpt PATH] [--hf-path PATH]
             [--min-free-gb 14 | --allow-busy] [--timeout 1800] [--json]
 
-**A Phase 0 spike, not a door.** The plan (designs/forge2.md) says the whole
-of Phase 2 hangs on one unmeasured claim: SkinTokens' ``--use_skeleton`` is
-described by its own authors as a demo feature with no numbers, and what it
-promises is *skin for the skeleton it is handed*. This script is the
-evidence. It runs upstream's ``demo.py`` on a glb made by
-``forge_gen.blender.prepare_spike`` — normalised mesh, the profile's
-armature as a sibling, no vertex groups — and then reads the output back as
-an outside consumer and says four things:
+The second of the two doors that make a body, and the whole of the fitted
+skeleton: **five steps, one door, and no options about the number of
+passes.**
+
+1. **skin** the prepared glb through SkinTokens' ``demo.py --use_skeleton``;
+2. **fit** — ``forge_gen.fit`` reads those weights and says how long every
+   bone is *on this body*, once;
+3. **build the armature** — ``blender/fit_rig.py`` scales the profile's own
+   ``rig.blend`` by the fit's per-run ratios, keeping every rest **rotation**
+   and aborting if one moves;
+4. **prepare again** against that skeleton and **skin again**, because
+   re-attaching pass-1 weights to joints that moved up to 14.7 cm would bind
+   the body to the skeleton the fit just corrected;
+5. **re-attach** — ``blender/reattach.py`` puts the returned weights onto the
+   fitted armature by joint *order* and writes the working ``.blend``.
+
+There is **no ``--passes``, no ``--diagnose`` and no ``--skip-refit``**: the
+spike measured the second fit walking the torso downhill 73.5 mm a time, so a
+knob whose only correct value is off is surface rather than a diagnostic.
+``fit.convergence()`` survives as a library function with no caller here and
+is exercised by ``test_fit.py`` against the two frozen reports.
+
+Two SkinTokens runs at ~27 s, two prepares at ~1.7 s, one armature build at
+~5 s and one re-attach at ~5 s: about a minute, one card, one job at a time.
+
+# What it reads back, and what it refuses
+
+After each skin it reads the output as an outside consumer and says four
+things:
 
 * **which bones came back**, against the profile's 55 contract names: the
   question is whether our names survive a model whose templates are Mixamo
@@ -24,25 +46,29 @@ an outside consumer and says four things:
   rescue (a lamp on a shoulder pad, an exo-brace on a shin) can be seen
   landing somewhere sane rather than orbiting an arm;
 * **the unweighted fraction**, against the profile's own
-  ``[rig] unweighted_abort_fraction`` — the same number the bone-heat
-  ladder aborts on, so the two skinners are judged by one rule;
+  ``[rig] unweighted_abort_fraction`` — the shell-abort gate, and the one
+  refusal in this file that is about the weights themselves;
 * **influences per vertex**, against ``[export] max_influences``.
 
-It reports; it does not gate. Go or no-go on the skinner is a human call
-made on the *strip rendered on the real body* (`just sheet walk`), not on
-this table — numbers say a rig is wired, a picture says what it is. What
-this script refuses is only what would make the numbers meaningless: a
-busy card, a stale bpy_server, a mesh that arrives already skinned.
+Beyond that abort it reports and does not gate. Go or no-go on a body is a
+human call made on the *strip rendered on the real body* (`just sheet walk`),
+not on this table — numbers say a rig is wired, a picture says what it is.
+What this door refuses otherwise is only what would make the numbers
+meaningless: a busy card, a stale bpy_server, a mesh that arrives already
+skinned, a fit whose own gate says the measurement is not trustworthy.
 
 The record it writes is a real one, ``kind: "rig"``, ``tool: "skintokens"``,
 through ``records.py`` like every other generator — hashing the prepared glb
 as its ``mesh`` input and the skinned glb as its output, and stating every
-sampling knob it passed. It claims **integrity and never reproduction**:
-``demo.py`` samples with ``do_sample=True`` and takes no seed, so ``seed``
-is ``null`` because it is unknown, not because it is zero. The record names
-its ``skinner`` and the encoder's licence note the way a lift record names
-its ``texture_baker``: a licence fact that lives only in an installer is a
-fact nobody reading a record can see.
+sampling knob it passed, plus the whole ``fit`` block: the ratios, the runs
+they were measured on, the raw left/right disagreement, the grounding
+factors and the ``motion_scale`` a consumer multiplies a root track by. It
+claims **integrity and never reproduction**: ``demo.py`` samples with
+``do_sample=True`` and takes no seed, so ``seed`` is ``null`` because it is
+unknown, not because it is zero. The record names its ``skinner`` and the
+encoder's licence note the way a lift record names its ``texture_baker``: a
+licence fact that lives only in an installer is a fact nobody reading a
+record can see.
 
 Two traps upstream's ``demo.py`` carries, both learned by reading it:
 
@@ -58,12 +84,13 @@ Two traps upstream's ``demo.py`` carries, both learned by reading it:
   are paths **relative to the checkout**, and it launches ``bpy_server.py``
   by bare name, so the run only works with the checkout as its working
   directory. That is what ``backend.toml``'s ``cwd = "checkout"`` says, and
-  this script does the same when the backend is not described yet.
+  this file does the same when the backend is not described yet.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import socket
 import struct
@@ -75,7 +102,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from forge_gen import doctor, glb as glb_mod, launcher, profile as profile_mod, records, vram_cap  # noqa: E402
-from forge_gen.exit_codes import BackendFailed, MissingBackend, UsageError  # noqa: E402
+from forge_gen.exit_codes import BackendFailed, InputRejected, MissingBackend, UsageError  # noqa: E402
 
 #: The log prefix; the spike notes quote these lines.
 TAG = "skin"
@@ -113,20 +140,45 @@ BPY_PORT = 59876
 #: What the plan budgets for a SkinTokens run; upstream says "at least 14 GB".
 DEFAULT_MIN_FREE_GB = 14.0
 
-#: Where the output lands when ``--out`` is not given, under the project.
-DEFAULT_OUT_DIR = Path("out") / "spike"
+#: Where the outputs land when ``--out``/``--work`` are not given, under the project.
+DEFAULT_OUT_DIR = Path("out") / "skin"
+
+#: Where the working ``.blend`` and its rig record land: the committed,
+#: non-derivable source tree ``forge promote body`` reads.
+DEFAULT_BLEND_DIR = Path("assets-src") / "blender"
 
 #: A weight at or below this is not an influence.
 WEIGHT_EPSILON = 1e-6
+
+#: The fit's own band on a run's ratio, and the thinnest band it will average
+#: over. Shipped defaults, restated here because the door states every knob
+#: it runs the fit with rather than inheriting one from a parser.
+RATIO_MIN = 0.4
+RATIO_MAX = 2.5
+DEFAULT_MIN_SUPPORT = 8.0
+
+#: What a ``--fake`` skeleton's bones are scaled by. Not 1.0 on purpose: a
+#: placeholder at exactly the contract's lengths would exercise none of the
+#: schema the fitted skeleton exists to fill.
+FAKE_FIT_RATIO = 0.95
 
 
 # --------------------------------------------------------------- arguments --
 
 
-def _add_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_arguments(parser: argparse.ArgumentParser, *, common: bool = True) -> None:
+    """Every flag. ``common=False`` when ``cli.py`` is folding its own in."""
     parser.add_argument("glb", help="the prepared glb: normalised mesh + the profile's armature, no vertex groups")
-    parser.add_argument("--out", metavar="GLB", help=f"where the skinned glb goes (default: {DEFAULT_OUT_DIR}/<stem>.skinned.glb)")
-    parser.add_argument("--record", metavar="JSON", help="where the generator record goes (default: <name>.rig.json beside the output)")
+    parser.add_argument(
+        "--source",
+        metavar="GLB",
+        help="the lift the prepared glb was made from, re-prepared against the fitted skeleton "
+        "(default: the mesh input of the prepare record beside it)",
+    )
+    parser.add_argument("--out", metavar="GLB", help=f"where the skinned glb goes (default: {DEFAULT_OUT_DIR}/<name>.skinned.glb)")
+    parser.add_argument("--blend", metavar="BLEND", help=f"where the rigged .blend goes (default: {DEFAULT_BLEND_DIR}/<name>.blend)")
+    parser.add_argument("--record", metavar="JSON", help="where the generator record goes (default: <name>.rig.json beside the .blend)")
+    parser.add_argument("--work", metavar="DIR", help=f"where the loop's intermediates go (default: {DEFAULT_OUT_DIR}/<name>)")
     parser.add_argument("--name", metavar="NAME", help="[a-z0-9_]+ library name for the record (default: the input's stem)")
     parser.add_argument("--profile", metavar="DIR", help="rig profile directory (default: $FORGE_RIG_PROFILE or the project's)")
     parser.add_argument("--top-k", type=int, default=DEFAULT_SAMPLING["top_k"], metavar="N")
@@ -142,15 +194,27 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--analyse-only",
         action="store_true",
-        help="read an output that already exists and re-write its record, spending no card — the same numbers, no second sample",
+        help="re-read the skinned glb and the fit report this run already wrote and re-write the record, "
+        "spending no card — the same numbers, no second sample",
     )
-    parser.add_argument("--json", action="store_true", help="last stdout line is one JSON object")
-    parser.add_argument("--project", default=None, metavar="DIR", help="the project root paths are written relative to")
-    parser.add_argument("--created-by", default=None, metavar="WHO", help="human | agent:<name> | unknown")
+    if common:
+        parser.add_argument("--json", action="store_true", help="last stdout line is one JSON object")
+        parser.add_argument("--fake", action="store_true", help="write placeholder outputs through the same doors")
+        parser.add_argument("--project", default=None, metavar="DIR", help="the project root paths are written relative to")
+        parser.add_argument("--created-by", default=None, metavar="WHO", help="human | agent:<name> | unknown")
+
+
+def add_parser(subparsers) -> None:
+    parser = subparsers.add_parser(
+        "skin",
+        help="Prepared glb -> SkinTokens weights on a skeleton fitted to this body",
+        description=__doc__,
+    )
+    _add_arguments(parser, common=False)
 
 
 def log(message: str) -> None:
-    """One progress line, prefixed the way the spike notes quote them."""
+    """One progress line, the shape every skill quotes."""
     sys.stdout.write(f"{TAG}: {message}\n")
     sys.stdout.flush()
 
@@ -665,8 +729,64 @@ def _vertex_count(document: dict) -> int:
 # -------------------------------------------------------------- the record --
 
 
-def _record(args, spec: dict, measured: dict, source: Path, out: Path, record_path: Path) -> Path:
-    rec = records.new_record("rig", BACKEND_NAME, created_by=args.created_by)
+def fit_block(report: dict, prof: profile_mod.Profile) -> dict:
+    """The ``fit`` object a rig record carries, from one fit report.
+
+    Everything a reader needs to judge the skeleton this body got without
+    opening the report: what each run measured and what it was given after
+    mirroring, the **raw** left/right disagreement (so symmetrising hides
+    nothing), the grounding factors, the two tolerances it was held to, and
+    the ``motion_scale`` a consumer multiplies a root track by. ``passes`` is
+    1 and says so, because that is a decision and not a default.
+    """
+    from forge_gen import fit as fit_mod
+
+    ends = {run["end"]: run for run in report["runs"]}
+    raw: dict[str, float] = {}
+    worst = {"run": None, "gap": None}
+    for end, run in sorted(ends.items()):
+        if not end.startswith("Left"):
+            continue
+        mirror = ends.get("Right" + end[len("Left") :])
+        if mirror is None:
+            continue
+        mean = 0.5 * (run["ratio_measured"] + mirror["ratio_measured"])
+        if abs(mean) <= 1e-6:
+            continue
+        gap = round(abs(run["ratio_measured"] - mirror["ratio_measured"]) / abs(mean), 4)
+        raw[run["run"].replace("Left", "")] = gap
+        if worst["gap"] is None or gap > worst["gap"]:
+            worst = {"run": run["run"], "gap": gap}
+    bands = report.get("asymmetry") or fit_mod.symmetry_bands(prof)
+    return {
+        "passes": 1,
+        "motion_scale": report["motion_scale"],
+        "asymmetry_arms": bands["asymmetry_arms"],
+        "asymmetry_other": bands["asymmetry_other"],
+        # `None` on a report written before the door named its sources:
+        # unknown, which is what a record says when it does not know.
+        "sources": report.get("sources"),
+        "ratios": {row["bone"]: row["ratio"] for row in report["bones"]},
+        "runs": [
+            {
+                "run": run["run"],
+                "reference_length_m": run["reference_length_m"],
+                "ratio": run["ratio"],
+                "ratio_measured": run["ratio_measured"],
+                "support": run["support"],
+                "off_axis_m": run["off_axis_m"],
+                "mirrored": bool(report.get("symmetrised")) and ("Right" + run["end"][4:] in ends or "Left" + run["end"][5:] in ends),
+            }
+            for run in report["runs"]
+        ],
+        "raw_asymmetry": raw,
+        "grounding": {side: values["factor"] for side, values in (report.get("grounding") or {}).items()},
+        "symmetry_worst": worst,
+    }
+
+
+def _record(args, spec: dict, measured: dict, source: Path, outputs: list[Path], record_path: Path) -> Path:
+    rec = records.new_record("rig", BACKEND_NAME, created_by=getattr(args, "created_by", None))
     rec["backend"] = records.backend_block(
         name=BACKEND_NAME,
         commit=spec["commit"],
@@ -681,8 +801,8 @@ def _record(args, spec: dict, measured: dict, source: Path, out: Path, record_pa
         "name": spec["name"],
         "profile": spec["profile"].name,
         "profile_sha256": spec["profile_sha256"],
-        "skinner": SKINNER,
-        "skinner_note": SKINNER_NOTE,
+        "skinner": {"tool": SKINNER, "commit": spec["commit"], "note": SKINNER_NOTE},
+        "fit": spec["fit"],
         "use_skeleton": True,
         "use_transfer": True,
         "use_postprocess": True,
@@ -696,83 +816,332 @@ def _record(args, spec: dict, measured: dict, source: Path, out: Path, record_pa
         "seed": None,
         "model_ckpt": args.model_ckpt,
         "hf_path": args.hf_path,
-        "spike": True,
     }
     rec["measured"] = measured
-    records.add_output(rec, out)
+    for path in outputs:
+        records.add_output(rec, path)
     return records.write(rec, record_path)
 
 
 # ------------------------------------------------------------------- entry --
 
 
-def run(args) -> dict:
-    source = Path(args.glb).expanduser()
-    if not source.is_file():
-        raise UsageError(f"prepared mesh {source} does not exist — make one with python/forge_gen/blender/prepare_spike.py")
-    source = source.resolve()
-    name = args.name or source.stem.split(".")[0]
-    root = records.project() or Path.cwd()
-    out = Path(args.out).expanduser().resolve() if args.out else (Path(root) / DEFAULT_OUT_DIR / f"{name}.skinned.glb").resolve()
+def _places(args, prof: profile_mod.Profile) -> dict:
+    """Every path this run reads and writes, resolved once and refused early."""
+    prepared = Path(args.glb).expanduser()
+    if not prepared.is_file():
+        raise UsageError(f"prepared mesh {prepared} does not exist — make one with `forge gen prepare <lift.glb>`")
+    prepared = prepared.resolve()
+    name = args.name or prepared.stem.split(".")[0]
+    root = Path(records.project() or Path.cwd())
+    out = Path(args.out).expanduser().resolve() if args.out else (root / DEFAULT_OUT_DIR / f"{name}.skinned.glb").resolve()
     if not out.suffix:
         raise UsageError(f"--out {out} has no suffix, and demo.py reads a suffixless --output as a directory")
-    record_path = Path(args.record).expanduser().resolve() if args.record else out.with_name(f"{name}.rig.json")
+    work = Path(args.work).expanduser().resolve() if args.work else (root / DEFAULT_OUT_DIR / name).resolve()
+    blend = Path(args.blend).expanduser().resolve() if args.blend else (root / DEFAULT_BLEND_DIR / f"{name}.blend").resolve()
+    record = Path(args.record).expanduser().resolve() if args.record else blend.with_name(f"{name}.rig.json")
+    return {
+        "name": name,
+        "prepared": prepared,
+        "lift": _lift_of(args, prepared),
+        "profile": prof,
+        "pass1": work / f"{name}.p1.skinned.glb",
+        "prepared2": work / f"{name}.p2.glb",
+        "prepare2_record": work / f"{name}.p2.prepare.json",
+        "skinned": out,
+        "work": work,
+        "blend": blend,
+        "record": record,
+        "fit_report": blend.with_name(f"{name}.fit.json"),
+    }
+
+
+def _lift_of(args, prepared: Path) -> Path:
+    """The mesh the prepared glb was made from: ``--source``, else its own record.
+
+    The second prepare needs the *lift*, not the prepared file, because it
+    re-runs the same normalisation against a different skeleton. That is
+    what the prepare record is for — it hashes the lift as its ``mesh``
+    input — and a prepared glb with no record beside it is refused by name
+    rather than guessed at.
+    """
+    if getattr(args, "source", None):
+        path = Path(args.source).expanduser().resolve()
+        if not path.is_file():
+            raise UsageError(f"--source {path} is not a file")
+        return path
+    record_path = prepared.with_suffix(".prepare.json")
+    if not record_path.is_file():
+        raise UsageError(
+            f"there is no {record_path.name} beside {prepared.name}, so the lift it was prepared from is unknown — "
+            "the loop prepares that lift a second time against the fitted skeleton. Re-run `forge gen prepare`, "
+            "or name the lift with --source"
+        )
+    document = json.loads(record_path.read_text(encoding="utf-8"))
+    for entry in document.get("inputs") or []:
+        if entry.get("role") == "mesh":
+            root = records.project() or record_path.parent
+            path = Path(entry["path"])
+            path = path if path.is_absolute() else (Path(root) / path)
+            if not path.is_file():
+                raise UsageError(f"{record_path.name} names {entry['path']} as its mesh input and it is not there — pass --source")
+            return path.resolve()
+    raise UsageError(f"{record_path.name} has no mesh input — pass --source with the lift this body came from")
+
+
+def _skin_once(args, places: dict, backend: tuple, source: Path, out: Path, *, label: str) -> None:
+    """One SkinTokens run, with the card and the port checked first."""
+    interpreter, checkout, env = backend
+    _refuse_a_stale_server()
+    _refuse_a_busy_card(args.min_free_gb, args.allow_busy)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    log(f"{label}: skinning {source.name} -> {out.name}")
+    _run_demo(interpreter, checkout, env, _demo_argv(args, source, out), args.timeout)
+    if not out.is_file():
+        raise BackendFailed(f"demo.py exited 0 but wrote no {out} — read the log above")
+    if _port_taken():
+        log(
+            f"WARN a bpy_server is still listening on {BPY_PORT} after the run — demo.py's atexit hook did not "
+            f"fire. Kill it by PID (ss -lptn 'sport = :{BPY_PORT}'), or the next run will talk to it"
+        )
+
+
+def _abort_on_a_failed_skin(measured: dict, *, label: str) -> None:
+    """The one gate on the weights themselves: too much of the body came back bare."""
+    fraction = measured["unweighted_fraction"]
+    ceiling = measured["unweighted_abort_fraction"]
+    if fraction > ceiling:
+        raise BackendFailed(
+            f"{label}: {fraction:.1%} of the vertices came back with no weight at all, past the profile's "
+            f"[rig] unweighted_abort_fraction {ceiling:.0%} — the skin failed, and a body bound like this holds "
+            "its rest pose through every clip in the library. Re-lift the mesh or re-roll the skin; do not ship a statue"
+        )
+
+
+def _fit_once(places: dict, skinned: Path, report_path: Path) -> dict:
+    """Step 2: read the weights, measure every run, refuse an untrustworthy fit."""
+    from forge_gen import fit as fit_mod
+
+    prof = places["profile"]
+    document, binary = fit_mod._chunks(skinned)
+    order = fit_mod._joint_order(document, argparse.Namespace(names=os.fspath(places["prepared"]), map=None), prof)
+    names = [bone["name"] for bone in prof.bones]
+    points, dense = fit_mod._dense_weights(document, binary, len(order))
+    report = fit_mod.fit(
+        points,
+        fit_mod._reorder(dense, order, names),
+        prof,
+        min_support=DEFAULT_MIN_SUPPORT,
+        symmetry=True,
+        ground=True,
+    )
+    report["source"] = str(skinned)
+    report["profile_dir"] = str(prof.dir)
+    bands = fit_mod.symmetry_bands(prof)
+    problems, warnings = fit_mod.gate(report, ratio_min=RATIO_MIN, ratio_max=RATIO_MAX, min_support=DEFAULT_MIN_SUPPORT, **bands)
+    report["asymmetry"] = bands
+    report["problems"] = problems
+    report["warnings"] = warnings
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    for line in fit_mod.run_table(report).splitlines():
+        log(line)
+    log(f"motion_scale {report['motion_scale']:.4f}, report {report_path}")
+    for warning in warnings:
+        log(f"WARN {warning}")
+    if problems:
+        listed = "\n  - ".join(problems)
+        raise InputRejected(
+            f"the fit is not trustworthy ({len(problems)} problem(s)):\n  - {listed}",
+            report=os.fspath(report_path),
+        )
+    return report
+
+
+def run(args) -> dict:
+    """The five steps, in order, with one card held at a time."""
+    from forge_gen.blender import fit_rig, prepare, reattach
+
     prof = _profile(args.profile)
+    places = _places(args, prof)
+    # What the three Blender halves need from this door's own flags: the
+    # project, so their records state paths the way every other record does,
+    # and who asked, so a body's chain says so at every step.
+    inner = argparse.Namespace(
+        json=False,
+        project=getattr(args, "project", None),
+        created_by=getattr(args, "created_by", None),
+    )
 
     interpreter = checkout = None
     if args.analyse_only:
-        if not out.is_file():
-            raise UsageError(f"--analyse-only, and there is no {out} to read")
+        if not places["skinned"].is_file() or not places["fit_report"].is_file():
+            raise UsageError(
+                f"--analyse-only, and there is no {places['skinned']} and {places['fit_report']} to read"
+            )
         try:
             interpreter, checkout, _ = _backend()
         except MissingBackend as err:
             log(f"WARN {err.message} — the record's backend block will say null where it cannot know")
-        log(f"reading {out} without running anything")
+        log(f"reading {places['skinned']} and {places['fit_report']} without running anything")
+        report = json.loads(places["fit_report"].read_text(encoding="utf-8"))
+        handed_in = places["prepared2"] if places["prepared2"].is_file() else places["prepared"]
     else:
-        interpreter, checkout, env = _backend()
+        backend = _backend()
+        interpreter, checkout, _env = backend
         log(f"interpreter {interpreter}")
         log(f"checkout {checkout}")
-        _refuse_a_stale_server()
-        _refuse_a_busy_card(args.min_free_gb, args.allow_busy)
 
-        out.parent.mkdir(parents=True, exist_ok=True)
-        _run_demo(interpreter, checkout, env, _demo_argv(args, source, out), args.timeout)
-        if not out.is_file():
-            raise BackendFailed(f"demo.py exited 0 but wrote no {out} — read the log above")
-        if _port_taken():
-            log(
-                f"WARN a bpy_server is still listening on {BPY_PORT} after the run — demo.py's atexit hook did not "
-                f"fire. Kill it by PID (ss -lptn 'sport = :{BPY_PORT}'), or the next run will talk to it"
+        # 1 — skin, on the profile's own skeleton.
+        _skin_once(args, places, backend, places["prepared"], places["pass1"], label="pass 1")
+        first, lines = analyse(places["prepared"], places["pass1"], prof)
+        for line in lines:
+            log(line)
+        _abort_on_a_failed_skin(first, label="pass 1")
+
+        # 2 — fit, once. See the module doc for why there is no second.
+        report = _fit_once(places, places["pass1"], places["fit_report"])
+
+        # 3 — the per-body armature, rest rotations copied and checked.
+        fit_rig.run(
+            argparse.Namespace(report=os.fspath(places["fit_report"]), source=os.fspath(prof.dir), out=os.fspath(places["work"]), **vars(inner))
+        )
+        skeleton_glb = places["work"] / fit_rig.SKELETON_GLB
+        skeleton_blend = places["work"] / fit_rig.SKELETON_BLEND
+
+        # 4 — prepare and skin AGAIN, on the skeleton the fit just corrected.
+        prepare.run(
+            argparse.Namespace(
+                source=os.fspath(places["lift"]),
+                out=os.fspath(places["prepared2"]),
+                record=os.fspath(places["prepare2_record"]),
+                profile=os.fspath(prof.dir),
+                skeleton=os.fspath(skeleton_glb),
+                stature=None,
+                yaw_deg=0.0,
+                budget=None,
+                **vars(inner),
             )
+        )
+        _skin_once(args, places, backend, places["prepared2"], places["skinned"], label="pass 2")
+        handed_in = places["prepared2"]
 
-    measured, lines = analyse(source, out, prof)
+        # 5 — re-attach by joint order onto the fitted armature.
+        reattach.run(
+            argparse.Namespace(
+                skinned=os.fspath(places["skinned"]),
+                handed_in=os.fspath(handed_in),
+                out=os.fspath(places["blend"]),
+                profile=os.fspath(prof.dir),
+                armature=os.fspath(skeleton_blend),
+                map=None,
+                **vars(inner),
+            )
+        )
+
+    measured, lines = analyse(handed_in, places["skinned"], prof)
     for line in lines:
         log(line)
+    _abort_on_a_failed_skin(measured, label="pass 2")
+    measured["fit_report"] = records.record_path(places["fit_report"])
+    measured["passes"] = 1
 
     contract_path = prof.dir / str(prof.toml["profile"].get("contract", "contract.json"))
     spec = {
-        "name": name,
+        "name": places["name"],
         "profile": prof,
         "profile_sha256": records.sha256_file(contract_path),
         "commit": _commit(checkout) if checkout else None,
         "python": _interpreter_says(interpreter, "import sys; print('.'.join(str(v) for v in sys.version_info[:3]))") if interpreter else None,
         "torch": _interpreter_says(interpreter, "import torch; print(torch.__version__)") if interpreter else None,
+        "fit": fit_block(report, prof),
     }
-    written = _record(args, spec, measured, source, out, record_path)
+    outputs = [places["skinned"]] + ([places["blend"]] if places["blend"].is_file() else [])
+    written = _record(args, spec, measured, places["prepared"], outputs, places["record"])
     log(f"wrote {written}")
+    log(f"next — forge gen export {places['blend']} --out <glb> --record <json>")
     return {
         "ok": True,
         "record": os.fspath(written),
-        "outputs": [os.fspath(out)],
+        "outputs": [os.fspath(path) for path in outputs],
+        "fit_report": os.fspath(places["fit_report"]),
+        "motion_scale": spec["fit"]["motion_scale"],
         "measured": measured,
     }
 
 
+def run_fake(args) -> dict:
+    """The whole loop as placeholders: a fitted-looking skeleton and a record that says it is one.
+
+    The skeleton comes out with every bone's rest translation scaled by
+    :data:`FAKE_FIT_RATIO` and every rest rotation untouched — the move a
+    real fit makes — so a sidecar's ``bones[]`` and its ``motion_scale`` are
+    exercised end to end with no card. Every measurement in the record is
+    ``null``, because nothing was measured.
+    """
+    from forge_gen import placeholders
+
+    prof = _profile(args.profile)
+    places = _places(args, prof)
+    placeholders.refuse_real(places["skinned"], places["blend"], places["record"], places["fit_report"])
+    placeholders.placeholder_body_glb(places["skinned"], prof, scale=FAKE_FIT_RATIO)
+    placeholders.placeholder_blend(places["blend"])
+    places["fit_report"].parent.mkdir(parents=True, exist_ok=True)
+    report = {
+        "fake": True,
+        "profile": prof.name,
+        "root": prof.root,
+        "passes": 1,
+        "motion_scale": FAKE_FIT_RATIO,
+        "note": "placeholder from a --fake run; nothing about it is a measurement",
+    }
+    places["fit_report"].write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    rec = placeholders.fake_record("rig", BACKEND_NAME, backend=BACKEND_NAME, created_by=getattr(args, "created_by", None))
+    records.add_input(rec, "mesh", places["prepared"])
+    records.add_input(rec, "reference", prof.rig_blend, source=f"profile:{prof.name}")
+    rec["params"] = {
+        "name": places["name"],
+        "profile": prof.name,
+        "skinner": {"tool": SKINNER, "commit": None, "note": SKINNER_NOTE},
+        "fit": {
+            "passes": 1,
+            "motion_scale": FAKE_FIT_RATIO,
+            "sources": {"limbs": "weights", "root": "geometry", "shoulder_line": "geometry", "ground": "geometry"},
+            "ratios": None,
+            "runs": None,
+            "raw_asymmetry": None,
+            "grounding": None,
+            "symmetry_worst": None,
+        },
+        "seed": None,
+        "model_ckpt": args.model_ckpt,
+        "hf_path": args.hf_path,
+    }
+    rec["measured"] = {
+        "vertices": None,
+        "unweighted_fraction": None,
+        "contract_bones_present": None,
+        "skeleton_alignment": None,
+        "fit_report": records.record_path(places["fit_report"]),
+        "passes": 1,
+    }
+    for path in (places["skinned"], places["blend"]):
+        records.add_output(rec, path)
+    records.write(rec, places["record"])
+    return {
+        "record": os.fspath(places["record"]),
+        "outputs": [os.fspath(places["skinned"]), os.fspath(places["blend"])],
+        "fit_report": os.fspath(places["fit_report"]),
+        "motion_scale": FAKE_FIT_RATIO,
+        "measured": rec["measured"],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
-    from forge_gen import cli
+    from forge_gen import cli, placeholders
     from forge_gen.exit_codes import ForgeGenError
 
-    parser = argparse.ArgumentParser(prog="spike_skin", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="forge-gen skin", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     _add_arguments(parser)
     args = parser.parse_args(argv)
     if args.project:
@@ -781,7 +1150,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         records.set_project(args.project)
     try:
-        result = run(args)
+        result = run_fake(args) if placeholders.requested(args) else run(args)
     except ForgeGenError as err:
         cli.emit(err.payload(), as_json=args.json)
         sys.stderr.write(f"{TAG}: {err.error}: {err.message}\n")
