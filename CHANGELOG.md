@@ -60,6 +60,33 @@ ComfyUI host the toolkit drives but does not schedule. The plan is
   nothing else. `just bundle`, and `export_bundle` as the MCP surface's
   nineteenth tool.
 
+**Forge 2, Phases 2 and 3 — the fitted skeleton, the mesh doors, the
+reference door.** The design is `designs/skin.md`; the decision it
+implements is `decisions.md`'s of 2026-08-30: bone lengths belong to the
+body, and the skinner's weights say what they are.
+
+- **`forge ref import` / MCP `import_reference`** — the one way a PNG gets
+  under `assets-src/refs/`. Format (one PNG, 1024 px or more on the long
+  side), then `mesh.py`'s **own** keyer at its own tolerance, then four
+  refusals the 2026-08-30 spike proved ride all the way to a lift — a drawn
+  floor band, a contact shadow, a flood-through hole, a key that kept
+  outside 10–85 % of the frame — then the geometry pre-checks (span over
+  height 0.7–1.3, heads, one subject above the dust fraction, a prop whole
+  inside its frame). All of it before a GPU minute. It writes three files
+  and they are the door's to write, never a hand's: the PNG **as it was
+  drawn, byte for byte**, a `<name>.ref.json` record, and the `SOURCES.md`
+  row. `just ref-import`, and `just ref-format` prints the format text —
+  which has one home, `FORMAT` in `python/forge_gen/reference.py`, with
+  every other copy generated from it.
+- **The gain is a knob in the graph.** `backends/acestep/workflows/music.api.json`
+  gains node `14`, `AudioAdjustVolume`, wired between `VAEDecodeAudio` and
+  `SaveAudio` and filled from `forge gen music --gain-db`; the value lands
+  in `params.gain_db`. The clipping gate does not move — it is right, and a
+  gain that merely dodged it would be the hand-repair of an audio file. The
+  node's `volume` is an integer, so a fractional `--gain-db` is refused by
+  name rather than rounded into a record claiming a gain nothing was
+  rendered at.
+
 ### Changed
 
 - **Audio runs on the host.** ACE-Step 1.5 native; MOSS-TTS,
@@ -84,20 +111,51 @@ ComfyUI host the toolkit drives but does not schedule. The plan is
   receipt covers, and the comfy host is told which model group the chosen
   kinds need — a music project no longer pulls 73.7 GB of image weights.
 
+- **`backends/moss_tts`'s speech notice is rewritten.** Its "WHAT LIFTS
+  THIS: a pin built against transformers >= 5" was wrong: `fab00263` **is**
+  TTS-Audio-Suite v5.8.7 (2026-08-28), already past the release that moved
+  the pack to transformers 5, so a pack bump is a no-op. Neither is the
+  pack's isolated secondary runtime the lever — at this pin it has a MOSS
+  *profile* with no packages in it, no worker, no proxy, and an explicit
+  `Isolated runtime is not implemented for engine 'moss_tts'`. All of that
+  is readable in the checkout with no card, and it is now what the notice
+  says, along with what would actually lift it.
+- **`just` recipes:** `just ref-import` and `just ref-format` are new;
+  `just rig-mesh` became `just prepare` + `just skin` (`just body` runs
+  both) and `just promote-mesh` became `just promote-body`. `mcp-check`
+  pins twenty-five tool names and `mcp-session` grows the character leg.
+- The reference format text no longer asks for "seven heads or more" as a
+  rule: the fitted skeleton made proportion a preference. The door refuses
+  below three heads and notes anything under seven.
+
 ### Removed
 
 - The `acestep`, `moss_sfx` and `moss_tts` virtualenvs, their probes, and
   ACE-Step's resident server with its pidfile, `--stop-server` and
   soundfile patch. `forge gpu --free` is the door for the card now.
+- **`just rig-mesh`**, and the reach gate it ran: it measured a body's span
+  against wrists the fit now moves to that body. `just promote-mesh`
+  survives one release as a recipe that **dies by name**, the courtesy
+  `backends/comfy/install.sh --models` got.
 
 ### Known limitations
 
 - `forge gen speech` cannot make a line: MOSS-TTS 1.7B does not run under
   the host's transformers 5 at this pin and the pack answers with silence,
-  which the new gate refuses. `backends/moss_tts`'s notice names the pin
-  that would lift it.
-- `forge gen music` renders but does not promote: ACE-Step 1.5 turbo comes
-  off the host at 0.0 dBFS and the clipping gate refuses it.
+  which the gate refuses. A pack bump is **not** the fix and neither is the
+  pack's isolated runtime; `backends/moss_tts`'s notice says what was
+  measured and what would lift it.
+- `forge gen music`'s `--gain-db` default of **−3** is a **budget**, not a
+  measurement. Pinning it is three renders of the busiest arrangement at
+  −2, −3 and −4 with `peak_dbfs` read off each, keeping the one that lands
+  at −2.0 ± 0.5 dBFS; that needs the card and has not been done. It says
+  "budget" in the door, in the template's saved value and in
+  `designs/hosting.md`.
+- The reference door's floor-band and flood-through thresholds are budgets
+  for the opposite reason: the *good* side is measured across every
+  reference in this repository, but no picture on disk exercises the bad
+  side. `designs/decisions.md` names the three numbers that did move when
+  the pictures were measured against them.
 - The MCP `setup` plans, gates and records; it does not install. Its
   description says so.
 

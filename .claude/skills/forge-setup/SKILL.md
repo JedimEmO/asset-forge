@@ -305,11 +305,14 @@ window with a model loaded is up on the real adapter; never 1536³ on
   pin and `POST /free` does not touch what it loaded. The pack's own
   weights land in `$PREFIX/data/models/TTS/`, not in the HF cache, and it
   fetches them on the node's first run — nothing an installer does. Two
-  things do not work at this pin and are not setup problems: `speech` (the
+  thing does not work at this pin and is not a setup problem: `speech`. The
   1.7B does not run under the host's transformers 5 and the pack returns
-  silence; the notice on `backends/moss_tts` names the pin that would lift
-  it) and promoting `music` (ACE-Step turbo comes off the host at 0.0 dBFS
-  and the clipping gate is right to refuse it).
+  silence. A pack bump is **not** the fix — `fab00263` is already v5.8.7 —
+  and neither is the pack's isolated secondary runtime, which is not wired
+  to MOSS at this pin; the rewritten notice on `backends/moss_tts` says what
+  was measured and what would lift it. (`music`'s clipping was the other
+  one, and the graph now carries a stated `--gain-db` knob; its default of
+  −3 is a budget until three renders pin it.)
 - **`comfy`:** a systemd `--user` unit on `127.0.0.1:8188`, started with
   `--base-directory` (without it the service writes into the clone and
   finds no models), `--disable-api-nodes` (no node can call a paid API) and

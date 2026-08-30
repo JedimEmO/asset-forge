@@ -558,7 +558,10 @@ speech is not, and doctor reads it `partial`/`ok` because it probes node
 classes and weight files, neither of which is affected.** What would settle
 it: a pack pin built against transformers 5, or a `transformers<5` the host
 cannot have while the image templates need 5.16.1. Until then a spoken line
-cannot be made here. 2026-08-30.
+cannot be made here. 2026-08-30. **Corrected the same day**: `fab00263` is
+already a transformers-5 pin (v5.8.7), the image templates have since left the
+host, and the isolated secondary runtime the pack offers for legacy engines is
+not wired to MOSS — see "a pack bump is a no-op" two entries below.
 
 **`CharacterVoicesNode.reference_text` was never patched, and it is the
 transcript the cloner asks for.** `speech.api.json` left it `""` with no
@@ -589,7 +592,8 @@ busy arrangement was asked for. The host has a native `AudioAdjustVolume`
 (INT dB, −100..100) that would sit between `VAEDecodeAudio` and `SaveAudio`;
 a stated `gain_db` knob in the graph and in `params` would be the fix inside
 the one-way rule. Until then `music` renders but does not promote.
-2026-08-30.
+2026-08-30. **Done the same day** — node `14`, and the int-versus-fraction
+trap it carried, are two entries below.
 
 **The pack does not download into the HF cache, and two doctor rows were
 looking in the wrong place.** TTS-Audio-Suite puts the MOSS weights under the
@@ -614,6 +618,117 @@ each `gb` is what the directory measures here —
 `moss_tts/MOSS-VoiceGenerator` 3.95 GB and `moss_tts/MOSS-Audio-Tokenizer`
 6.61 GB, the last of which no row had named at all. `python/tests/test_doctor.py`
 has the directory-shaped case, empty directory included. 2026-08-30.
+
+### The two audio fixes and the reference door, 2026-08-30
+
+**`AudioAdjustVolume`'s `volume` is an INT, and a fractional gain is refused
+rather than rounded.** The node is now node `14` in
+`backends/acestep/workflows/music.api.json`, wired
+`12 (VAEDecodeAudio) → 14 → 13 (SaveAudio)` and marked
+`PATCH:gain_db`, which is the fix the entry above asked for: a stated knob in
+the graph, not a normalise applied to a shipped file. Its schema, read off
+`comfy_extras/nodes_audio.py` in the installed host at pin `169fcf35`, is
+`IO.Int.Input("volume", default=1, min=-100, max=100)` and the body is
+`gain = 10 ** (volume / 20)`. So `--gain-db -2.5` is a value the graph cannot
+carry. ComfyUI would coerce it and the record would then claim a gain nothing
+was rendered at — a `params.gain_db` of −2.5 beside a file rendered at −2 or
+−3 is exactly the kind of quiet lie the records exist to stop — so
+`music.py::check_gain_db` refuses a non-integer **by name**, printing the
+node, its range and the integer the value would have become. **The marker is
+`PATCH:gain_db` with no `=volume`,** and that is deliberate rather than
+sloppy: `comfy._field` falls back to "the node's only knob when every other
+input is a wire", `audio` is a wire, and the key stays the name the record and
+the flag use.
+
+**The default gain ships as a BUDGET of −3, and the measurement is the first
+real run's first task.** The number that belongs there is the one that puts
+the busiest arrangement at −2.0 ± 0.5 dBFS, and finding it is three renders at
+−2, −3 and −4 with `peak_dbfs` read off each. That needs the card and the card
+was not free; nothing here has been rendered through node 14. Until those
+three renders exist, `DEFAULT_GAIN_DB = -3` is a budget and says so in its own
+docstring, in `music.api.json`'s saved value, and here. The clipping gate does
+not move: it is right, and a gain chosen to dodge it rather than to land the
+mix would be the hand-repair of an audio file with extra steps.
+
+**A TTS-Audio-Suite pack bump is a no-op, and the isolated runtime is not the
+lever either — both readable in the checkout with no card.** `fab00263` **is**
+v5.8.7 (2026-08-28; `pyproject.toml` `version = "5.8.7"`, `CHANGELOG.md`
+`## [5.8.7] - 2026-08-28`), already past the pack's v5.0.0 — the release that
+moved the main environment to transformers 5 and put the legacy engines in
+isolated secondary runtimes — and past v5.5.0. So the sentence this ledger and
+`backends/moss_tts/backend.toml` both carried, "WHAT LIFTS THIS: a pin built
+against transformers >= 5", was **wrong**: the pin already is one, and there is
+no newer tag to move to. The narrower diagnosis stands — the 1.7B
+`MOSS-TTS-Local-Transformer` delay model running the pack's vendored
+transformers-4 `_sample` in the host's main environment — and the obvious next
+move was to run that engine through the pack's isolated secondary runtime and
+measure a line. It cannot be run, and the reason is in the pack's own source
+at this pin:
+
+- `utils/models/unified_model_interface.py::_load_isolated_model` builds a
+  proxy for exactly six engines — `vibevoice`, `higgs_audio`, `qwen3_tts`,
+  `fish_audio_s2`, `qwen3_asr`, `step_audio_editx` — and its last line is
+  `raise RuntimeError("Isolated runtime is not implemented for engine
+  'moss_tts'")`;
+- `utils/runtimes/workers/` holds a worker for each of those six and none for
+  MOSS; there is no `moss_tts_proxy.py`;
+- the profile MOSS is pointed at, `moss_tts_transformers5`
+  (`utils/models/engine_registry.py`'s `default_runtime_profile`), declares
+  **no `pip_packages` at all** — every other profile pins its own
+  `transformers==…` — and describes itself as "Dedicated MOSS-TTS runtime
+  isolated from VibeVoice/Qwen". It isolates MOSS from the *other packs'*
+  pins, not from transformers 5. Even wired, it would put the engine back on
+  the arithmetic that breaks it;
+- `nodes/engines/moss_tts_engine_node.py` exposes no isolation knob, so there
+  is nothing for a workflow to state either.
+
+So the door **stays refusing**, with the silence check (`peak −120.0 dBFS` is
+a refusal and not a record) doing the refusing, and the `[[notices]]` entry
+rewritten to name the pin, the runtime that was looked at and why it is not
+the lever. What would lift it: an upstream pin that ports MOSS-TTS's `_sample`
+to transformers 5, or one that gives `moss_tts` a worker and a transformers-4
+profile the way `step_audio_editx_transformers4` has one. **No shim.** The one
+outcome that would look like success is a shimmed model on wrong arithmetic,
+and this repository has already measured what that sounds like: 12.8 s of
+babble for a four-word line.
+
+**The reference door's pre-check numbers, measured on the twenty-one pictures
+on disk.** `forge ref import` runs `mesh.py`'s own keyer and then four
+refusals before any GPU minute. Every number is pinned from
+`out/refs_grok/`, `out/spike/refs/`, `out/spike/reference_v2/` and
+`assets-src/refs/`: seventeen of the twenty-one key (the four `contact*.png`
+are refused by `mesh.keyed`'s border-flatness check first), and the gates
+refuse exactly three of those seventeen — `ember_knight.png` on span 1.321
+(superseded by `ember_knight_v3` at 0.983 for that reason) and the two drawn
+contact shadows.
+
+| gate | number | measured how |
+|---|---|---|
+| floor band | > 0.25 of the columns in the bottom 2 % of rows | **budget**: the good side is measured (worst good picture 0.093, `courier_v2_11.png`) but no keyable picture on disk has a drawn floor, because a floor dark enough to matter fails the border check first |
+| contact shadow | an island under the ankle, < 0.08 of subject height and > 1.4 × the stance | **measured**: the two drawn shadows read 0.0356/3.16 (`courier_v2_7.png`) and 0.0584/3.41 (`courier_v2_1234.png`); no other island above the dust fraction is near either bound |
+| flood-through | interior holes > 0.5 % of the subject | **budget**: all seventeen read 0.0, `courier_flux.png` included — the number that separates is not on disk |
+| retained alpha | outside 0.10–0.85 | **measured, and wider than the design proposed**: the seventeen read 0.123 (`courier_v2_42.png`) to 0.278 (`barrel.png`), so a floor of 0.15 refuses two references that lifted |
+| dust | an island under 0.5 % of the subject | **measured**: real strays read 0.0003–0.0022 and the smallest thing worth calling an object is a shadow at 0.0428 |
+| span/height | outside 0.7–1.3, characters only | **measured**: 0.772–1.125 over the characters, and the one refusal is the superseded `ember_knight.png` at 1.321 |
+| heads | below **3.0** refuses, 3.0–7.0 notes | **measured, and the number moved** — see `decisions.md` |
+| subject fill | a **note** under 0.60, never a refusal | **measured and it does not separate**: 0.634 (a prop) to 0.95, with a character that lifted at 0.69 |
+
+Two things the door does *not* do, on purpose. It does not store the keyed
+image — `assets-src/refs/<kind>s/<name>.png` is the original bytes, because
+`mesh.py` keys again at lift time and a keyed PNG in the source tree is a
+derived artefact whose hash and ledger row describe something nobody drew. And
+it does not check for slivers: a picture cannot be measured for volume, only a
+mesh can, and that check lives at `forge gen prepare`.
+
+**The keyer needs Pillow, numpy and OpenCV, so the door is two-layer like
+`mesh`.** `python/forge_gen` is stdlib-only on purpose — a runtime dependency
+there would have to be installed into the system python before a single
+backend could be probed — and `mesh.keyed` needs all three. So `ref-import`'s
+inner half re-execs under the **trellis2** backend's interpreter, which is
+where those wheels already live, and a machine without that backend gets exit 3
+in ~100 ms naming it. The analysis in between (`reference.analyse`) is stdlib
+and shared by both halves, which is what lets every gate above be tested on a
+runner with nothing but pytest installed.
 
 ### The image-model group leaves the host, 2026-08-30
 

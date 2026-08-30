@@ -61,9 +61,14 @@
     "_meta": { "title": "latent to audio" },
     "inputs": { "samples": ["11", 0], "vae": ["1", 2] }
   },
+  "14": {
+    "class_type": "AudioAdjustVolume",
+    "_meta": { "title": "PATCH:gain_db — ACE-Step 1.5 turbo normalises to peak, so the record states the gain it was rendered at" },
+    "inputs": { "audio": ["12", 0], "volume": -3 }
+  },
   "13": {
     "class_type": "SaveAudio",
     "_meta": { "title": "PATCH:filename_prefix — SaveAudio writes FLAC; the client transcodes to what --out asked for" },
-    "inputs": { "audio": ["12", 0], "filename_prefix": "audio/forge" }
+    "inputs": { "audio": ["14", 0], "filename_prefix": "audio/forge" }
   }
 }

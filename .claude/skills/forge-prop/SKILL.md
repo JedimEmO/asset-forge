@@ -20,23 +20,39 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 
 | Check | Command | Healthy |
 |---|---|---|
-| The PNG is at `assets-src/refs/props/<name>.png`, `<name>` is `[a-z0-9_]+` | `ls assets-src/refs/props/` | present, name legal |
+| The PNG is under `assets-src/refs/props/` **through the door** | `just ref-import <drawn.png> <name> prop "<where it came from>"` | the door writes the PNG (original bytes), `<name>.ref.json` and the `SOURCES.md` row; `ls assets-src/refs/props/` then shows all three |
 | The name is free | `just catalog --kind model` | `<name>` absent from the `name` column |
 | Backends and tools | `just doctor` | `trellis2   ok`, `blender    ok` (doctor exits 1 while any backend is not `ok`; only those two matter here) |
 | nvdiffrast | same table | `warn notice: nvdiffrast is non-commercial: …` is expected; the lift record names it. Decide before lifting if the project is commercial. |
 | The GPU is free | `just gpu` | `holding   nobody` and `largest   trellis2 needs 22 GB (22528 MiB): fits`. `does NOT fit — stop what holds the card before a generate` (exit 1) names the holder on the `holding   pid N … GB` line: the ComfyUI host → `forge gpu --free` or `systemctl --user stop forge-comfy`; a studio window → close it; else by PID. One generate at a time. |
 | The project's style doc, if any | `designs/style-guide-template.md` is the template | the PNG is already in that register; nothing here restyles |
 
-## Step 0 — judge the PNG before any GPU time
+## Step 0 — judge the PNG, then import it: `just ref-import <drawn.png> <name> prop "<source>"`
 
 **The reference is brought, not made here** — no image model ships in this
 toolkit (`designs/decisions.md`, "The reference image stays brought",
 2026-08-30). Draw it, or have the user draw it, and bring it in through
-`import_reference` / `forge ref import` (Phase 3; until that door lands, copy
-the PNG in and write its `SOURCES.md` row by hand). The sample library's
-references were made in **Grok**, and `SOURCES.md` says so.
+`just ref-import` / MCP `import_reference`, which is **the one way** a PNG
+gets under `assets-src/refs/`. The sample library's references were made in
+**Grok**, and `SOURCES.md` says so.
 
-`Read` the PNG. TRELLIS lifts what it can see; the gates measure geometry.
+`just ref-format` prints the format the door holds a picture to;
+`forge-character`'s step 0 carries the same generated block. For a prop it
+comes down to: one PNG, 1024 px or more on its long side, a three-quarter
+view that shows the top and one side, the **whole object inside the frame**
+(the door refuses a margin under 2 % on any side by name — a cropped prop
+lifts with the crop in it), one subject on a flat backdrop with no floor and
+no shadow.
+
+The door's other refusals apply to a prop exactly as to a character: a floor
+band, a contact shadow, a flood-through hole, and a key that kept under 10 %
+or over 85 % of the frame. Its *character* checks — span over height, heads —
+do not: a prop legitimately has any aspect, and a beam with no head at all
+passes. `--source` is required and its words become the ledger cell, which is
+where the licence answer lives.
+
+`Read` the PNG before you import it. TRELLIS lifts what it can see; the gates
+measure geometry.
 
 | Seen | Consequence downstream | Fix (in the image) |
 |---|---|---|
@@ -45,16 +61,20 @@ references were made in **Grok**, and `SOURCES.md` says so.
 | Gradient background, vignette, ground shadow | the keyer flood-fills from the border: `the image border is not a flat background` refuses, a soft shadow lifts as a skirt | plain flat light background, no shadow |
 | Cropped edges, text, a label | missing geometry, or text baked as geometry | whole object in frame, nothing written on it |
 | Thin spokes, wires, a lattice, a thin pole | read as cones, fused, or dropped | thick shapes; the register is chunky |
-| Subject tiny or filling the frame | `alpha keying kept N% of the image as subject` outside 5–95 % refuses | a third to two thirds of the frame |
+| Subject tiny or filling the frame | the import door refuses outside 10–85 %, and notes a subject under 60 % of the frame height | a third to two thirds of the frame; `barrel.png` measures 0.278 subject and 0.634 fill and is fine |
 | Transparent or glowing parts | ship as flat matte paint | fine, but say so to the user |
 
-Then the ledger: add a row to `assets-src/SOURCES.md` under
-`| File | Origin | For | Date |` — the first cell must contain the file
-name. Without it `just verify` fails:
+The ledger row is the door's to write, and so is `<name>.ref.json`. **Write
+neither by hand.** Without a row `just verify` fails:
 `FAIL <name>.png   assets-src/refs/props/<name>.png has no row in SOURCES.md — a reference image claims a ledger row, or it cannot be accounted for`.
+To correct a row, run the door again with `--overwrite`; it echoes the record
+it replaced. The stored PNG is the file you drew, byte for byte — never the
+keyed image, because `mesh.py` keys again at lift time and a keyed PNG in the
+source tree would be a derived artefact nobody can re-derive.
+
 Optional `assets-src/refs/props/<name>.txt`: its first paragraph becomes the
-record's `prompt`; `--prompt TEXT` overrides, `--source TEXT` says where the
-image came from.
+*lift* record's `prompt`; `--prompt TEXT` overrides, `--source TEXT` on the
+lift says where the image came from.
 
 ## Step 1 — lift: `just prop <name> [flags]`
 

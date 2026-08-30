@@ -31,8 +31,8 @@ voice's `ref.wav`.
 | Field | Type | What it says |
 |---|---|---|
 | `forge_record` | `1` | the schema; a reader refuses any other number before parsing a field |
-| `kind` | `lift \| prop \| rig \| export \| take \| sfx \| music \| speech \| voice` | what kind of run |
-| `tool` | string | `trellis2`, `blender`, `ardy`, `moss_sound_effect`, `ace_step`, `moss_tts`, `moss_voice_generator` — the name the sidecar's generator block will carry |
+| `kind` | `ref \| lift \| prepare \| prop \| rig \| export \| take \| sfx \| music \| speech \| voice` | what kind of run |
+| `tool` | string | `trellis2`, `blender`, `skintokens`, `ardy`, `moss_sound_effect`, `ace_step`, `moss_tts`, `moss_voice_generator` — the name the sidecar's generator block will carry — or `imported`, which is what a `ref` record says because nothing generated the picture |
 | `created` | `YYYY-MM-DD` | the day the run finished |
 | `created_by` | `human \| agent:<name> \| unknown` | who asked; `forge gen` writes `unknown` unless `--created-by` is among the command's flags |
 | `backend` | `{name, commit, python, torch, model, model_revision}` | which backend ran, pinned; every key present, `null` where unread |
@@ -42,6 +42,21 @@ voice's `ref.wav`.
 | `measured` | object | what the run measured of its own output (vertices, triangles, the fit numbers, a frame count) |
 | `fake` | bool | a `--fake` placeholder: the output passes the same validators and nothing else about it is true |
 | `note` | string or `null` | anything the next reader should know |
+
+**The `ref` record** is the odd one and it is odd on purpose. Nothing
+generated the picture — no image model ships in this toolkit — so its
+`backend` block is null in every field, `executor` included, and its `tool`
+is `imported`. What it *does* carry is a hash of the file as it was drawn, a
+`stated_source` in the user's own words, and every number the import door
+measured off the keyed silhouette (`alpha_fraction`, `span_over_height`,
+`heads`, `subject_fill`, `islands`, `floor_band`, `contact_shadow_px`,
+`interior_hole_fraction`, the backdrop the keyer voted for and the tolerance
+it used). Its single output is the stored PNG, which is **the input file byte
+for byte** — the keyer runs again at lift time, so a keyed PNG under
+`assets-src/` would be a derived artefact whose hash describes something
+nobody drew. `heads` is `null` on a prop: it is a T-pose measurement and a
+prop has no arm line, and `null` is what a record says for a quantity that is
+not defined rather than one that happens to compute.
 
 Paths inside a record are relative to the project root when the file sits
 under it, absolute otherwise — a record that said `../../tmp/x.glb` would be
@@ -205,7 +220,11 @@ mean:
    contacts-derived event speaks the footstep vocabulary, every authored
    time agrees with its take time through the recipe to 25 ms, and every
    audio link resolves to a shipped sound;
-5. every reference PNG under `assets-src/refs/` has a row in `SOURCES.md`;
+5. every reference PNG under `assets-src/refs/` is accounted for by
+   **either** a `<name>.ref.json` whose output hash is that PNG **or** a row
+   in `SOURCES.md` — the same either/or a designed voice already lives under.
+   The import door writes both; the either/or is for the references that
+   predate it;
 6. the rig profile has not drifted: `rig.glb` hashing differently from the
    contract's `sources` is a failure, `rig.blend` a warning, and the bones
    re-derived from `rig.glb` still match `contract.json` position for

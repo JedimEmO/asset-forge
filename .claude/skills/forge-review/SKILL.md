@@ -106,6 +106,19 @@ then one finding per line padded as `ok:   ` / `note: ` / `WARN: ` /
   present, N weighted vertices`, `height 1.80 m, within 1.4-2.2 m`, `feet
   at y=0.000 m`. Every `FAIL` names what it measured; `note: extra leaf bone
   X` is allowed and listed so a reviewer sees it.
+- **Two findings are new since 2026-08-30**, and they exist because the old
+  check passed a fitted body 10 of 10 with joints 252 mm from the contract.
+  Bone *lengths* are now this body's own, so what is checked is
+  `rest translation directions match the contract (worst 0.03 deg,
+  LeftHandIndex3)` — within `[export] rest_direction_tolerance_deg = 1.0°` —
+  and on failure `FAIL: LeftFoot's rest translation points 1.9 deg off the
+  contract — lengths are per body, directions are not`. And the planted
+  foot's **own lowest skinned vertex** within
+  `[bones] contact_foot_tolerance_m = 0.05` of y = 0 on the reference clip's
+  contact frames (measured: a fitted body −1.5…+3.0 cm, the baseline
+  −3.3…+0.8 cm). Read that one carefully: it is **not** the whole-clip mesh
+  minimum, which read −0.103 m on the same body and is a different question.
+  The whole-clip `lowest_y` line stays a note.
 - **Picture** (`--out`): the body playing the reference walk — header
   `SUBJECT.GLB / REFERENCE.GLB  2.60S  27 BONES DRIVEN`, eight
   `THREE_QUARTER` cells `#N T.TTS`. Look for candy-wrapper elbows and knees
@@ -216,10 +229,11 @@ spectrogram with a time axis.
 
 | Gate (pass/fail; a failure is a stop) | Hint (read it, then look) |
 |---|---|
-| exit codes; `forge gen` 3/4/5/6 | `mesh: keyed background, subject covers N%` inside 5–95 % |
+| exit codes; `forge gen` 3/4/5/6 | `mesh: keyed background, subject covers N%` — the import door already held it to 10–85 % |
 | `FAIL:` lines from `forge rig check`; `check-bodies` | `note:` lines; `WARN: no reference clip` (unchecked, not failed) |
 | `just sheet` exit 1: nothing bound / frozen | the strip itself |
-| the fit gate (`not a T-pose`), the 20 % weightless abort, the 12 000-tri prop cap | dust counts, shell counts, decimation lines |
+| `prepare`'s arm-height gate and its **arm** sliver ratio (`limb_radius_min_fraction 0.22`); `skin`'s ratio band, support and symmetry gates; the 20 % weightless abort; the 12 000-tri prop cap | the **leg** sliver ratios (measured and printed, never refused — a T-pose isolates an arm and does not isolate a leg); the grounding factor and the off-axis warnings; `motion_scale`; dust counts, shell counts, decimation lines |
+| `ref import`'s four keyer refusals (floor band, contact shadow, flood-through hole, retained alpha outside 0.10–0.85) and its geometry refusals (span 0.7–1.3, heads under 3.0, more than one island, a prop under 2 % margin) | its **notes**: `N heads (crown to the arm line; a hat counts)` under seven, a subject filling under 60 % of the frame height, islands under the dust threshold |
 | `just audit` byte and pose parity; `just manifest-check`; `just verify` | the review flags (a clean row is not a good clip; a flagged row can be the take the user wants, e.g. `TURNS` on a turn) |
 | `audio`: silent, clipped | the other audio warnings |
 

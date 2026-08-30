@@ -123,7 +123,8 @@ look and a bake. Each is a skill that checks its prerequisites and quotes the
 log lines to read:
 
 ```sh
-just character hero && just views out/lifts/hero.glb          # then: just rig-mesh hero; just promote-mesh hero
+just ref-import ~/drawn/hero.png hero character "xAI Grok, image_edit"
+just character hero && just views out/lifts/hero.glb          # then: just body hero; just promote-body hero
 just sweep "a person walks forward" --duration 2 --samples 4  # then: just promote-clip walk <take.npz> --loop
 just sfx door_slam "heavy oak door slams shut"                # then: just audio …; just promote-audio sfx …
 just voice warden "Deep, slow, weathered male voice, grave and calm"   # then: just speech greet "…" --voice warden
@@ -142,7 +143,8 @@ door that names what would have passed.
 
 | Class | Make | Judge | Ship | Refuses |
 |---|---|---|---|---|
-| Bodies and models | `just character` / `just prop` (TRELLIS.2), `just rig-mesh` (headless Blender auto-rig), `just prop-import` (normalize) | `just views`, `just check-mesh`, the studio | `just promote-mesh`, `just prop-import` (→ `forge promote body` / `model`) | a mesh not near the T-pose (the message names the reference image); a bind that leaves a fifth of the mesh weightless; a prop over the tri budget; an existing name without `--overwrite` |
+| References | `just ref-import` — the one way a PNG gets under `assets-src/refs/`; the door writes the PNG (original bytes), its `.ref.json` and its `SOURCES.md` row | the door's own measurements, printed | — (a reference is a source, not an asset) | a drawn floor, a contact shadow, a flood-through hole, a key that kept under a tenth or over four fifths of the frame, a span outside 0.7–1.3, under three heads, more than one subject — all of it **before** a GPU minute, because a lift is four minutes and a redraw is a sentence |
+| Bodies and models | `just character` / `just prop` (TRELLIS.2), then `just prepare` (normalise + skeleton, no weights) and `just skin` (SkinTokens' weights, and the skeleton **fitted to this body's own bone lengths**) — `just body` runs both; `just prop-import` normalizes a prop | `just views`, `just check-mesh`, the studio | `just promote-body`, `just prop-import` (→ `forge promote body` / `model`) | arms not level with the body's own shoulder line; an arm thinner than 0.22 of the bone it hangs on (a sliver animates as one); a left/right gap over 0.35 on an arm run or 0.20 elsewhere; a rest translation more than 1° off the contract's direction; an existing name without `--overwrite` |
 | Clips | `just sweep` (ARDY, many takes in one load) | `just review` table + sheet, `just sheet` on the real body, `just bones` | `just promote-clip` (native bake, no Blender) | a clip that drives no bone or never moves (`sheet` exits 1); an unstated recipe knob (every knob is echoed) |
 | Audio | `just sfx`, `just music`, `just speech` (MOSS, ACE-Step) — always to `out/audio/`; `just voice` designs a character's voice from a description into `assets-src/voices/<name>/` (MOSS-VoiceGenerator), so a project never has to bring a reference clip, and every line is cloned from it by name | `just audio` plot + numbers, `just audio-list` | `just promote-audio` | a silent or clipped file; a sound with no record ships as `unknown` provenance and says so; a voice clip with neither its record nor a ledger row fails `verify` |
 
@@ -315,7 +317,7 @@ forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three ques
       doctor | gpu | sheet | views | turntable | bones | bundle | studio | mcp
 ```
 
-`forge mcp` serves nineteen tools over stdio, registered in
+`forge mcp` serves twenty-five tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -331,6 +333,12 @@ exist, so a wrong name costs one turn, not a guess.
 | `render_model` | `forge views` — a mesh from every angle; a path under `out/` renders culling off |
 | `render_clip_strip` | `forge sheet` — poses across a clip on a body; 0 bones driven comes back as an error with the picture |
 | `inspect_audio` | numbers, the record, a waveform-over-spectrogram plot |
+| `import_reference` | the one door under `assets-src/refs/`: format, `mesh.py`'s own keyer, the four keyer pre-checks and the geometry pre-checks, then the PNG's original bytes, its record and its ledger row |
+| `generate_mesh` | `forge gen mesh` — TRELLIS.2 lifts a reference into `out/lifts/`, character or prop register |
+| `prepare_body` | normalise, drop dust, matte, insert the profile's skeleton, no weights; a refusal returns the arm-height and sliver numbers and names the reference PNG |
+| `skin_body` | the whole skin → fit → re-prepare → re-skin → re-attach loop; returns the fit table and `motion_scale` |
+| `promote_body` | the export gate + `forge rig check` + the taken-name refusal, then `promote body` |
+| `promote_model` | the doors `just prop-import`'s promote runs |
 | `generate_clips` | `forge gen motion sweep` + `review`; refuses with the doctor line when ARDY is absent |
 | `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
 | `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
@@ -342,13 +350,19 @@ exist, so a wrong name costs one turn, not a guess.
 | `setup` | install what a kind needs. **Refused** until `accept` names every gated id, and the refusal lists exactly which |
 | `wait` / `cancel` / `status` / `list_runs` | a generate returns a job; these are how you follow it, stop it, and see what the card is doing |
 
-There is **no promote for a mesh**: a body or a model goes through the skills
-with a human looking at the lift, the views and the rig before anything is
-filed. `just mcp-check` handshakes the server and holds the tool list to
-exactly these nineteen, and `just mcp-session` runs the whole path —
-`init_project → licences → setup → doctor → generate_audio → wait →
-inspect_audio → promote_audio → verify`, plus the refusals — over **both**
-transports, stdio and the daemon's streamable HTTP at `/mcp`.
+**A body and a model have doors now.** The first shape of this surface had
+none, on the ground that a mesh needs a human looking at it. The human is in
+the loop through the harness that issues every command, and what protects the
+library is the export gate, the rig check and the refused taken name — all of
+which `promote_body` runs. The thing that must not be automatable is
+accepting a licence, which is why `accept` is an explicit argument.
+`just mcp-check` handshakes the server and holds the tool list to exactly
+these twenty-five, and `just mcp-session` runs the whole path — the audio leg
+(`init_project → licences → setup → doctor → generate_audio → wait →
+inspect_audio → promote_audio → verify`) and the character leg
+(`import_reference → generate_mesh → wait → prepare_body → wait → skin_body →
+wait → promote_body → render_model → verify`), plus the refusals — over
+**both** transports, stdio and the daemon's streamable HTTP at `/mcp`.
 
 ## Backends and licences
 

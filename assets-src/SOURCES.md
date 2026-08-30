@@ -8,18 +8,30 @@ anything or going back to the network.
 
 Every reference image under `refs/` has a row here — where it came from, on
 what terms, and what was made from it. A reference PNG claims integrity (its
-sha256, in the `<name>.lift.json` beside it) and this row, never
+sha256, in the `<name>.ref.json` beside it) and this row, never
 regeneration: the image is an input to the toolkit, not an output of it, and
 no model here will paint it twice. The row is where its origin and its
 licence live, and a PNG without one is a file nobody can account for — which
-is why `forge verify` fails on it, and why a reference PNG is never committed
-without its row. Add the row when you add the image.
+is why `forge verify` fails on it.
+
+**The door writes the row; nobody types one.** `forge ref import <png>
+--name <n> --kind character|prop --source "<where it came from>"` (MCP
+`import_reference`, `just ref-import`) is the one way a PNG gets under
+`refs/`: it holds the picture to the format, keys it with `mesh.py`'s own
+keyer, runs the pre-checks that would otherwise cost a lift, stores the
+**original bytes** — never the keyed image — and writes both
+`<name>.ref.json` and this row. Re-import with `--overwrite` to correct a
+row's Origin; the door restates Origin and the date and leaves the **For**
+cell standing, because that sentence is somebody's account of what was made
+from the picture and not the door's to invent. The three rows below were
+written that way on 2026-08-30, restating what the file already said; the
+`<name>.lift.json` beside each still carries the lift.
 
 | File | Origin | For | Date |
 |---|---|---|---|
-| `characters/vex_runner.png` | xAI grok (cloud image model), `image_edit` chained from a style board that does not ship here, then two self-edits (one arm per side in T-pose; taller, six heads, shoulders higher) | `assets/bodies/vex_runner.glb` — lifted at seed 7 after seed 42 left the rear skull absent | painted 2026-08-18, lifted 2026-08-20 |
-| `props/sword.png` | xAI grok, `image_edit` chained from the same style board | `assets/models/sword.glb` — a held weapon, grip at the origin (`hand_r` socket) | painted and lifted 2026-08-22 |
-| `props/barrel.png` | xAI grok, `image_edit` chained from the same style board | `assets/models/barrel.glb` — a floor prop, floor at the origin | painted 2026-08-18, lifted 2026-08-22 |
+| `characters/vex_runner.png` | xAI grok (cloud image model), image_edit chained from a style board that does not ship here, then two self-edits (one arm per side in T-pose; taller, six heads, shoulders higher); painted 2026-08-18 | `assets/bodies/vex_runner.glb` — lifted at seed 7 after seed 42 left the rear skull absent | 2026-08-30 |
+| `props/sword.png` | xAI grok, image_edit chained from the same style board; painted and lifted 2026-08-22 | `assets/models/sword.glb` — a held weapon, grip at the origin (`hand_r` socket) | 2026-08-30 |
+| `props/barrel.png` | xAI grok, image_edit chained from the same style board; painted 2026-08-18 | `assets/models/barrel.glb` — a floor prop, floor at the origin | 2026-08-30 |
 
 **Licence posture.** All three were generated with the grok CLI ("Grok
 Build", xAI) in the repository this one was distilled from. xAI's consumer
