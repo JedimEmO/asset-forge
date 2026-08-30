@@ -1,49 +1,48 @@
-"""``forge-gen music``: one track from a prompt through the local ACE-Step 1.5 API server.
+"""``forge-gen music``: one track from a prompt, as a graph on the ComfyUI host.
 
     forge-gen music --out boss_ambush.ogg --record boss_ambush.music.json \\
         --prompt "dark ambient boss theme, low strings, taiko" --duration 90
     forge-gen music --out hub_theme.ogg --record hub_theme.music.json \\
         --prompt "hopeful synthwave exploration" --lyrics-file verse.txt --duration 120
-    forge-gen music --stop-server
 
-Starts the server (first call loads models — allow a few minutes) if it is
-not already up, and leaves it up: ACE-Step is a resident server at ~8 GB,
-and a second track a minute later should not pay the load again. It does not
-co-reside with a lift or a sweep; ``--stop-server`` (alone, or after a
-track) sends it SIGTERM through the pid file this module wrote.
+ACE-Step 1.5 is native to the pinned ComfyUI, so there is no environment
+here, no clone, and — the part that changes how this reads — **no resident
+server of its own to start, watch and stop**. What replaces all of it is
+``backends/acestep/workflows/music.api.json``, a tracked graph whose
+patchable knobs are marked inside it: load, patch, ``POST /prompt``, poll
+``/history``, fetch the audio. The card is released by whoever holds the
+lease (``forge serve``, or ``forge gen`` itself when no daemon is up), which
+is why ``--stop-server`` is gone; a pid file that eventually signals a
+stranger went with it.
 
-The outer half is the whole of it: a stdlib HTTP client (``/health``,
-``/release_task``, ``/query_result`` polling, the WAV download) and the
-server's lifecycle. Nothing of torch is imported on this side — the server
-runs under the backend's own interpreter, resolved by the launcher before
-anything else happens, so a missing backend is exit 3 in about 100 ms.
+``SaveAudio`` writes FLAC — ComfyUI v0.34.2 has no WAV save node — so the
+track is transcoded here: losslessly to PCM for ``--format wav``, to vorbis
+for ``--format ogg``. **ffmpeg is now required for both.**
 
-The record (``forge_record: 1``, kind ``music``) carries what ACE-Step
-actually used — both seeds verbatim, the resolved key and tempo, both
-checkpoints — so it is ``recorded``, not reconstructed. The content hash is
-the other half of that claim: the model is not bit-reproducible, so "this is
-the file that was auditioned" is the strongest thing a record can say about
-the bytes.
+The record (``forge_record: 2``, kind ``music``) comes out the same shape it
+always had — same knobs under ``params``, same ``measured`` read off the
+file on disk — plus what a comfy run can say and an env one cannot: the
+host's commit, the hash of the *tracked template file*, and the packs it
+carried (none: these nodes are ComfyUI's own). The content hash is the rest
+of the claim: the model is not bit-reproducible, so "this is the file that
+was auditioned" is the strongest thing a record can say about the bytes.
 
 Stdlib only.
 """
 
 from __future__ import annotations
 
-import json
+import argparse
 import os
 import shutil
-import signal
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
+import tempfile
 import wave
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
-from forge_gen import launcher, placeholders, records
+from forge_gen import comfy, placeholders, records
 from forge_gen.exit_codes import BackendFailed, InputRejected, MissingTool, UsageError
 
 #: The backend directory this command runs through.
@@ -55,41 +54,49 @@ TOOL = "ace_step"
 #: The record kind.
 KIND = "music"
 
-#: Output containers the command writes. The server renders WAV in every
-#: case — it only saves wav/flac without torchcodec, whose ffmpeg libraries
-#: are the broken ones on this box — and ogg is a local transcode.
+#: Output containers the command writes. The graph saves FLAC (ComfyUI
+#: v0.34.2 has no WAV save node), and both of these are an ffmpeg transcode
+#: of it — lossless for wav, vorbis for ogg.
 FORMATS = ("ogg", "wav")
 
-#: What ACE-Step accepts for ``audio_duration``, seconds.
+#: The tracked graph this command runs, under ``backends/acestep/workflows/``.
+WORKFLOW = "music.api.json"
+
+#: What ACE-Step accepts for a duration, seconds. The node's own range is
+#: 1–2000; this is the range a game track is worth spending the card on.
 DURATION_MIN, DURATION_MAX = 10.0, 600.0
 
-#: The environment variable that overrides where the server is.
-URL_ENV = "ACESTEP_API_URL"
+#: Seconds between ``/history`` polls.
+POLL_S = 2.0
 
-#: Fallbacks when ``backend.toml`` has no ``[server]`` table.
-DEFAULT_HOST, DEFAULT_PORT, DEFAULT_HEALTH = "127.0.0.1", 8001, "/health"
-
-#: How long to wait for ``/health`` after starting the server; the first
-#: start loads every model and takes minutes.
-READY_TIMEOUT_S = 600.0
-
-#: Seconds between readiness probes while the server starts.
-READY_POLL_S = 3.0
-
-#: Seconds between ``/query_result`` polls.
-POLL_S = 5.0
-
-#: How long one track may take end to end; the server's own task timeout is an hour.
+#: How long one track may take end to end, first load included.
 GENERATE_TIMEOUT_S = 3600.0
 
-#: How long ``--stop-server`` waits after SIGTERM before SIGKILL.
-STOP_TIMEOUT_S = 30.0
+#: What ``TextEncodeAceStepAudio1.5`` accepts for ``keyscale``, captured
+#: from the running host's ``GET /object_info`` on 2026-08-30 — never
+#: written from memory, the same rule ``[comfy] nodes`` is held to. It is
+#: here so a key the node would refuse is a refusal *before* the card, with
+#: the list in the message.
+KEYSCALES = (
+    "C major", "C# major", "Db major", "D major", "D# major", "Eb major", "E major",
+    "F major", "F# major", "Gb major", "G major", "G# major", "Ab major", "A major",
+    "A# major", "Bb major", "B major",
+    "C minor", "C# minor", "Db minor", "D minor", "D# minor", "Eb minor", "E minor",
+    "F minor", "F# minor", "Gb minor", "G minor", "G# minor", "Ab minor", "A minor",
+    "A# minor", "Bb minor", "B minor",
+)
 
-#: The server log and pid file, under the state directory.
-LOG_NAME = "acestep-server.log"
-PID_NAME = "acestep-server.pid"
+#: The same, for ``timesignature``.
+TIMESIGNATURES = ("2", "3", "4", "6")
 
-#: How many trailing lines of the server log a failure carries.
+#: What the node is given when the run states no key or tempo. These are
+#: the node's own defaults, and they are *recorded*, because a record says
+#: what the sampler was given — not what the caller happened to type.
+DEFAULT_BPM = 120
+DEFAULT_KEYSCALE = "C major"
+DEFAULT_TIMESIGNATURE = "4"
+
+#: How many trailing lines of a failed transcode a refusal carries.
 LOG_TAIL = 40
 
 #: What the server is told when the track has no words.
@@ -115,11 +122,21 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--lyrics-file", metavar="FILE", help="lyrics from a file; omit for instrumental")
     parser.add_argument("--duration", type=float, default=30.0, metavar="S", help="seconds, 10-600 (default 30)")
     parser.add_argument("--seed", type=int, default=None, metavar="N", help="a fixed seed; omit for random")
-    parser.add_argument("--bpm", type=int, default=None, metavar="N", help="tempo")
-    parser.add_argument("--keyscale", default=None, metavar="KEY", help='e.g. "C Major", "Am"')
-    parser.add_argument("--thinking", action="store_true", help="use the 5Hz LM planner (slower, better structure)")
+    parser.add_argument("--bpm", type=int, default=None, metavar="N", help=f"tempo (default {DEFAULT_BPM}, the node's own)")
+    parser.add_argument("--keyscale", default=None, metavar="KEY", help='e.g. "C major", "E minor" (default "C major")')
+    parser.add_argument("--timesignature", default=None, metavar="N", choices=[None, *TIMESIGNATURES], help='beats per bar: 2, 3, 4 or 6 (default "4")')
+    # The 5 Hz LM planner the old flag named is, in 1.5, the text model's
+    # own audio-code plan — the node's default and what every ComfyUI
+    # template ships. So the flag keeps its name and its meaning and gains
+    # the way to turn it off, rather than defaulting to a register nobody
+    # runs this model in.
+    parser.add_argument("--thinking", action="store_true", default=True, help="let the text model plan the audio codes: structure (default)")
+    parser.add_argument("--no-thinking", dest="thinking", action="store_false", help="sample straight from the tags and lyrics, with no plan")
     parser.add_argument("--format", choices=FORMATS, default=None, help="container (default: from --out's suffix)")
-    parser.add_argument("--stop-server", action="store_true", help="SIGTERM the resident server (alone, or after the track)")
+    # Kept only to be refused by name. Removing it outright would leave
+    # argparse saying "unrecognized arguments: --stop-server", which names
+    # nothing a caller can do next; this names the door that replaced it.
+    parser.add_argument("--stop-server", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--timeout", type=float, default=GENERATE_TIMEOUT_S, metavar="S", help="seconds one track may take (default 3600)")
 
 
@@ -149,9 +166,15 @@ def read_lyrics(path: str | os.PathLike | None) -> str:
 
 
 def check_inputs(args) -> dict:
-    """Everything the request needs, refused before any server is touched."""
+    """Everything the request needs, refused before the host is touched.
+
+    The knobs the node takes from a fixed list (key, time signature) are
+    checked here against what the running host said they were, so a typo is
+    a refusal naming the list rather than a ``POST /prompt`` that fails in
+    front of a stranger with the card already leased.
+    """
     if not args.out or not args.record:
-        raise UsageError("--out and --record are required (unless --stop-server is all you want)")
+        raise UsageError("--out and --record are required")
     prompt = (args.prompt or "").strip()
     if not prompt:
         raise InputRejected("the prompt is empty")
@@ -162,6 +185,15 @@ def check_inputs(args) -> dict:
         raise InputRejected(f"--bpm {args.bpm} is not a tempo")
     if args.seed is not None and args.seed < 0:
         raise InputRejected(f"--seed {args.seed} is negative; ACE-Step takes a non-negative seed")
+    keyscale = (args.keyscale or "").strip() or None
+    if keyscale is not None and keyscale not in KEYSCALES:
+        raise InputRejected(
+            f"--keyscale {keyscale!r} is not one the model takes; it takes "
+            f"{', '.join(KEYSCALES)}"
+        )
+    timesignature = (getattr(args, "timesignature", None) or "").strip() or None
+    if timesignature is not None and timesignature not in TIMESIGNATURES:
+        raise InputRejected(f"--timesignature {timesignature!r} is not one of {', '.join(TIMESIGNATURES)}")
     fmt = resolve_format(args.out, args.format)
     return {
         "prompt": prompt,
@@ -170,7 +202,8 @@ def check_inputs(args) -> dict:
         "duration_s": duration,
         "seed": args.seed,
         "bpm": args.bpm,
-        "keyscale": (args.keyscale or "").strip() or None,
+        "keyscale": keyscale,
+        "timesignature": timesignature,
         "thinking": bool(args.thinking),
         "format": fmt,
         "out": Path(args.out).resolve(),
@@ -189,25 +222,32 @@ def ffmpeg_bin() -> Path:
 # ------------------------------------------------------------- the record --
 
 
-def request_payload(request: dict) -> dict:
-    """The ``/release_task`` body for a checked request."""
-    payload = {
-        "prompt": request["prompt"],
+def template_inputs(request: dict, *, seed: int, prefix: str) -> dict:
+    """Every knob ``music.api.json`` marks, filled from a checked request.
+
+    Every one of them, always: the template refuses a marker nobody fills,
+    which is the same rule as "a recipe states every knob". Where the run
+    said nothing the node's own default goes in — and it is what the record
+    then reports, because a record says what the sampler was given.
+
+    The seed goes in twice on purpose. The text model plans the piece from
+    one seed and the sampler denoises from another, and in the graph they
+    are two nodes; one ``--seed`` drives both, so a re-run of the same
+    record gets the same plan *and* the same noise.
+    """
+    return {
+        "tags": request["prompt"],
         "lyrics": request["lyrics"],
-        "audio_duration": request["duration_s"],
-        # Always WAV: the server only saves wav/flac without torchcodec; the
-        # ogg is a local transcode (see FORMATS).
-        "audio_format": "wav",
-        "thinking": request["thinking"],
+        "plan_seed": seed,
+        "seed": seed,
+        "bpm": int(request.get("bpm") or DEFAULT_BPM),
+        "duration": float(request["duration_s"]),
+        "seconds": float(request["duration_s"]),
+        "keyscale": request.get("keyscale") or DEFAULT_KEYSCALE,
+        "timesignature": request.get("timesignature") or DEFAULT_TIMESIGNATURE,
+        "generate_audio_codes": bool(request["thinking"]),
+        "filename_prefix": prefix,
     }
-    if request.get("bpm"):
-        payload["bpm"] = request["bpm"]
-    if request.get("keyscale"):
-        payload["key_scale"] = request["keyscale"]
-    if request.get("seed") is not None:
-        payload["seed"] = request["seed"]
-        payload["use_random_seed"] = False
-    return payload
 
 
 def _text_or_none(value) -> str | None:
@@ -288,308 +328,43 @@ def measure_wav(path: str | os.PathLike) -> dict:
         }
 
 
-# --------------------------------------------------------------- the server --
-
-
-def state_dir() -> Path:
-    """``$XDG_STATE_HOME/asset-forge`` (default ``~/.local/state/asset-forge``)."""
-    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
-    return Path(base) / "asset-forge"
-
-
-def log_path() -> Path:
-    return state_dir() / LOG_NAME
-
-
-def pid_path() -> Path:
-    return state_dir() / PID_NAME
-
-
-def server_settings(backend: backends_mod.Backend | None) -> dict:
-    """Host, port, health path and readiness timeout from ``[server]``."""
-    table = dict(backend.server or {}) if backend is not None else {}
-    return {
-        "host": str(table.get("host", DEFAULT_HOST)),
-        "port": int(table.get("port", DEFAULT_PORT)),
-        "health": str(table.get("health", DEFAULT_HEALTH)),
-        "ready_timeout_s": float(table.get("ready_timeout_s", READY_TIMEOUT_S)),
-    }
-
-
-def base_url(settings: dict) -> str:
-    """``$ACESTEP_API_URL`` when set, else ``http://host:port`` from the settings."""
-    override = os.environ.get(URL_ENV)
-    if override:
-        return override.rstrip("/")
-    return f"http://{settings['host']}:{settings['port']}"
-
-
-def api(url: str, path: str, payload: dict | None = None, timeout: float = 30.0) -> dict:
-    """One JSON round trip with the server."""
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url + path, data=data, headers={"Content-Type": "application/json"} if data else {})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
-
-
-def server_up(url: str, health: str = DEFAULT_HEALTH) -> bool:
-    """Whether ``/health`` answers ``status: ok``."""
-    try:
-        return api(url, health, timeout=5).get("data", {}).get("status") == "ok"
-    except Exception:  # noqa: BLE001 - down, refusing, or not there: all "no"
-        return False
-
-
-def _log_tail(path: Path, lines: int = LOG_TAIL) -> list[str]:
-    try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return [line.rstrip("\n") for line in handle.readlines()[-lines:]]
-    except OSError:
-        return []
+# ------------------------------------------------------------- the graph --
 
 
 def _say(text: str) -> None:
-    sys.stdout.write(f"[music] {text}\n")
-    sys.stdout.flush()
+    """One progress line on stderr, so the JSON last line stays the last line."""
+    sys.stderr.write(f"[music] {text}\n")
+    sys.stderr.flush()
 
 
-def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+def _progress(seconds: float, entry) -> None:
+    """What ``wait_for`` prints while the host works — a first load is minutes."""
+    if int(seconds) % 30 == 0 and seconds >= 30:
+        _say(f"{seconds:.0f}s on the host")
 
 
-def _proc_start(pid: int) -> str | None:
-    """The kernel's start time of ``pid`` (field 22 of ``/proc/<pid>/stat``), or ``None`` without /proc."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text()
-    except OSError:
-        return None
-    # The command name sits in parentheses and may hold spaces; split after it.
-    fields = stat[stat.rindex(")") + 2 :].split()
-    return fields[19] if len(fields) > 19 else None
+def transcode_wav(ffmpeg: Path, source: Path, out: Path) -> Path:
+    """Whatever the graph saved → 16-bit PCM WAV.
 
-
-def _pid_is_ours(pid: int, start: str | None) -> bool:
-    """Whether ``pid`` is the server the pid file describes — so a stale file never kills a stranger.
-
-    The pid file carries the process's kernel start time; a pid reused after
-    a reboot or a crash has a different one. Without a recorded start time
-    (an older file) or without /proc, the command line is the evidence.
+    ``SaveAudio`` writes FLAC — ComfyUI v0.34.2 has no WAV save node — and
+    the library's audio is PCM: the stdlib ``wave`` module is what
+    :func:`measure_wav` reads, and a game engine decodes 16-bit PCM with no
+    float-WAV path. FLAC is lossless, so nothing is lost between the card
+    and the file except what 16 bits cannot hold.
     """
-    if not _pid_alive(pid):
-        return False
-    current = _proc_start(pid)
-    if start and current:
-        return current == start
-    try:
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
-    except OSError:
-        return True
-    return b"acestep.api_server" in cmdline or b"acestep-api" in cmdline
-
-
-def write_pid(pid: int) -> None:
-    """``<pid> <start time>`` — enough to tell this process from one that inherited its pid."""
-    pid_path().parent.mkdir(parents=True, exist_ok=True)
-    start = _proc_start(pid)
-    pid_path().write_text(f"{pid} {start}\n" if start else f"{pid}\n")
-
-
-def read_pid() -> tuple[int, str | None] | None:
-    """``(pid, start time or None)`` from the pid file, or ``None`` when there is no usable file."""
-    try:
-        words = pid_path().read_text().split()
-    except OSError:
-        return None
-    if not words:
-        return None
-    try:
-        return int(words[0]), (words[1] if len(words) > 1 else None)
-    except ValueError:
-        return None
-
-
-def start_server(backend: backends_mod.Backend, interpreter: Path, settings: dict, url: str) -> int:
-    """Spawn ``acestep.api_server`` under the backend env and wait for ``/health``.
-
-    Runs ``<env python> -m acestep.api_server --host --port`` — ``python -m``
-    rather than the console script, whose shebang in an adopted venv may
-    point at a pre-move path — from the upstream checkout, with ``[env]``
-    from ``backend.toml`` exported (``ACESTEP_CHECKPOINTS_DIR`` above all),
-    in its own session so it outlives this command, stdout+stderr appended
-    to the state log. Returns the pid, which is also written to the pid file.
-    """
-    env = launcher.inner_env(backend, interpreter)
-    cwd = launcher.inner_cwd(backend)
-    state_dir().mkdir(parents=True, exist_ok=True)
-    log = log_path()
-    command = [
-        str(interpreter),
-        "-m",
-        "acestep.api_server",
-        "--host",
-        settings["host"],
-        "--port",
-        str(settings["port"]),
-    ]
-    _say(f"ACE-Step server not running — starting it (model load takes a few minutes; log: {log})")
-    with open(log, "ab") as sink:
-        sink.write(f"\n=== forge-gen music: starting {' '.join(command)} at {time.strftime('%Y-%m-%d %H:%M:%S')}\n".encode())
-        try:
-            process = subprocess.Popen(
-                command,
-                cwd=os.fspath(cwd) if cwd else None,
-                env=env,
-                stdout=sink,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError as err:
-            raise BackendFailed(f"could not start the ACE-Step server: {err}") from err
-    write_pid(process.pid)
-    started = time.monotonic()
-    deadline = started + settings["ready_timeout_s"]
-    while time.monotonic() < deadline:
-        if server_up(url, settings["health"]):
-            _say(f"server up after {time.monotonic() - started:.0f}s (pid {process.pid})")
-            return process.pid
-        if process.poll() is not None:
-            pid_path().unlink(missing_ok=True)
-            raise BackendFailed(
-                f"the ACE-Step server exited with {process.returncode} while starting — see {log}",
-                log_tail=_log_tail(log),
-            )
-        time.sleep(READY_POLL_S)
-    # Still running but not answering: leave it and its pid file alone, so
-    # --stop-server can end it, and say where to look.
-    raise BackendFailed(
-        f"the ACE-Step server did not answer {settings['health']} within {settings['ready_timeout_s']:.0f} s — see {log}",
-        log_tail=_log_tail(log),
+    out.parent.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(
+        [str(ffmpeg), "-y", "-loglevel", "error", "-i", str(source), "-c:a", "pcm_s16le", str(out)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-
-
-def ensure_server(backend: backends_mod.Backend, interpreter: Path, settings: dict, url: str) -> bool:
-    """Make sure the server answers; returns whether this call started it."""
-    if server_up(url, settings["health"]):
-        return False
-    start_server(backend, interpreter, settings, url)
-    return True
-
-
-def stop_server(settings: dict | None = None, url: str | None = None) -> dict:
-    """SIGTERM the server the pid file names; SIGKILL after :data:`STOP_TIMEOUT_S`.
-
-    A pid file whose process is not an ``acestep.api_server`` is stale and is
-    removed, not signalled. A server that answers ``/health`` but has no pid
-    file was not started by this command, and is reported rather than
-    hunted for.
-    """
-    settings = settings or server_settings(None)
-    url = url or base_url(settings)
-    found = read_pid()
-    out: dict = {"pid": found[0] if found else None, "stopped": False, "was_running": False}
-    if found is None:
-        if server_up(url, settings["health"]):
-            out["note"] = f"a server answers at {url} but {pid_path()} is absent — not started by forge-gen; stop it yourself"
-            out["was_running"] = True
-        else:
-            out["note"] = "no server running"
-        return out
-    pid, start = found
-    if not _pid_is_ours(pid, start):
-        pid_path().unlink(missing_ok=True)
-        out["note"] = f"pid {pid} is not the server this file described (stale pid file removed)"
-        return out
-    out["was_running"] = True
-    _say(f"stopping server pid {pid}")
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pid_path().unlink(missing_ok=True)
-        out["note"] = "already gone"
-        return out
-    deadline = time.monotonic() + STOP_TIMEOUT_S
-    while time.monotonic() < deadline:
-        if not _pid_alive(pid):
-            break
-        time.sleep(0.5)
-    else:
-        _say(f"pid {pid} ignored SIGTERM for {STOP_TIMEOUT_S:.0f}s; SIGKILL")
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        time.sleep(1.0)
-        out["killed"] = True
-    pid_path().unlink(missing_ok=True)
-    out["stopped"] = not _pid_alive(pid)
+    if done.returncode != 0:
+        raise BackendFailed(
+            f"ffmpeg exited {done.returncode} decoding {source.name} to PCM",
+            log_tail=done.stderr.splitlines()[-LOG_TAIL:],
+        )
     return out
-
-
-# ------------------------------------------------------------- generation --
-
-
-def submit(url: str, payload: dict) -> str:
-    """``/release_task`` → the task id."""
-    try:
-        data = api(url, "/release_task", payload)["data"]
-    except (urllib.error.URLError, OSError, KeyError, ValueError) as err:
-        raise BackendFailed(f"/release_task failed: {err}", log_tail=_log_tail(log_path())) from err
-    if isinstance(data, dict):
-        data = data.get("task_id", data)
-    return str(data)
-
-
-def wait_for(url: str, task_id: str, *, timeout: float) -> dict:
-    """Poll ``/query_result`` until the task is done; the first result item."""
-    started = time.monotonic()
-    next_report = started + 30.0
-    while True:
-        if time.monotonic() - started > timeout:
-            raise BackendFailed(f"task {task_id} did not finish within {timeout:.0f} s", log_tail=_log_tail(log_path()))
-        try:
-            rows = api(url, "/query_result", {"task_id_list": [task_id]})["data"]
-        except Exception as err:  # noqa: BLE001 - a busy server can stall a poll; just retry
-            _say(f"poll retry ({type(err).__name__})")
-            time.sleep(POLL_S)
-            continue
-        row = rows[0] if rows else {}
-        status = row.get("status")
-        if status == 1:
-            break
-        if status == 2:
-            raise BackendFailed(f"generation failed: {json.dumps(row, ensure_ascii=False)[:800]}", log_tail=_log_tail(log_path()))
-        time.sleep(POLL_S)
-        if time.monotonic() >= next_report:
-            _say(f"... {time.monotonic() - started:.0f}s" + (f" ({row.get('progress_text')})" if row.get("progress_text") else ""))
-            next_report = time.monotonic() + 30.0
-    try:
-        result = json.loads(row["result"])[0]
-    except (KeyError, ValueError, IndexError, TypeError) as err:
-        raise BackendFailed(f"task {task_id} finished with an unreadable result: {err}", log_tail=_log_tail(log_path())) from err
-    if not result.get("file"):
-        raise BackendFailed(f"server reported success but no audio file — see {log_path()}", log_tail=_log_tail(log_path()))
-    return result
-
-
-def download(url: str, file_url: str, dest: Path) -> Path:
-    """Fetch the rendered WAV from ``/v1/audio?path=…``."""
-    if not file_url.startswith(("http://", "https://", "/")):
-        file_url = "/" + file_url
-    source = file_url if file_url.startswith("http") else url + file_url
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with urllib.request.urlopen(source, timeout=300) as resp, open(dest, "wb") as sink:
-            shutil.copyfileobj(resp, sink)
-    except (urllib.error.URLError, OSError) as err:
-        raise BackendFailed(f"downloading {source} failed: {err}") from err
-    return dest
 
 
 def transcode_ogg(ffmpeg: Path, wav: Path, out: Path, *, comment: str | None = None) -> Path:
@@ -607,51 +382,34 @@ def transcode_ogg(ffmpeg: Path, wav: Path, out: Path, *, comment: str | None = N
     return out
 
 
-def _checkout_commit(backend: backends_mod.Backend) -> str | None:
-    """HEAD of the ``.checkout`` link, or ``None`` when it will not say."""
-    checkout = backend.checkout
-    if not checkout.exists():
-        return None
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(checkout.resolve()), "rev-parse", "--verify", "HEAD"],
-            capture_output=True, text=True, timeout=20, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if done.returncode != 0:
-        return None
-    return done.stdout.strip() or None
+def backend_facts(
+    backend: backends_mod.Backend,
+    host: backends_mod.Backend,
+    *,
+    workflow_sha256: str | None,
+    model: str | None,
+) -> dict:
+    """The ``backend`` block's inputs for a run on the host.
 
-
-def _interpreter_version(interpreter: Path) -> str | None:
-    try:
-        done = subprocess.run(
-            [str(interpreter), "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"],
-            capture_output=True, text=True, timeout=20, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if done.returncode != 0:
-        return None
-    return done.stdout.strip() or None
-
-
-def backend_facts(backend: backends_mod.Backend, interpreter: Path) -> dict:
-    """The ``backend`` block's inputs: name, the checkout's commit, the env's python, torch from the receipt.
-
-    Torch's version comes from ``installed.json`` — importing torch to ask
-    it would cost seconds on this side of the launcher, and the receipt is
-    what the installer measured of the same env. ``None`` when absent.
+    ``commit``, ``python`` and ``torch`` are ``null`` and stay null: this
+    backend has no checkout, no interpreter and no environment of its own,
+    and a record that answered those questions with the *host's* answers
+    would be saying the generator is something it is not. What ran is named
+    by ``executor``, ``comfyui_commit`` and the hash of the tracked template
+    — and by ``packs``, which is empty here because every node in the graph
+    is ComfyUI's own.
     """
-    receipt = backend.installed() or {}
     return {
         "name": backend.name,
-        "commit": _checkout_commit(backend),
-        "python": _interpreter_version(interpreter),
-        "torch": receipt.get("torch") if isinstance(receipt.get("torch"), str) else None,
-        "model": None,
+        "commit": None,
+        "python": None,
+        "torch": None,
+        "model": model,
         "model_revision": None,
+        "executor": "comfy",
+        "comfyui_commit": comfy.host_commit(host),
+        "workflow_sha256": workflow_sha256,
+        "packs": comfy.packs_block(backend),
     }
 
 
@@ -674,57 +432,129 @@ def finish(rec: dict, request: dict, out: Path, record_path: Path) -> dict:
 # ------------------------------------------------------------------ run --
 
 
+def refuse_stop_server(args) -> None:
+    """``--stop-server`` names a server that no longer exists; say what replaced it.
+
+    Exit 2 with the next command to type. Deleting the flag outright would
+    have left argparse saying "unrecognized arguments: --stop-server", which
+    tells a caller nothing about where the card went.
+    """
+    if getattr(args, "stop_server", False):
+        raise UsageError(
+            "--stop-server is gone with the resident ACE-Step server: this track is a graph on the "
+            "ComfyUI host, and the card is released by whoever holds the lease",
+            hint="forge gpu --free releases the host's models; systemctl --user stop forge-comfy stops the host",
+        )
+
+
 def run(args) -> dict:
-    """Resolve the backend, make sure the server is up, render, transcode, record."""
+    """Load the tracked graph, patch it, run it on the host, transcode, record."""
+    refuse_stop_server(args)
     backend = backends_mod.load_backend(BACKEND)
-    settings = server_settings(backend)
-    url = base_url(settings)
-
-    if args.stop_server and not (args.prompt or args.out or args.record):
-        outcome = stop_server(settings, url)
-        return {"ok": True, "server": outcome, "outputs": [], "record": None, "_text": f"music: {outcome.get('note') or ('stopped pid %s' % outcome['pid'])}\n"}
-
     request = check_inputs(args)
-    interpreter = launcher.resolve_interpreter(backend)  # exit 3 here, before anything costs
-    ffmpeg = ffmpeg_bin() if request["format"] == "ogg" else None
-    facts = backend_facts(backend, interpreter)
+    # Every failure that can happen before the card is leased happens here:
+    # a missing ffmpeg (6), a template that cannot be built (3), a knob the
+    # graph does not carry (3).
+    ffmpeg = ffmpeg_bin()
+    host = comfy.host_backend(backend)
+    base = comfy.base_url(backend, records.project())
+    graph, template_sha = comfy.load_template(backend, WORKFLOW)
+    seed = request["seed"] if request["seed"] is not None else _fresh_seed()
+    prefix = comfy.output_prefix(request["out"].stem)
+    inputs = template_inputs(request, seed=seed, prefix=prefix)
+    where = str(backend.workflow(WORKFLOW))
+    graph = comfy.patch(graph, inputs, where)
+    save_node = comfy.patch_points(graph, where)["filename_prefix"][0]
 
-    started_here = ensure_server(backend, interpreter, settings, url)
-    payload = request_payload(request)
-    task_id = submit(url, payload)
-    _say(f"task {task_id} submitted ({request['duration_s']:g} s, {'thinking' if request['thinking'] else 'direct'})")
-    result = wait_for(url, task_id, timeout=float(args.timeout))
+    _say(f"{request['duration_s']:g} s at {inputs['bpm']} bpm in {inputs['keyscale']}, seed {seed}")
+    prompt_id = comfy.submit(base, graph, comfy.client_id())
+    _say(f"prompt {prompt_id} on {base}")
+    entry = comfy.wait_for(base, prompt_id, timeout=float(args.timeout), poll=POLL_S, on_progress=_progress)
 
     out = request["out"]
     out.parent.mkdir(parents=True, exist_ok=True)
-    wav = out if request["format"] == "wav" else out.with_name(out.name + ".tmp.wav")
-    download(url, str(result["file"]), wav)
-    measured = measure_wav(wav)
-    if request["format"] == "ogg":
-        try:
+    with tempfile.TemporaryDirectory(prefix="forge-music-") as scratch:
+        saved = comfy.fetch(base, entry, Path(scratch))
+        wav = out if request["format"] == "wav" else Path(scratch) / "track.wav"
+        transcode_wav(ffmpeg, saved[0], wav)
+        measured = measure_wav(wav)
+        if request["format"] == "ogg":
             transcode_ogg(ffmpeg, wav, out)
-        finally:
-            wav.unlink(missing_ok=True)
 
+    result = {
+        "prompt": request["prompt"],
+        "lyrics": inputs["lyrics"],
+        # The pair the two stages were given, in the same comma-separated
+        # form the old server reported and the Rust reader already parses.
+        "seed_value": f"{inputs['plan_seed']},{inputs['seed']}",
+        "dit_model": _checkpoint(graph),
+        "lm_model": None,
+        "metas": {
+            "bpm": inputs["bpm"],
+            "keyscale": inputs["keyscale"],
+            "timesignature": inputs["timesignature"],
+            "genres": inputs["tags"],
+        },
+    }
+    facts = backend_facts(backend, host, workflow_sha256=template_sha, model=_checkpoint(graph))
     rec = build_record(request, result, measured=measured, backend=facts, created_by=getattr(args, "created_by", None))
+    rec["params"]["workflow"] = WORKFLOW
     summary = finish(rec, request, out, request["record"])
-    summary["server"] = {"url": url, "started": started_here, "stopped": False}
-    if args.stop_server:
-        summary["server"].update(stop_server(settings, url))
+    # The one key the daemon copies into the job row verbatim. The process
+    # that patched the graph is the one that says what it patched; nothing
+    # in Rust composes this.
+    summary["comfy"] = {
+        "template": _tracked(backend, WORKFLOW),
+        "template_sha256": template_sha,
+        "inputs": inputs,
+        "comfyui_commit": facts["comfyui_commit"],
+        "packs": facts["packs"],
+        "prompt_id": prompt_id,
+        "cached": comfy.was_cached(entry, save_node),
+    }
     _say(f"OK {out} ({out.stat().st_size / 1e6:.1f} MB, {measured['duration_s']} s)")
     return summary
 
 
+def _fresh_seed() -> int:
+    """A seed nobody chose, which is still a seed worth writing down."""
+    import random  # noqa: PLC0415 - only when one is actually drawn
+
+    return random.randrange(2**31)
+
+
+def _checkpoint(graph: dict) -> str | None:
+    """The checkpoint file the graph loads, for the record's ``model``."""
+    for node in graph.values():
+        if isinstance(node, dict) and node.get("class_type") == "CheckpointLoaderSimple":
+            return node.get("inputs", {}).get("ckpt_name")
+    return None
+
+
+def _tracked(backend: backends_mod.Backend, name: str) -> str:
+    """The template's path as a record and a job row name it: relative to the toolkit.
+
+    Not to the project and not absolute: the file is tracked in this
+    repository, and "go and look at it" is the whole reason the hash beside
+    it is worth anything.
+    """
+    return f"backends/{backend.name}/workflows/{name}"
+
+
 def run_fake(args) -> dict:
-    """A short placeholder tone and a record that says ``fake``; no server, no env.
+    """A short placeholder tone and a record that says ``fake``; no host, no graph.
+
+    It does not import :mod:`forge_gen.comfy`, read a template or resolve a
+    URL — which is what keeps ``just ci-fake`` a control for the whole move
+    to the host: it proves the same thing on the day this lands as the day
+    before.
 
     The ogg case still needs ffmpeg: Symphonia on the Rust side decodes
     what it is given, and a WAV wearing an ``.ogg`` name would fail there
     instead of here. Without ffmpeg the fake refuses with exit 6 like the
     real path would.
     """
-    if args.stop_server and not (args.prompt or args.out or args.record):
-        return {"ok": True, "server": {"pid": None, "stopped": False, "note": "fake: no server to stop"}, "outputs": [], "record": None}
+    refuse_stop_server(args)
     request = check_inputs(args)
     out = request["out"]
     placeholders.refuse_real(out, request["record"])
@@ -742,12 +572,10 @@ def run_fake(args) -> dict:
     else:
         placeholders.placeholder_wav(out, seconds=min(request["duration_s"], 2.0))
         measured = measure_wav(out)
-    # What a server would have said, minus the server: nothing is invented,
-    # the seeds and checkpoints stay null.
+    # What the graph would have been given, minus the graph: nothing is
+    # invented, the seeds and the checkpoint stay null.
     result = {"prompt": request["prompt"], "lyrics": request["lyrics"], "metas": {"bpm": request["bpm"], "keyscale": request["keyscale"]}}
-    backend = {"name": BACKEND, "commit": placeholders.FAKE_COMMIT}
+    backend = {"name": BACKEND, "commit": placeholders.FAKE_COMMIT, "executor": "comfy"}
     rec = build_record(request, result, measured=measured, backend=backend, created_by=getattr(args, "created_by", None), fake=True)
     rec["note"] = "placeholder output from a --fake run; nothing about it is a measurement"
-    summary = finish(rec, request, out, request["record"])
-    summary["server"] = {"started": False, "stopped": False, "fake": True}
-    return summary
+    return finish(rec, request, out, request["record"])

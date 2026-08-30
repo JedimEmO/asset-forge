@@ -1,77 +1,68 @@
 # ACE-Step 1.5 — prompt (and lyrics) to a music track. `forge gen music`.
 #
-# Unlike the other backends this one is a server: `acestep.api_server` on
-# 127.0.0.1:8001, started by the music command when /health does not answer,
-# and resident at ~8 GB until `forge gen music --stop-server`. The outer
-# layer is a stdlib HTTP client; nothing of torch is imported on this side.
-# What is patched, why the checkpoints live where they do, and why the
-# client asks for WAV and transcodes itself: designs/hosting.md, "ACE-Step".
+# It runs **on the ComfyUI host**, not in an environment of its own: ACE-Step
+# 1.5 is native to the pinned ComfyUI (v0.34.2 has `EmptyAceStep1.5LatentAudio`,
+# `TextEncodeAceStepAudio1.5` and `VAEDecodeAudio` with no custom node), so
+# this directory holds a tracked graph and the description of what the host
+# needs to run it — no venv, no clone, no `.env`, no resident server of its
+# own to start and stop. `forge gen music` loads `workflows/music.api.json`,
+# patches the knobs the run states into it, posts it to 127.0.0.1:8188 and
+# fetches what came out.
+#
+# `unload_node` is null on purpose: these are native nodes and ComfyUI's own
+# memory manager gives the card back on `POST /free`, measured on this host
+# 2026-08-30. A wrapper pack would need one.
+#
+# Install traps, dated: designs/hosting.md, "ComfyUI".
 
 name = "acestep"
 role = "music"
+executor = "comfy"
+host = "comfy"                             # which backends/<name> is the service
 upstream = "https://github.com/ACE-Step/ACE-Step-1.5.git"
-commit = "82252c2418de6cb8b3ca99b05592aaf539cc7fb3"
-license = "MIT"
-env_kind = "venv"
-python = "3.12"
-cuda = "12.8"
-vram_gb = 8
+# No `commit`: there is no checkout of this repository any more. What ran is
+# the host's ComfyUI at its own commit, and every record says so under
+# `backend.comfyui_commit`; writing a second commit here under the
+# generator's name would be one fact in two places.
+license = "Apache-2.0 (ACE-Step 1.5 weights, as redistributed by Comfy-Org); the code that runs them is ComfyUI's"
+# A budget, not a measurement: the all-in-one checkpoint is 10.03 GB on disk
+# and nobody has sampled the peak of a track on this host yet.
+vram_gb = 12
 entry = "audio.music"
-cwd = "checkout"
-resident = true
 
-[env]
-# The minimal model set, wherever install.sh put or adopted it. Without it
-# the server downloads into its own tree, including a 3.5 GB LM nobody asked
-# for. `${CHECKPOINTS}` is the .checkpoints link, resolved by the launcher.
-ACESTEP_CHECKPOINTS_DIR = "${CHECKPOINTS}"
-# The LM the install guarantees. Left unset, the server picks one by GPU tier
-# and would take the 4B if a previous install left it lying in the checkpoints
-# directory — a different planner, a different VRAM peak, for the same prompt.
-# A value exported by the user wins over this one.
-ACESTEP_LM_MODEL_PATH = "acestep-5Hz-lm-0.6B"
-# The API server's own host/port defaults, pinned so [server] below and the
-# process agree even when the launcher is bypassed.
-ACESTEP_API_HOST = "127.0.0.1"
-ACESTEP_API_PORT = "8001"
+[comfy]
+workflows = ["music.api.json"]
+# Captured from the running host's GET /object_info on 2026-08-30, never
+# written from memory. Every one is native to ComfyUI v0.34.2.
+nodes = [
+    "CheckpointLoaderSimple",
+    "ModelSamplingAuraFlow",
+    "TextEncodeAceStepAudio1.5",
+    "ConditioningZeroOut",
+    "EmptyAceStep1.5LatentAudio",
+    "KSampler",
+    "VAEDecodeAudio",
+    "SaveAudio",
+]
+# No `unload_node`: TOML cannot say null, and absent is the same claim —
+# these are native models, ComfyUI's own memory manager owns them, and
+# POST /free gives the card back. A wrapper pack is what needs one.
 
-[server]
-host = "127.0.0.1"
-port = 8001
-health = "/health"
-# Seconds the music command waits for /health after starting the server;
-# the first start loads every model and takes minutes.
-ready_timeout_s = 600
-
-# The minimal set (~7.3 GB): the turbo DiT, the 0.6B planner, the text
-# encoder and the VAE. All four live under the .checkpoints link as
-# subdirectories named exactly like this; the server finds them by name.
-# Weights are MIT like the code.
-
+# One file: ComfyUI's own `audio_ace_step_1_5_checkpoint` template loads the
+# turbo model, both text encoders and the VAE out of a single checkpoint,
+# which is 10.03 GB against 19.9 GB for the split form and the same model.
 [[models]]
-id = "acestep-v15-turbo"
-store = "checkpoints_dir"
-license = "MIT"
-note = "the diffusion stage (DiT); from ACE-Step/Ace-Step1.5"
-
-[[models]]
-id = "acestep-5Hz-lm-0.6B"
-store = "checkpoints_dir"
-license = "MIT"
-note = "the 5 Hz language-model planner (--thinking); from ACE-Step/acestep-5Hz-lm-0.6B"
-
-[[models]]
-id = "Qwen3-Embedding-0.6B"
-store = "checkpoints_dir"
-license = "MIT"
-note = "the text encoder, as redistributed in the MIT-carded ACE-Step/Ace-Step1.5 repo (Qwen's own Qwen3-Embedding release is Apache-2.0)"
-
-[[models]]
-id = "vae"
-store = "checkpoints_dir"
-license = "MIT"
-note = "the audio VAE; from ACE-Step/Ace-Step1.5"
+id = "Comfy-Org/ace_step_1.5_ComfyUI_files"
+store = "comfy:models/checkpoints"
+file = "checkpoints/ace_step_1.5_turbo_aio.safetensors"
+license = "Apache-2.0"
+gb = 10.03
+note = "ACE-Step 1.5 turbo, all in one file (DiT + qwen_0.6b/qwen_4b text encoders + the 1.5 VAE); the size is the hub's, read 2026-08-30"
 
 [[notices]]
-title = "resident server"
-text = "the ACE-Step API server stays on the GPU (~8 GB) after a track until `forge gen music --stop-server`; stop it before a lift or a sweep"
+title = "ffmpeg"
+text = "ComfyUI v0.34.2 saves audio as flac, mp3 or opus and has no WAV save node, so `forge gen music` fetches the flac and transcodes it with ffmpeg — losslessly for --format wav, to vorbis for --format ogg. ffmpeg is required for both, where the old server path needed it only for ogg."
+
+[[notices]]
+title = "the card"
+text = "a track is alone on the card like every other generate. The host holds the model until the next POST /free (which the lease holder does around the job) or until `systemctl --user stop forge-comfy`; there is no resident ACE-Step server any more, and no --stop-server."

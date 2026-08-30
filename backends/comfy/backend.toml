@@ -46,6 +46,7 @@ ready_timeout_s = 120
 # manager_requirements.txt and `--enable-manager` turns it on.
 manager_package = "comfyui_manager"
 manager_version = "4.2.2"
+frontend = "1.49.6"                        # comfyui-frontend-package, pinned by requirements.txt
 snapshot = "snapshot.json"                 # `GET /api/manager/snapshot/get_current`, committed beside this file
 base_directory = "data"                    # relative to $PREFIX: models/, input/, output/, user/, custom_nodes/
 # One custom node pack, and only one: everything the fp8 templates need is
@@ -61,87 +62,86 @@ license = "Apache-2.0"
 pips = ["gguf==0.19.0", "protobuf==7.36.0"]
 nodes = ["UnetLoaderGGUF"]
 note = "loads qwen-image-Q4_K_M.gguf for reference_qwen_gguf.api.json — the lean tier's image model. The fp8 templates do not touch it."
-frontend = "1.49.6"
 
-# The models the Phase 0 reference spike fetched, by the ComfyUI model
-# folder they live in under $PREFIX/data/models/. `store` has no word for a
-# comfy folder yet (forge2.md's `comfy:models/...`), so they are listed here
-# rather than as [[models]]: doctor would look for them in the HF cache and
-# be wrong. probe.py checks them on disk and says which are absent.
-[[comfy.models]]
-repo = "Comfy-Org/Qwen-Image_ComfyUI"
+# The models the host holds, in the ComfyUI folder each lives in under
+# $PREFIX/<base_directory>/models/. `store = "comfy:models/<dir>"` is what
+# says so — one model list, the same one doctor, install.sh and probe.py
+# read, rather than a [[comfy.models]] block beside it that could disagree.
+
+[[models]]
+id = "Comfy-Org/Qwen-Image_ComfyUI"
+store = "comfy:models/diffusion_models"
 file = "split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors"
-folder = "diffusion_models"
 license = "Apache-2.0"
 gb = 20.43
 
-[[comfy.models]]
-repo = "Comfy-Org/Qwen-Image_ComfyUI"
+[[models]]
+id = "Comfy-Org/Qwen-Image_ComfyUI"
+store = "comfy:models/text_encoders"
 file = "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
-folder = "text_encoders"
 license = "Apache-2.0"
 gb = 9.38
 
-[[comfy.models]]
-repo = "Comfy-Org/Qwen-Image_ComfyUI"
+[[models]]
+id = "Comfy-Org/Qwen-Image_ComfyUI"
+store = "comfy:models/vae"
 file = "split_files/vae/qwen_image_vae.safetensors"
-folder = "vae"
 license = "Apache-2.0"
 gb = 0.25
 
-[[comfy.models]]
-repo = "city96/Qwen-Image-gguf"
-revision = "e77babc55af111419e1714a7a0a848b9cac25db7"
+[[models]]
+id = "city96/Qwen-Image-gguf"
+store = "comfy:models/diffusion_models"
 file = "qwen-image-Q4_K_M.gguf"
-folder = "diffusion_models"
-node = "UnetLoaderGGUF"                    # not UNETLoader: a .gguf is listed by the pack's own loader
-field = "unet_name"
+revision = "e77babc55af111419e1714a7a0a848b9cac25db7"
 license = "Apache-2.0"
 gb = 13.07
+node = "UnetLoaderGGUF"
+field = "unet_name"
 note = "the lean tier's Qwen-Image: 16.2 GB measured at 1024 with --reserve-vram 8, against fp8's 23.3 GB, and 111 s against 113 s. Needs the ComfyUI-GGUF pack above; the text encoder stays the fp8 Qwen2.5-VL"
 
-[[comfy.models]]
-repo = "Comfy-Org/Qwen-Image-InstantX-ControlNets"
+[[models]]
+id = "Comfy-Org/Qwen-Image-InstantX-ControlNets"
+store = "comfy:models/controlnet"
 file = "split_files/controlnet/Qwen-Image-InstantX-ControlNet-Union.safetensors"
-folder = "controlnet"
 license = "Apache-2.0"
 gb = 3.54
 note = "InstantX Qwen-Image ControlNet-Union: canny, depth, pose, soft edge — native ControlNetLoader, no custom node"
 
-[[comfy.models]]
-repo = "Comfy-Org/flux1-schnell"
+[[models]]
+id = "Comfy-Org/flux1-schnell"
+store = "comfy:models/checkpoints"
 file = "flux1-schnell-fp8.safetensors"
-folder = "checkpoints"
 license = "Apache-2.0"
 gb = 17.24
 note = "the fp8 form ComfyUI documents for schnell is the all-in-one checkpoint (CheckpointLoaderSimple); there is no fp8 UNET-only file, only a 23.8 GB bf16 one"
 
-[[comfy.models]]
-repo = "comfyanonymous/flux_text_encoders"
+[[models]]
+id = "comfyanonymous/flux_text_encoders"
+store = "comfy:models/text_encoders"
 file = "clip_l.safetensors"
-folder = "text_encoders"
 license = "Apache-2.0"
 gb = 0.25
 
-[[comfy.models]]
-repo = "comfyanonymous/flux_text_encoders"
+[[models]]
+id = "comfyanonymous/flux_text_encoders"
+store = "comfy:models/text_encoders"
 file = "t5xxl_fp8_e4m3fn.safetensors"
-folder = "text_encoders"
 license = "Apache-2.0"
 gb = 4.89
 
-[[comfy.models]]
-repo = "black-forest-labs/FLUX.1-schnell"
+[[models]]
+id = "black-forest-labs/FLUX.1-schnell"
+store = "comfy:models/vae"
 file = "ae.safetensors"
-folder = "vae"
 license = "Apache-2.0"
 gb = 0.34
 note = "gated: auto — an HF token is required even though the licence is Apache-2.0"
 
-[[comfy.models]]
-repo = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+[[models]]
+id = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+store = "comfy:models/controlnet"
 file = "diffusion_pytorch_model.safetensors"
-folder = "controlnet"
 local = "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"
 license = "FLUX.1-dev Non-Commercial License"
 gb = 4.28

@@ -240,14 +240,27 @@ def _is_link(value) -> bool:
     return isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
 
 
-def _field(node: dict, key: str, node_id: str, where: str | None) -> str:
+def _field(node: dict, key: str, node_id: str, where: str | None, named: str | None = None) -> str:
     """Which input a ``PATCH:<key>`` node has patched.
 
-    The input named exactly ``key`` when there is one; else the node's only
-    knob (every other input being a wire). Anything else is a template
-    defect named here rather than a wrong value posted to the card.
+    The input the marker named after ``=`` when it named one; else the input
+    called exactly ``key``; else the node's only knob (every other input
+    being a wire). Anything else is a template defect named here rather than
+    a wrong value posted to the card.
     """
     inputs = node.get("inputs") or {}
+    if named is not None:
+        if named not in inputs:
+            raise TemplateError(
+                f"{where or 'the template'}: node {node_id} is marked {PATCH_PREFIX}{key}={named} "
+                f"but has no input {named!r} — it has {', '.join(sorted(inputs)) or 'none'}"
+            )
+        if _is_link(inputs[named]):
+            raise TemplateError(
+                f"{where or 'the template'}: node {node_id}'s {named!r} is wired from another node, "
+                "not a knob this run can set"
+            )
+        return named
     if key in inputs and not _is_link(inputs[key]):
         return key
     knobs = [name for name, value in inputs.items() if not _is_link(value)]
@@ -268,24 +281,29 @@ def patch_points(graph: dict, where: str | None = None) -> dict[str, tuple[str, 
     else in it is prose for whoever opens the graph in the UI. A node with
     several markers must name each input, because two keys landing on one
     input is a template that says one thing twice.
+
+    ``PATCH:<key>=<input>`` spells the input out, for the case the key
+    cannot: two nodes in one graph both have a ``seed``, so one of them is
+    ``PATCH:plan_seed=seed`` and the run states two knobs it can tell apart.
     """
     points: dict[str, tuple[str, str]] = {}
     for node_id, node in graph.items():
         if not isinstance(node, dict):
             continue
         title = str((node.get("_meta") or {}).get("title") or "")
-        keys = [token[len(PATCH_PREFIX) :] for token in title.split() if token.startswith(PATCH_PREFIX)]
-        if PATCH_PREFIX in title and not [k for k in keys if k]:
+        markers = [token[len(PATCH_PREFIX) :] for token in title.split() if token.startswith(PATCH_PREFIX)]
+        keys = [(m.split("=", 1)[0], m.split("=", 1)[1] if "=" in m else None) for m in markers]
+        if PATCH_PREFIX in title and not [k for k, _ in keys if k]:
             raise TemplateError(
                 f"{where or 'the template'}: node {node_id} is titled {title!r} with no key after {PATCH_PREFIX}"
             )
-        for key in keys:
+        for key, named in keys:
             if key in points:
                 raise TemplateError(
                     f"{where or 'the template'}: {PATCH_PREFIX}{key} is on two nodes "
                     f"({points[key][0]} and {node_id}) — one knob, one place"
                 )
-            field = _field(node, key, node_id, where)
+            field = _field(node, key, node_id, where, named)
             taken = [k for k, (n, f) in points.items() if n == node_id and f == field]
             if taken:
                 raise TemplateError(
