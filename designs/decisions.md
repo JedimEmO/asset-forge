@@ -418,3 +418,74 @@ from them — a gate that passed should say so once, in the file that wins over
 the plan. What Phase 0 did *not* answer, and does not pretend to: no number
 here was taken on a real 16 GB part, and ARDY at 15.4 GB is marginal on one.
 2026-08-30.
+
+**A project says what it makes, and doctor gets a fifth word for what it
+does not.** `forge.toml` grew `[make]` and `[hardware]`, and every door
+downstream reads them. The lesson underneath is about the exit code:
+doctor used to hold *every* backend to `ok` and exit 1 otherwise, which
+meant a project that only makes props was permanently red about ACE-Step
+and MOSS — and a gate that is always red is a gate nobody reads. So `off`
+is not a probe result and never votes: it is `[make]` not having chosen the
+kind, printed with the line that turned it off (`off — [make] music =
+false`), never probed at all, which is also what makes doctor fast on a
+props-only machine. **Exit 1 only while a *chosen* backend is not ok.** Two
+consequences worth naming: tier `fake` chooses nothing, so a machine with
+no card reads all-off and exits 0 — that is how this gate stays green on a
+runner — and a `forge.toml` written before the tables reads as *every kind
+chosen, tier detected*, because a silent narrowing would have taken rows
+away from projects that never asked for it. 2026-08-30.
+
+**A licence is accepted at a door, never in a file.** The receipt lives at
+`$FORGE_BACKENDS_HOME/licences.json`, beside the installs, because the
+install is what is licensed and one machine's acceptance covers every
+project on it. It is deliberately *not* in `forge.toml`: that file is
+hand-edited, and an acceptance you can type is an acceptance nobody gave.
+The same reasoning refuses a bare `--yes`: `--yes nvdiffrast --yes llama3`
+names what is being agreed to, and a blanket yes to a list nobody read is
+exactly the thing the gate exists to prevent. On the agent's side the gate
+is a *refusal*, not a prompt — `setup` cannot succeed until `accept` names
+every gated id, and the refusal lists the ids and the sentence that fixes
+the call, because a tool that merely asks an agent to behave is a tool that
+will one day be asked to behave differently. 2026-08-30.
+
+**The licence text an agent is shown is the notice, not the statute.**
+`licences` returns each component's whole notice — the same words
+`install.sh` prints and a human is asked to accept, with the operative
+clause quoted verbatim (nvdiffrast's section 3.3, Llama 3's "Built with
+Meta Llama 3") and the canonical URL for the rest. Not a summary, because
+you cannot accept what you were not shown; and not a paraphrase of a
+5,000-word licence either, because a licence text reproduced from memory is
+worse than a pointer to the real one. This is the form the installers have
+used since the first one, and now one table feeds both doors. 2026-08-30.
+
+**One screen before a byte downloads.** `forge setup` prints, per chosen
+kind, the backends, their disk, the total and every licence fact — then
+asks once. Every figure on that screen is disk, and each carries the file
+it was read out of; **no VRAM number appears there at all**, because half
+this repository's `vram_gb` figures turned out to be budgets reading as
+facts (2026-08-30, Phase 0), and a bill is exactly where that mistake would
+be repeated. Resumability is decided by asking doctor rather than by
+comparing `installed.json`'s commit to the pin: a receipt says an env was
+*made*, and `ok` says the weights are there too. 2026-08-30.
+
+**`mcp-session` runs one script twice, and that is the point.** The phase's
+claim is "one tool surface, two transports, one queue"; a transport nothing
+exercises ships ungated, so the same script runs over stdio and over the
+daemon's streamable HTTP, and both assert on the frame text an agent would
+read rather than on any internal. It is a Rust integration test against
+`env!("CARGO_BIN_EXE_forge")` because rmcp is already pinned in this
+workspace — a second protocol implementation in CI would be a second thing
+to keep current — and because `CARGO_BIN_EXE_forge` is the binary this
+build produced, with no `just` step in front of it that could hand the test
+last week's `target/debug/forge`. The two negative legs (a `wait` on an
+unknown job, a second promote onto a taken name) are in the same script on
+purpose: refusals rot silently, and nothing else in CI reads one.
+2026-08-30.
+
+**Blender is not in the kind → backend map, and is still in the chosen
+set.** The map is about generators — what *makes* the thing — and Blender
+makes nothing; it normalises a prop and prepares a body's geometry. Leaving
+it out of the map entirely would have let a props-only project with no
+Blender read green, so it is added to the chosen set the way the comfy host
+is: by what chose it, not by being a generator. Same for `comfy` itself.
+2026-08-30.

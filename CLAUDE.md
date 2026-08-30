@@ -35,10 +35,13 @@ One 24 GB card, and nothing on it co-resides. Peaks measured 2026-08-30
 (`designs/hosting.md` § GPU co-residency): the image model is the expensive
 one — Qwen-Image fp8 **23.3 GB**, its Q4 GGUF form **16.2 GB**, each alone
 on the card — then ARDY at **15.4 GB**; TRELLIS.2 at 1024³ is **4.7 GB**
-and SkinTokens **3.3–4.4 GB**. MOSS (~6–12 GB) and the ACE-Step server
-(resident ~8 GB until `--stop-server`) are budgets nobody has sampled, and
-each `backend.toml`'s `vram_gb` is a budget too — never quote one as a
-measurement. `just gpu` before any generate; never run two generates at
+and SkinTokens **3.3–4.4 GB**. MOSS (~6–12 GB) and ACE-Step (~8 GB) are
+budgets nobody has sampled, and each `backend.toml`'s `vram_gb` is a budget
+too — never quote one as a measurement. The audio models run inside the
+ComfyUI host now, so there is no resident ACE-Step server of its own and no
+`--stop-server`: what stays on the card is the unit's ~0.4 GB of CUDA
+context plus whatever workflow last loaded, until its unload node,
+`POST /free`, or `systemctl --user stop forge-comfy`. `just gpu` before any generate; never run two generates at
 once, and never start one while a studio window with a model loaded is
 still up on the real adapter — or while the ComfyUI unit holds a model.
 Doctor says who is holding the card; believe it.
@@ -66,14 +69,36 @@ committed and checked. After any hand add, remove or rename under `assets/`,
 run `just manifest` and then `just manifest-check`. A stale manifest does not
 fail here — it fails in the consumer, with a message that names nothing.
 
+## What the project chose
+
+`forge.toml`'s `[make]` says which of the six kinds this project makes and
+`[hardware]` says which register it runs in. Everything downstream reads
+them: `forge setup` installs only what a chosen kind needs, and doctor
+prints **`off`** for a kind that was not chosen — never probed, never a
+reason to exit 1. Doctor's words are `ok | partial | missing | broken |
+off`, and **exit 1 only while a *chosen* backend is not ok**. Tier `fake` is
+a first-class answer that chooses nothing, so a machine with no card reads
+all-off and exits 0. A `forge.toml` written before those tables reads as
+every kind chosen with the tier detected, so nothing goes quiet.
+
+A licence is accepted at a door, never in a file: `forge setup --yes <id>`,
+or the MCP `setup`'s `accept` after `licences` showed the text, recorded in
+`$FORGE_BACKENDS_HOME/licences.json` beside the installs — the install is
+what is licensed. A bare `--yes` is refused. Nothing in `forge.toml` can
+accept anything: it is hand-edited, and that would let an acceptance be
+typed rather than given.
+
 ## Verification without a display
 
 - `just ci` is the gate: fmt, clippy + rustdoc (warnings as errors), Rust
   tests, pytest, headless smoke, audit, check-bodies, manifest-check,
-  verify, mcp-check, ci-fake — the same list GitHub Actions runs. It
+  verify, mcp-check, mcp-session, ci-fake — the same list GitHub Actions
+  runs. It
   excludes eye-renders (not byte-stable across GPUs), every real generator,
   every Blender step and anything that rewrites `assets/`; ci-fake runs the
-  five generate pipelines on placeholders in a throwaway project.
+  generate pipelines on placeholders in a throwaway project, and
+  mcp-session runs the agent's whole path over both transports against a
+  tempdir project at tier `fake`.
 - No GPU, or the card is busy? `FORGE_FAKE=1` makes every `forge gen`
   write branded placeholders through the same doors and validators (a fake
   refuses to overwrite a real file); `just ci-fake` is that, end to end.

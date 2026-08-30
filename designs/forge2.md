@@ -355,7 +355,20 @@ also bought: the keyer, not the prompt, decides whether a drawn reference is
 liftable, and half the repository's `vram_gb` figures were budgets reading as
 facts. Phases 1–4 stand as written.
 
-**Phase 1 — the daemon (2 weeks).** `forge serve`: the queue, the card
+**Phase 1 — the daemon (2 weeks). Onboarding, doctor, the licence gate and
+`mcp-session` landed 2026-08-30.** `forge.toml` carries `[make]` and
+`[hardware]`; `forge init` asks the three questions on a TTY and takes the
+defaults with one line of assumptions where there is none; `forge setup`
+prints one screen — backends, disk, total, every licence in full — before a
+byte downloads, refuses a bare `--yes`, and appends acceptances to
+`$FORGE_BACKENDS_HOME/licences.json`; doctor has its fifth word (`off`), its
+`executor`/`chosen` columns, the comfy ladder against a shared
+`/object_info`, and exits 1 only for a chosen backend; `init_project`,
+`licences` and `setup` are MCP tools; and `mcp-session` is in `just ci` and
+in GitHub's test job. Still open in this phase: the daemon itself, the two
+executors, `forge_record: 2`, and the retirement of the three audio venvs.
+
+**Phase 1, as planned —** `forge serve`: the queue, the card
 lock, the job table, two executors. `env` is today's launcher driven
 in-process; `comfy` is a client cut from `audio/music.py`'s server client
 (`submit`, `wait_for`, `fetch`, `free`, `stats`, `object_info`). ComfyUI
