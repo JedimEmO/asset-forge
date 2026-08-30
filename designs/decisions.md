@@ -861,3 +861,19 @@ is a picture of *that* skeleton in clothes: the door's description says
 span equal to height and seven heads or more, in numbers, and a body plan
 that cannot say that is a second profile or a fitted skeleton, which
 `forge2.md` records as Phase 2's first question. 2026-08-30.
+
+**The fit gate is conservative, and the strip says by how much.** The
+four-head witch the gate refused at "tips 16–23 cm under the wrists" was
+skinned past a loosened copy of the profile as an experiment (nothing
+shipped touched, `out/grok/moss_witch_v4/`), and on the walk, the pistol
+and the roll she reads as a short character in a slightly oversized rig:
+arms hinged a hand's breadth above her real shoulders, sleeves bunched at
+the hands where the wrist bones sit past her wrists, nothing torn, legs,
+robe and hat right. **Why it matters:** the gate's 0.15 m arm-height
+tolerance guards against weights bent around a bad *pose*, which this was
+not — it was a body *shorter* than the skeleton, and rotation curves on a
+too-long bone show as a high pivot, not a tear. So the tolerance is a
+budget, not a measurement of where bodies break, and the question it
+begs is Phase 2's first: whether the skeleton should fit the mesh. Until
+then the gate stands at 0.15 m and the strip is the judge of any body
+that argues with it. 2026-08-30.
