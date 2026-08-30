@@ -845,3 +845,19 @@ stated source; the maintainers make the sample library's references in
 Grok and say so in `SOURCES.md`. The image models, their ControlNets and
 their templates leave the host; the spike's `hosting.md` entries stay as
 the record of what was measured. 2026-08-30.
+
+**"Chunky" is volume, never proportion, and the format text says the
+geometry outright.** Three Grok references drawn with "stylized game
+character with chunky proportions" came out five heads tall with arm
+spans a third wider than their height, and the fit gate refused all
+three at reach 1.63–1.78 of wrist span; "taller" as an edit did not move
+the lift (1.00 wide by 0.74 tall became 1.00 by 0.74); "head-to-toe equals
+fingertip-to-fingertip, seven and a half heads" did, and the knight and
+the robot then walked, aimed and rolled with 27 of 27 bound. The witch —
+four heads, a hat a quarter of her height — was refused five times with
+her arm tips 16–23 cm under the skeleton's wrists and never will fit this
+profile. **Why:** every clip plays on one frozen skeleton, so a reference
+is a picture of *that* skeleton in clothes: the door's description says
+span equal to height and seven heads or more, in numbers, and a body plan
+that cannot say that is a second profile or a fitted skeleton, which
+`forge2.md` records as Phase 2's first question. 2026-08-30.

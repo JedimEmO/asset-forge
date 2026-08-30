@@ -295,7 +295,10 @@ downstream measures against it and a wrong image costs a lift:
 
 > A reference is one PNG, 1024 px or more on its long side, of one
 > subject on a flat, uniform background: no floor, no shadow, no gradient,
-> nothing behind it. The subject fills about nine tenths of the height.
+> nothing behind it. The subject fills about nine tenths of the height,
+> and is exactly as tall as it is wide: head-to-toe equals
+> fingertip-to-fingertip, at seven heads or more — "chunky" is volume,
+> never proportion, because the skeleton every clip plays on is one size.
 > **Character:** the front view, facing the camera, in a strict T-pose —
 > arms straight out and horizontal, palms down, legs slightly apart, feet
 > flat — holding nothing, with no hair, cloth or gear crossing the
@@ -444,6 +447,32 @@ the MCP (`init_project → setup → doctor → generate_audio → wait →
 inspect_audio → promote_audio → verify`), the agent's path held green the
 way `ci-fake` holds the shell's. Retire `acestep`, `moss_sfx`, `moss_tts`
 venvs.
+
+**Phase 2 opens with a question the Grok runs forced (2026-08-30
+evening).** Three Grok references went through the chain by hand
+(`out/grok/`, `out/refs_grok/`): a robot and a knight fit the frozen
+humanoid skeleton once their proportions were edited to "fingertip span
+equal to height, seven heads or more", and both walk, aim and roll on the
+shipped clips with 27 of 27 bound; a four-head witch with a hat a quarter
+of her height was refused five times and never will fit — her shoulders
+sit at 66 % of her height where the skeleton's wrists sit at 82 %, and no
+picture edit moves a skeleton. Two facts follow. The `import_reference`
+format text says the geometry outright (span equal to height, seven heads
+or more), because "chunky proportions" reads as squat. And **the skeleton
+fits the mesh, or the mesh fits the skeleton** is a decision to make
+before `forge gen prepare` is written: a baked clip carries rotation
+curves per bone and one translation track on Hips (translation and scale
+on every other bone are dropped), so a skeleton with the same names,
+hierarchy and rest *rotations* but per-body bone *lengths* binds 27 of 27
+with no retarget; SkinTokens already returns joints in our order and
+parent array. What it would cost: the contract stops freezing rest
+translations and records them per body; the export gate's 0.1 mm check
+narrows to rotations; rig check measures stature by the body's own legs;
+root travel in metres has to scale by leg ratio or a short body slides;
+sockets sit on bones of another length. What it would buy: the witch, and
+every child, giant and squat body plan, on one profile. Until it is
+decided, the mesh fits the skeleton and the witch is a second profile's
+problem.
 
 **Phase 2 — rigging (2 weeks).** `backends/skintokens/` in the `env`
 executor with the issue-#8 and SDPA patches under `patches/`. `forge gen
