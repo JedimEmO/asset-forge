@@ -43,7 +43,7 @@
   "5": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "PATCH prompt = style_prefix + character description"
+      "title": "PATCH:prompt \u2014 style_prefix + character description"
     },
     "inputs": {
       "text": "",
@@ -56,7 +56,7 @@
   "6": {
     "class_type": "CLIPTextEncode",
     "_meta": {
-      "title": "PATCH negative_prompt"
+      "title": "PATCH:negative_prompt"
     },
     "inputs": {
       "text": "",
@@ -69,7 +69,7 @@
   "7": {
     "class_type": "LoadImage",
     "_meta": {
-      "title": "PATCH pose_image (uploaded to ComfyUI's input dir)"
+      "title": "PATCH:image \u2014 the pose, uploaded to ComfyUI's input dir"
     },
     "inputs": {
       "image": "forge_tpose_pose.png"
@@ -87,7 +87,7 @@
   "9": {
     "class_type": "ControlNetApplyAdvanced",
     "_meta": {
-      "title": "pose conditioning; PATCH strength/start_percent/end_percent"
+      "title": "pose conditioning; PATCH:strength PATCH:start_percent PATCH:end_percent"
     },
     "inputs": {
       "positive": [
@@ -118,7 +118,7 @@
   "10": {
     "class_type": "EmptySD3LatentImage",
     "_meta": {
-      "title": "PATCH width/height"
+      "title": "PATCH:width PATCH:height"
     },
     "inputs": {
       "width": 1024,
@@ -129,7 +129,7 @@
   "11": {
     "class_type": "KSampler",
     "_meta": {
-      "title": "PATCH seed"
+      "title": "PATCH:seed"
     },
     "inputs": {
       "model": [
@@ -175,7 +175,7 @@
   "13": {
     "class_type": "SaveImage",
     "_meta": {
-      "title": "PATCH filename_prefix"
+      "title": "PATCH:filename_prefix"
     },
     "inputs": {
       "images": [
