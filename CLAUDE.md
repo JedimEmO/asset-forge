@@ -61,12 +61,23 @@ believe it.
   down. A migration nulls what it cannot know; it never launders a guess up.
 - A clip recipe states every knob. Nothing is inherited from the sweep or
   from the clip it is about to replace.
-- A reference PNG claims integrity (sha256) and a row in
-  `assets-src/SOURCES.md`, never regeneration. A PNG without a row fails
-  `forge verify`. **The reference is brought, not made here** — no image
-  model ships in this toolkit; it comes through `import_reference` /
-  `forge ref import` (Phase 3), and the sample library's are drawn in Grok
-  and said to be, in `SOURCES.md`.
+- A reference PNG claims integrity (sha256) and either a `.ref.json` beside
+  it or a row in `assets-src/SOURCES.md`, never regeneration. A PNG with
+  neither fails `forge verify`. **The reference is brought, not made here**
+  — no image model ships in this toolkit; it comes through `forge ref
+  import` / MCP `import_reference`, which writes all three files, and the
+  sample library's are drawn in Grok and said to be, in `SOURCES.md`.
+  **The stored PNG is the original bytes, never the keyed image**: the
+  keyer runs again at lift time, so a keyed PNG in the source tree is a
+  derived artefact whose hash and ledger row describe something nobody drew.
+  To correct a reference, run the door again with `--overwrite`.
+- A body's sidecar carries this body's own bone lengths (`body.bones[]`,
+  local rest translations) and its `motion_scale`. `promote body` derives
+  them from the **glb**, never from the rig record, and `forge verify`
+  re-derives them: a sidecar that claims a skeleton the file does not carry
+  is the drift this design can otherwise produce silently.
+- A rig record's `seed` is `null` and stays `null`: SkinTokens samples with
+  no seed, so a rig claims **integrity, never reproduction**.
 - Bodies, models and audio claim integrity; clips claim reproduction
   (`forge audit`, ≤ 1 mm). Do not promise the wider claim for the narrower
   kind.

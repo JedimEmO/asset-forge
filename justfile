@@ -183,6 +183,31 @@ job-log job *flags: _build
 # `FORGE_FAKE=1` in front of any of them writes placeholders that pass the
 # same validators, with no backend and no Blender — what `ci-fake` runs.
 
+# The one way a PNG gets under assets-src/refs/. Format, then mesh.py's own
+# keyer, then the four keyer pre-checks the 2026-08-30 spike proved ride all
+# the way to a lift (a drawn floor, a contact shadow, a flood-through hole, a
+# key that kept the backdrop), then the geometry pre-checks — all of it before
+# a GPU minute, because a lift is four minutes and a redraw is a sentence. The
+# PNG stored is the file you drew, byte for byte; the record and the
+# SOURCES.md row are written by the door and never by hand.
+# `just ref-import out/refs_grok/ember_knight_v3.png ember_knight_v3 character "xAI Grok, image_edit"`
+#
+# A drawn PNG -> a checked, recorded reference under assets-src/refs/.
+ref-import image name kind source *flags: _build
+    {{forge}} gen ref-import {{image}} --name {{name}} --kind {{kind}} --source "{{source}}" {{flags}}
+
+# The reference format text has ONE home — FORMAT and FORMAT_AMENDMENT in
+# python/forge_gen/reference.py — and every other copy is generated from it:
+# `markdown` writes the block the forge-character skill includes, and the MCP
+# tool's description is generated at build time by crates/forge_mcp/build.rs,
+# which reads the same two constants. Three hand-maintained copies held to
+# byte equality is a test that fails on a rewrap and teaches people to edit
+# the fixture.
+#
+# Print the reference format: `just ref-format`, `just ref-format markdown`
+ref-format kind="text": _build
+    {{forge}} gen ref-import --print-format {{kind}}
+
 # The seed is a real knob: one front view underdetermines the back of a
 # shape, and a seed can leave the rear of a skull absent. Look with `views`
 # before rigging anything. The preset is the register — 1024³, 25 000
@@ -205,11 +230,15 @@ prop name *flags: _build
     {{forge}} gen mesh assets-src/refs/props/{{name}}.png --preset prop \
         --out out/lifts/{{name}}.glb --record assets-src/refs/props/{{name}}.lift.json {{flags}}
 
-# Refuses a mesh whose arms are not horizontal against its OWN shoulder line,
-# and an arm thinner than the bone it hangs on; the fix is always the
-# reference image, never the weights. Writes out/prepare/<name>.glb and its
-# record beside it — no vertex groups, because the weights are what the
-# skinner is being asked for. Then `just skin <name>`.
+# Metres, matte, dust dropped, the profile's skeleton inserted and NO weights
+# — the skinner wants a bare mesh. Two gates, both about the picture and not
+# about the weights: the arm tips level with THIS BODY'S OWN shoulder line
+# ([fit] arm_height_tolerance_m 0.15, a budget), and every arm run's median
+# cross-section at or above [fit] limb_radius_min_fraction 0.22 of its own
+# length (measured: the sliver that walked with a 2.8 m arm read 0.20-0.21,
+# and vex_runner's thinnest arm reads 0.245). The leg ratios are measured,
+# printed and never refused — a T-pose isolates an arm and does not isolate a
+# leg. A refusal names the reference PNG because that is where the fix is.
 #
 # Lifted glb -> normalised mesh + a skeleton, no weights: `just prepare vex_runner`
 prepare name *flags: _build
@@ -217,33 +246,35 @@ prepare name *flags: _build
     {{forge}} gen prepare out/lifts/{{name}}.glb --out out/prepare/{{name}}.glb \
         --record out/prepare/{{name}}.prepare.json {{flags}}
 
-# Needs the GPU: SkinTokens runs twice, ~27 s each, and nothing else may be
-# resident. Five steps behind one door — skin, fit the skeleton to this body,
-# build the per-body armature, prepare and skin again against it, re-attach by
-# joint order — writing assets-src/blender/<name>.{blend,rig.json,fit.json}.
-# There is no --passes: the second fit walks the torso downhill.
+# SkinTokens' weights, then the skeleton fitted to what those weights say this
+# body's bones are, then a second prepare and skin against the fitted skeleton,
+# then the re-attach — five steps, one door, no options about the number of
+# passes (a second fit walks the torso downhill by 74 mm a time). Names,
+# hierarchy and rest ROTATIONS stay frozen, so every clip still binds by name
+# with nothing rebaked; lengths become a fact of this body that the sidecar
+# records. Refuses a raw L/R gap over [fit] asymmetry_arms 0.35 on the arms or
+# [fit] asymmetry_other 0.20 elsewhere, and a run fitted outside 0.4-2.5.
 #
 # Prepared glb -> weights on a skeleton fitted to this body: `just skin vex_runner`
 skin name *flags: _build
     mkdir -p out/skin assets-src/blender
-    {{forge}} gen skin out/prepare/{{name}}.glb {{flags}}
+    {{forge}} gen skin out/prepare/{{name}}.glb --blend assets-src/blender/{{name}}.blend \
+        --record assets-src/blender/{{name}}.rig.json --name {{name}} {{flags}}
 
-# The whole mesh half of a body, one card, one job at a time.
+# Dies by name, for one release, the same courtesy promote-mesh gets: the
+# rename is not a deletion and an old command line deserves to be told so.
+[private]
+rig-mesh name="" *flags="":
+    @echo "rig-mesh became prepare + skin when the skinner changed: bone heat is gone, SkinTokens makes the weights, and the skeleton is fitted to the body (just prepare <name> && just skin <name>, or just body <name>). See designs/skin.md." >&2
+    @exit 1
+
+# The whole loop on one lift, in the order the gates run. Needs the card:
+# SkinTokens is 3.3-4.4 GB and runs twice. `just gpu` first.
 #
-# Lift -> prepare -> skin, in order: `just body vex_runner`
+# Lifted glb -> rigged .blend: prepare then skin. `just body vex_runner`
 body name *flags: _build
-    just --justfile {{justfile()}} --working-directory . prepare {{name}}
-    just --justfile {{justfile()}} --working-directory . skin {{name}} {{flags}}
-
-# Dies by name for one release rather than by "no such recipe", the courtesy
-# `install.sh --models` got.
-#
-# GONE: rig-mesh became `just prepare` + `just skin`.
-rig-mesh name *flags:
-    #!/usr/bin/env bash
-    echo "rig-mesh became 'just prepare {{name}}' + 'just skin {{name}}' when the skinner changed:" >&2
-    echo "bone heat is gone, SkinTokens makes the weights, and the skeleton is fitted to the body." >&2
-    exit 2
+    just --justfile {{justfile()}} --working-directory {{invocation_directory()}} prepare {{name}} {{flags}}
+    just --justfile {{justfile()}} --working-directory {{invocation_directory()}} skin {{name}}
 
 # Metres; floor, ceiling or grip at the origin; matte — then straight into
 # the library as a model with both records. `--height`/`--length` is the one
@@ -342,7 +373,7 @@ speech name text *flags: _build
 # Front, back, both sides and three head close-ups, to out/views/<stem>.png.
 # Back-face culling is off for anything under out/, so a face's inside
 # showing through from behind means the surface is missing, not flipped.
-# Run it on the raw lift BEFORE rig-mesh. `--no-head` for a prop; a library
+# Run it on the raw lift BEFORE prepare. `--no-head` for a prop; a library
 # name (`just views barrel`) renders the shipped file, culling on.
 #
 # One contact sheet of a glb from seven angles: `just views out/lifts/vex_runner.glb`
@@ -484,15 +515,13 @@ promote-body name *flags: _build
         --rig-record assets-src/blender/{{name}}.rig.json \
         --export-record out/export/{{name}}.export.json {{flags}}
 
-# Dies by name for one release rather than by "no such recipe", the courtesy
-# `install.sh --models` got.
-#
-# GONE: promote-mesh became promote-body.
-promote-mesh name *flags:
-    #!/usr/bin/env bash
-    echo "promote-mesh became 'just promote-body {{name}}' when the skinner changed;" >&2
-    echo "the rig step is now 'just prepare {{name}}' + 'just skin {{name}}'." >&2
-    exit 2
+# Dies by name, for one release, the courtesy `install.sh --models` got: an
+# old command line deserves to be told what happened to it rather than
+# "unknown recipe".
+[private]
+promote-mesh name="" *flags="":
+    @echo "promote-mesh became promote-body when the skinner changed; the rig step is now prepare + skin (just prepare <name> && just skin <name>, or just body <name>). See designs/skin.md." >&2
+    @exit 1
 
 # Native bake, no Blender. The shipped recipe is the starting point when the
 # name exists; the flags you state land on top; the whole recipe is echoed.
@@ -646,8 +675,8 @@ manifest-check: _build
 # The server .mcp.json launches, driven the way a client drives it: a
 # scripted initialize, the initialized notification and tools/list over
 # stdin, newline-delimited JSON-RPC, and the reply checked for every tool
-# name the skills are written against — no more, no fewer, and never a
-# promote for a mesh. No GPU: nothing is rendered, the list is the test.
+# name the skills are written against — no more, no fewer. No GPU: nothing is
+# rendered, the list is the test.
 # The server's own banner goes to stderr, which is the rule this also
 # proves: anything on stdout that is not a frame would break the parse.
 #
@@ -656,7 +685,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="cancel doctor export_bundle generate_audio generate_clips init_project inspect_audio licences list_audio list_clips list_models list_runs promote_audio promote_clip render_clip_strip render_model setup status wait"
+    expected="cancel doctor export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs prepare_body promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -685,12 +714,15 @@ mcp-check: _build
 # daemon's streamable HTTP at /mcp — because "one tool surface, two
 # transports, one queue" is the claim this phase makes and a transport
 # nothing exercises ships ungated. The script: initialize, tools/list
-# against the pinned nineteen, init_project, licences, the setup gate (a
+# against the pinned twenty-five, init_project, licences, the setup gate (a
 # gated kind with an empty accept must refuse and name the id), doctor (an
 # `off` row, exit 0), generate_audio (a job id comes back, not the file),
 # wait, inspect_audio, promote_audio, verify — plus the two negative legs
 # that rot silently: wait on an unknown job, and a second promote onto a
-# taken name.
+# taken name. Then the character loop, on the fake tier: import_reference,
+# generate_mesh, wait, prepare_body, wait, skin_body, wait, promote_body,
+# render_model, verify — plus a second promote_body on the same name refused,
+# then accepted with overwrite.
 #
 # It runs against `env!("CARGO_BIN_EXE_forge")`, so the binary under test is
 # this build with no `just` step in front of it. No GPU, no display, no
@@ -737,8 +769,8 @@ verify *flags: _build
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
 #                   `ci-fake` runs the same paths on placeholders.
-#   rig, rig-mesh, prop-import, promote-mesh
-#                   Blender.
+#   prepare, skin, body, prop-import, promote-body
+#                   Blender, and skin also wants the card.
 #   promote-*, manifest, rebake, migrate, setup, install
 #                   they rewrite assets, sources or the machine.
 #   doctor, gpu     they describe this machine, and a runner is not it.
@@ -762,9 +794,10 @@ ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify m
 # gate tests, and a recipe that quietly assumes the toolkit checkout fails
 # here first. (The ledger bans a *bare* recursive `just`, the kind that
 # hunts for a justfile in the project; these calls name their justfile,
-# because the recursion is the thing under test.) The reference PNGs are
-# written first (a 4×4 flat grey) with their ledger rows, because a PNG
-# without a row fails verify and should. The voice path designs a
+# because the recursion is the thing under test.) The reference PNGs go in
+# through `ref-import`, which is what writes their ledger rows — a PNG
+# without a row fails verify and should, and the row is the door's to write.
+# The voice path designs a
 # placeholder voice, clones a line from it by name and files the line, so
 # verify's voice check runs on a record it has to read. It ends in the
 # throwaway project's own gates: catalog, audit, check-bodies,
@@ -781,7 +814,7 @@ ci-fake: _build mcp-check
     jf() { just --justfile "{{justfile()}}" --working-directory "$work" "$@"; }
     "$forge" init --project "$work" --name fake >/dev/null
     cd "$work"
-    mkdir -p assets-src/refs/props assets-src/refs/characters
+    mkdir -p out/drawn
     python3 - <<'PY'
     import struct, zlib
     def png(path, w, h, rgb):
@@ -789,10 +822,12 @@ ci-fake: _build mcp-check
         def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
         with open(path, "wb") as f:
             f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
-    png("assets-src/refs/props/box.png", 4, 4, (200, 200, 200))
-    png("assets-src/refs/characters/figure.png", 4, 4, (200, 200, 200))
+    png("out/drawn/box.png", 4, 4, (200, 200, 200))
+    png("out/drawn/figure.png", 4, 4, (200, 200, 200))
     PY
-    printf '| `props/box.png` | ci-fake placeholder | box | 2026-08-23 |\n| `characters/figure.png` | ci-fake placeholder | figure | 2026-08-23 |\n' >> assets-src/SOURCES.md
+    echo "== ref-import: the door that writes the ledger row"
+    jf ref-import out/drawn/box.png box prop "ci-fake placeholder"
+    jf ref-import out/drawn/figure.png figure character "ci-fake placeholder"
     echo "== mesh -> prop -> promote model"
     jf prop box --seed 1 --verts 2000
     jf prop-import box --height 1.0

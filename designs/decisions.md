@@ -933,3 +933,94 @@ of the `.glb` or of the record, the one-way rule that already covers every
 `.blend` and every baked clip. Nothing about it reaches `assets/`: no
 sidecar, no catalog entry, no manifest row, because the library already
 holds every input it was made from. 2026-08-30.
+
+**A number in a design is a proposal until a picture is measured against it,
+and three of the reference door's moved.** `designs/skin.md` marked four of
+`ref import`'s pre-check numbers **budget** and told the implementer to pin
+them from the pictures on disk. Running the shipped gates over all twenty-one
+(`out/refs_grok/`, `out/spike/refs/`, `out/spike/reference_v2/`,
+`assets-src/refs/`) moved three of them:
+
+- **heads: refuse below 3.0, not 4.0.** The design chose 4.0 "because the
+  four-head witch now ships". She measures **3.37**. 4.0 would have refused
+  the exact body Phase 2 exists to ship. 3.0 sits 12 % under her — the same
+  headroom the sliver gate ships with — and still refuses a picture whose
+  arms start a third of the way down the frame.
+- **retained alpha: 0.10–0.85, not 0.15–0.85.** The seventeen keyable
+  references read 0.123 to 0.278. A floor of 0.15 refuses `courier_v2_42.png`
+  and `courier_v2_11.png`, both of which lifted.
+- **subject fill: a printed note, never a refusal.** Measured 0.634 (a prop)
+  to 0.95, with a character that lifted at 0.69. The number does not separate
+  good from bad, and skin.md's own rule is that a gate nobody can calibrate
+  ships as a note with the lesson dated — this is the lesson.
+
+**Why:** a design is written from what the last run remembered, and the
+pictures are what actually happened. Marking a number *budget* and then
+shipping it unmeasured is how a budget becomes a measurement nobody took —
+the `vram_gb` lesson of this same day, one directory over. The two that stayed
+budgets (the floor band, the flood-through hole) say so in the door's own
+source, because on those two the *bad* side genuinely is not on disk: a drawn
+floor dark enough to matter fails `mesh.keyed`'s border check before the
+pre-checks see it. 2026-08-30.
+
+**"Heads" from a silhouette is crown-to-arm-line, and the definition is the
+gate.** Three estimators were tried on the same seventeen pictures. A
+neck-pinch estimator — the narrowest row below the widest part of the head —
+disagreed with itself by a factor of two depending on where the search
+started (`ember_knight_v3.png` read 6.58 or 10.74) and returned nothing at all
+on six of them, because a crown that is a hat point or an antenna gives the
+search no reference width. What is stable is the row where the silhouette's
+width first reaches half its widest: in a T-pose that is where the arms come
+out, it exists in every picture, and it is one expression with no thresholds
+inside it. So `heads` here means *height over the height of everything above
+the arm line* — and it counts a hat, which is why the witch reads 3.37 rather
+than the 4 an artist would say. **Why that is the right answer anyway:** the
+question the gate is asking is not "what would an artist call this" but "how
+much of this picture is not body", because that is what decides whether there
+is a torso for a skeleton to sit in. The record says `heads` and the door's
+docstring says what it measured, so nobody has to guess which of the two it
+meant. 2026-08-30.
+
+**A clipped render is fixed by a knob in the graph, never by a gain on the
+file — and the knob's default is a budget until three renders exist.**
+ACE-Step 1.5 turbo normalises to peak: nine renders came off the host pinned
+at 0.0 dBFS with runs of 10 to 186 full-scale samples, and the clipping gate
+refused every one. Two ways out were on the table and only one is inside the
+one-way rule. Normalising the WAV after the fact would make a shipped file
+that no record re-derives — the hand-repaired artefact the whole ledger exists
+to prevent — and loosening the clipping gate would trade a true measurement
+for a green light. The fix is `AudioAdjustVolume` as node `14` of the tracked
+graph, `PATCH:gain_db`, its value in `params.gain_db`: the file that comes out
+is a function of the recipe again. **The part that is not done:** the default
+ships as a **budget** of −3, because pinning it means rendering the busiest
+arrangement at −2, −3 and −4 and reading `peak_dbfs` off each, and that needs
+the card. It says "budget" in the door, in the ledger and in the template's
+saved value, so nobody reads −3 as a thing that was measured. 2026-08-30.
+
+**A notice that names the wrong lever is worse than no notice, because
+somebody will pull it.** `backends/moss_tts/backend.toml` said "WHAT LIFTS
+THIS: a TTS-Audio-Suite pin built against transformers >= 5" for a pin,
+`fab00263`, that **is** v5.8.7 — already two minor releases past the one that
+moved the pack to transformers 5. Anybody acting on that sentence would have
+spent an afternoon bumping a pin to itself. The correction cost nothing and no
+card: the pack's own `pyproject.toml`, `CHANGELOG.md`, `engine_registry.py`,
+`unified_model_interface.py` and `utils/runtimes/` are all on disk, and
+together they say that MOSS has a runtime *profile* with no packages in it, no
+worker, no proxy, and an explicit
+`RuntimeError("Isolated runtime is not implemented for engine 'moss_tts'")`.
+**Why it matters beyond this pin:** a notice is the one place a `doctor: ok`
+row can be contradicted, so it is read as authority. The rule this earns is
+that a notice names what was **measured** and what would be **checked next**,
+and never a remedy nobody tried — and that a remedy which can be checked by
+reading the dependency's source is checked before it is written down.
+2026-08-30.
+
+**A recipe that is renamed dies by name for one release.** `just rig-mesh` is
+gone and `just promote-mesh` became `just promote-body`; `promote-mesh`
+survives as a recipe whose whole body is
+`promote-mesh became promote-body when the skinner changed; the rig step is
+now prepare + skin` and an exit 1. **Why:** `just` answers an unknown recipe
+with "unknown recipe", which names nothing a person can do next, and the
+command line they typed is the only evidence of what they were trying to do.
+It is the courtesy `backends/comfy/install.sh` already gives `--models`, and
+it costs four lines. 2026-08-30.

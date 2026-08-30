@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/characters/vex_runner.png",
+      "sha256": "sha256:12a7cfcc0ed10d46ed930421e69f9e3103968708af0c5a1801572e5a0983ca0b",
+      "source": "xAI grok (cloud image model), image_edit chained from a style board that does not ship here, then two self-edits (one arm per side in T-pose; taller, six heads, shoulders higher); painted 2026-08-18",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "character",
+    "long_side_px": 1024,
+    "stated_source": "xAI grok (cloud image model), image_edit chained from a style board that does not ship here, then two self-edits (one arm per side in T-pose; taller, six heads, shoulders higher); painted 2026-08-18"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/characters/vex_runner.png",
+      "sha256": "sha256:12a7cfcc0ed10d46ed930421e69f9e3103968708af0c5a1801572e5a0983ca0b",
+      "bytes": 480785
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.1821,
+    "arm_line_fraction": 0.2122,
+    "backdrop_rgb": [
+      184,
+      184,
+      184
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 272,
+    "heads": 4.71,
+    "height": 1024,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 1.019,
+    "subject_fill": 0.916,
+    "width": 1024
+  },
+  "fake": false,
+  "note": null
+}

@@ -21,12 +21,22 @@ the file is the bytes that were judged.
 measured 2026-08-30, `designs/hosting.md` § the first real run of the audio
 path):
 
-- **`just speech` cannot make a line.** MOSS-TTS 1.7B does not run under
-  the host's transformers 5, and the pack turns that into *silence* rather
-  than an error — the graph completes, and the audio gate now refuses the
-  file and writes no record. `backends/moss_tts`'s `[[notices]]` names both
-  API breaks and the pin that would lift them. `just voice` (the designer)
-  is unaffected and works.
+- **`just speech` cannot make a line, and a pack bump will not change
+  that.** MOSS-TTS 1.7B does not run under the host's transformers 5, and
+  the pack turns that into *silence* rather than an error — the graph
+  completes, and the audio gate refuses the file and writes no record.
+  Do **not** offer to bump the pin: `fab00263` **is** TTS-Audio-Suite v5.8.7
+  (2026-08-28), already past the release that moved the pack to transformers
+  5, and there is no newer tag. Do not offer the pack's isolated secondary
+  runtime either: it has a *profile* for MOSS with no packages in it, no
+  worker and no proxy, and
+  `_load_isolated_model` raises `Isolated runtime is not implemented for
+  engine 'moss_tts'` (read off the checkout 2026-08-30). And do **not** shim
+  it: shimming has been tried twice here and the second shim produced 12.8 s
+  of babble for a four-word line, which is the one outcome that looks like
+  success. `backends/moss_tts`'s `[[notices]]` says what was measured and
+  what would actually lift it. `just voice` (the designer) is unaffected and
+  works.
 - **`just music` renders but does not promote.** ACE-Step 1.5 turbo comes
   off the host at exactly 0.0 dBFS whatever the content, with runs of 10 to
   186 pinned samples, and the clipping gate is right to refuse it. The fix
@@ -109,7 +119,8 @@ card is leased.
 | sfx | `[sfx] 3 s, 100 steps, cfg 4, seed 1627167584: a heavy iron chain drags …` | the knobs, the seed and the prompt; the seed is fresh and random unless you said `--seed`, and either way it is in the record | exit 3 in ~100 ms: not installed → `forge-setup` |
 | sfx | `[sfx] 30s on the host (the first render of a session compiles the DiT)` | only if `TORCHDYNAMO_DISABLE=1` were off — it is on in the unit, so nothing compiles and this line means the host is simply busy | a graph that never finishes: `journalctl --user -u forge-comfy -n 50` |
 | sfx | `[sfx] OK out/audio/sfx/<name>.wav (seed N, peak -0.0 dBFS)` | **26.1 s** measured cold, 20.1 s with the model already loaded, 39.0 s over MCP behind another job | exit 5 `the effect is silent` / `is clipped`: the gate refused the render and wrote **no record** — re-render |
-| music | `[music] 30 s at 96 bpm in Am, seed 1421`, then `[music] prompt b1f0… on http://127.0.0.1:8188` | the knobs and the prompt id the host gave; no server is started, because there is no server any more | — |
+| music | `[music] 30 s at 96 bpm in Am, seed 1421, gain -3 dB` | the knobs and the gain the graph will apply; no server is started, because there is no server any more | — |
+| music | `[music] prompt b1f0… on http://127.0.0.1:8188` | the prompt id the host gave | — |
 | music | `[music] OK out/audio/music/<name>.ogg (1.9 MB, 30.014668 s)` | **18.3 s** measured (16.4–18.3 over five renders); the seconds are the file's, not the request's | exit 5 `the track is clipped: N consecutive samples pinned at full scale` — expected at this pin, see above |
 | speech | `[tts] reference assets-src/voices/warden/ref.wav uploaded as forge_voice_warden_ref.wav` | the clip travels as an **uploaded file**, `LoadAudio` reads it by that name and the host decodes it in its own venv (PyAV) — no path, no torchcodec, no codes handed over | — |
 | speech | `[tts] seed 1357188160, en: Few come this deep. Fewer leave.` | the seed, the language and the line | — |
@@ -262,7 +273,8 @@ forge promote audio sfx out/audio/sfx/<name>.wav <name> \
 | CUDA out of memory | the card was held — by whatever the ComfyUI host last loaded, a studio window, or a generate you forgot | `just gpu`; `forge gpu --free`, and for the MOSS pack `systemctl --user restart forge-comfy`; never two generates at once |
 | the job sits `blocked` with `blocked_by: comfy — …` | the release ladder could not prove the card came back and is **withholding** the lease | that is the safety net working: `systemctl --user restart forge-comfy`, then `forge gpu --free`, which clears the withholding only when free VRAM reaches the card's idle floor |
 | `the line is silent: peak -120.0 dBFS`, exit 5, no record | MOSS-TTS 1.7B does not run under the host's transformers 5; the pack caught its own error and returned a silent tensor | nothing you can pass fixes it — `backends/moss_tts`'s notice names the pin that would. Say so; do not ship the file |
-| `the track is clipped: N consecutive samples pinned at full scale`, exit 5 | ACE-Step turbo normalises to peak on the host side | expected at this pin: `music` renders and does not promote. The fix is a stated gain knob in the graph (`AudioAdjustVolume` between `VAEDecodeAudio` and `SaveAudio`), never a file edited by hand |
+| `the track is clipped: N consecutive samples pinned at full scale`, exit 5 | ACE-Step turbo normalises to peak on the host side | the graph now carries the fix: node `14`, `AudioAdjustVolume`, between `VAEDecodeAudio` and `SaveAudio`, filled from `--gain-db` and recorded in `params.gain_db`. Render again a decibel or two lower. **Never** normalise the file by hand — the record would then describe a sound that is not the file |
+| `--gain-db -2.5 is not a whole number of decibels …` (exit 4) | the node's `volume` is an INT (`-100..100`, gain = 10 ** (volume / 20)) | state a whole number. It refuses rather than rounding because a rounded value would put a gain in the record that nothing was rendered at |
 | `clipped: N consecutive samples …`, exit 1 | the render overshot | re-render: another `--seed`, a lower `--cfg`; never normalise the file by hand — the record would then describe a sound that is not the file |
 | the tail ends at a wall in the plot | `--seconds`/`--duration` shorter than the decay | re-render longer |
 | `N ms of silence before the first sound` on a one-shot | the hit will feel late in a game | re-render with another seed; a re-prompt that names the attack ("sharp transient") helps |
@@ -295,9 +307,13 @@ only when the user asks.
   the **1.7B** — which is a different voice from the 4B the venv ran, and
   which does not run at all under the host's transformers 5. A voice
   re-cloned after that move does not match one cloned before it.
-- **`just speech` makes no line at this pin and `just music` makes none
-  that promotes.** Both are the host's, both are dated in
-  `designs/hosting.md`, and neither is fixed by re-prompting. `sfx` and
+- **`just speech` makes no line at this pin.** That is the host's, it is
+  dated in `designs/hosting.md`, and it is not fixed by re-prompting, by a
+  pack bump or by a shim. `just music` has its gain knob now
+  (`--gain-db`, default **−3**) — and that default is a **budget**: nobody
+  has yet rendered the busiest arrangement at −2, −3 and −4 and read
+  `peak_dbfs` off each. If a track still clips, that is the measurement
+  asking to be taken; say so and render a decibel lower. `sfx` and
   `voice` work.
 - `just audio` cannot tell a good sound from a bad one — only a broken one.
   What the generators now refuse for themselves is the same three checks,

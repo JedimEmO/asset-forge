@@ -98,6 +98,25 @@ DEFAULT_TIMESIGNATURE = "4"
 #: What the server is told when the track has no words.
 INSTRUMENTAL = "[instrumental]"
 
+#: The gain the graph's ``AudioAdjustVolume`` node applies before ``SaveAudio``,
+#: in whole decibels. **Budget.** ACE-Step 1.5 turbo normalises to peak — nine
+#: renders off this host on 2026-08-30 came back pinned at 0.0 dBFS with runs
+#: of 10 to 186 full-scale samples, every one of them refused by the clipping
+#: gate — so the fix is a stated knob in the graph and not a normalise applied
+#: to a shipped file. -3 is where a budget starts and not where a measurement
+#: ended: the number is pinned by rendering the busiest arrangement at -2, -3
+#: and -4, reading ``peak_dbfs`` off each, and keeping the one that lands at
+#: -2.0 +/- 0.5 dBFS. That render needs the card and has not been made; until
+#: it is, this is a budget and ``designs/hosting.md`` (ComfyUI) says so.
+DEFAULT_GAIN_DB = -3
+
+#: What the node takes. Its ``volume`` is ``IO.Int`` (default 1, min -100, max
+#: 100; gain = 10 ** (volume / 20)), read off ``comfy_extras/nodes_audio.py``
+#: in the installed host at pin 169fcf35 on 2026-08-30 — so a fractional gain
+#: is refused by name here rather than rounded into a record that would then
+#: claim a gain nothing was rendered at.
+GAIN_DB_MIN, GAIN_DB_MAX = -100, 100
+
 
 # ---------------------------------------------------------------- parser --
 
@@ -125,6 +144,7 @@ def add_parser(subparsers) -> None:
     # runs this model in.
     parser.add_argument("--thinking", action="store_true", default=True, help="let the text model plan the audio codes: structure (default)")
     parser.add_argument("--no-thinking", dest="thinking", action="store_false", help="sample straight from the tags and lyrics, with no plan")
+    parser.add_argument("--gain-db", default=None, metavar="DB", help=f"whole decibels applied in the graph before the save (default {DEFAULT_GAIN_DB}); the node takes an integer, and a fraction is refused rather than rounded")
     parser.add_argument("--format", choices=FORMATS, default=None, help="container (default: from --out's suffix)")
     # Kept only to be refused by name. Removing it outright would leave
     # argparse saying "unrecognized arguments: --stop-server", which names
@@ -158,6 +178,36 @@ def read_lyrics(path: str | os.PathLike | None) -> str:
     return text if text.strip() else INSTRUMENTAL
 
 
+def check_gain_db(value) -> int:
+    """The gain the graph will apply, as a whole number of decibels.
+
+    The node's input is ``IO.Int``. A caller who types ``--gain-db -2.5``
+    means something the graph cannot do, and rounding it would write a
+    record claiming a gain nothing was rendered at — so it is a refusal
+    naming the node and the number it would have become.
+    """
+    if value is None or value == "":
+        return DEFAULT_GAIN_DB
+    if isinstance(value, bool):
+        raise InputRejected(f"--gain-db {value!r} is not a number of decibels")
+    text = str(value).strip()
+    try:
+        number = float(text)
+    except ValueError:
+        raise InputRejected(f"--gain-db {text!r} is not a number of decibels") from None
+    if number != int(number):
+        raise InputRejected(
+            f"--gain-db {text} is not a whole number of decibels. The graph's AudioAdjustVolume "
+            f"node takes an integer volume ({GAIN_DB_MIN}..{GAIN_DB_MAX}, gain = 10 ** (volume / 20)), "
+            f"so {text} would be rounded to {int(round(number))} and the record would claim a gain "
+            "nothing was rendered at. State a whole number."
+        )
+    number = int(number)
+    if not GAIN_DB_MIN <= number <= GAIN_DB_MAX:
+        raise InputRejected(f"--gain-db {number} is outside the node's {GAIN_DB_MIN}..{GAIN_DB_MAX}")
+    return number
+
+
 def check_inputs(args) -> dict:
     """Everything the request needs, refused before the host is touched.
 
@@ -189,6 +239,7 @@ def check_inputs(args) -> dict:
         raise InputRejected(f"--timesignature {timesignature!r} is not one of {', '.join(TIMESIGNATURES)}")
     fmt = resolve_format(args.out, args.format)
     return {
+        "gain_db": check_gain_db(getattr(args, "gain_db", None)),
         "prompt": prompt,
         "lyrics": read_lyrics(args.lyrics_file),
         "lyrics_file": str(Path(args.lyrics_file).resolve()) if args.lyrics_file else None,
@@ -231,6 +282,7 @@ def template_inputs(request: dict, *, seed: int, prefix: str) -> dict:
         "keyscale": request.get("keyscale") or DEFAULT_KEYSCALE,
         "timesignature": request.get("timesignature") or DEFAULT_TIMESIGNATURE,
         "generate_audio_codes": bool(request["thinking"]),
+        "gain_db": int(request["gain_db"]),
         "filename_prefix": prefix,
     }
 
@@ -292,6 +344,7 @@ def build_record(
         "genres": _text_or_none(metas.get("genres")),
         "lyrics": lyrics,
         "thinking": bool(request.get("thinking")),
+        "gain_db": _int_or_none(request.get("gain_db")),
         "format": request["format"],
         # What was asked for; what came out is under measured.
         "duration_s": float(request["duration_s"]),
@@ -419,7 +472,7 @@ def run(args) -> dict:
     graph = comfy.patch(graph, inputs, where)
     save_node = comfy.patch_points(graph, where)["filename_prefix"][0]
 
-    _say(f"{request['duration_s']:g} s at {inputs['bpm']} bpm in {inputs['keyscale']}, seed {seed}")
+    _say(f"{request['duration_s']:g} s at {inputs['bpm']} bpm in {inputs['keyscale']}, seed {seed}, gain {inputs['gain_db']:+d} dB")
     prompt_id = comfy.submit(base, graph, comfy.client_id())
     _say(f"prompt {prompt_id} on {base}")
     entry = comfy.wait_for(base, prompt_id, timeout=float(args.timeout), poll=POLL_S, on_progress=_progress)

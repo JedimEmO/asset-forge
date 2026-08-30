@@ -1,17 +1,37 @@
 ---
 name: forge-character
-description: Ship a rigged character from a reference PNG — judge the image, TRELLIS.2 lift, look at the raw mesh from seven angles, headless-Blender auto-rig to the humanoid profile, promote through the export gate and rig check, verify in the studio. Use when the user wants a playable or enemy character generated from a reference image, wants one regenerated (another seed, a different stature, fixed facing), or reports a mesh defect such as a hollow head or an orbiting shoulder plate.
+description: Ship a rigged character from a reference PNG — import and pre-check the image, TRELLIS.2 lift, look at the raw mesh from seven angles, prepare it for the skinner, skin it and fit the skeleton to this body's own bone lengths, promote through the export gate and rig check, verify in the studio. Use when the user wants a playable or enemy character generated from a reference image, wants one regenerated (another seed, a different stature, fixed facing), or reports a mesh defect such as a hollow head, a sliver arm or an orbiting shoulder plate.
 ---
 
-# Character: PNG → lift → look → rig → promote
+# Character: PNG → import → lift → look → prepare → skin → promote
 
-Five `just` recipes in a fixed order with one look between each. Everything
+Six `just` recipes in a fixed order with one look between each. Everything
 after the PNG is reproducible from the records beside it; the PNG itself is
-an input — brought, not made — and claims only its sha256 and a ledger row.
-Every name below is checked against `just --list` and `forge --help`; if a
-recipe here is missing there, this file is wrong, not the justfile. Every
-log line quoted was captured on a real run (2026-08-23, `torv_warden`, a
-T-posed warden at the character preset, RTX 4090, Blender 5.2).
+an input — brought, not made — and claims its sha256, a `.ref.json` record
+and a ledger row. Every name below is checked against `just --list` and
+`forge --help`; if a recipe here is missing there, this file is wrong, not
+the justfile.
+
+**What changed on 2026-08-30, if you knew the old shape.** `just rig-mesh` is
+gone and `just promote-mesh` dies by name. The rig step split in two —
+`just prepare` (normalise, insert the skeleton, no weights) then `just skin`
+(SkinTokens' weights, and the skeleton **fitted to what those weights say
+this body's bones are**) — and the door is `just promote-body`. Bone lengths
+are now a per-body fact the sidecar records; names, hierarchy and rest
+*rotations* stay frozen, so every clip in the library still binds by name
+with nothing rebaked. The reach gate is deleted: it measured a body's span
+against wrists the fit now moves to it. `designs/skin.md` is the design and
+`designs/decisions.md` is the ledger.
+
+**Which lines here were captured and which were read off a door.** The lift
+lines (step 2) and the export/promote lines (step 6) are from a real run
+(2026-08-23, `torv_warden`, RTX 4090, Blender 5.2), with the recipe name
+updated. The `ref-import` numbers and refusals in step 1 were captured
+2026-08-30 by running the shipped gates over every reference PNG in this
+repository. The `prepare` and `skin` lines are quoted from the doors and from
+the spike evidence they were made out of (`out/spike_fit/`,
+`out/fit_warlock/`) — say so if you paste one at a user, and replace them
+with a captured line the first time you run the real thing.
 
 From a project made by `forge init` (not the toolkit checkout) the same
 recipes run as `just --justfile <toolkit>/justfile --working-directory .
@@ -22,342 +42,392 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 
 | Check | Command | Healthy |
 |---|---|---|
-| The PNG is at `assets-src/refs/characters/<name>.png`, `<name>` is `[a-z0-9_]+` | `ls assets-src/refs/characters/` | file present, name legal |
-| The name is free | `just catalog --kind body` | `<name>` absent from the `name` column (taken → `--overwrite` at step 4, only if replacing is the intent) |
-| Backends and tools | `just doctor` | `trellis2   ok`, `blender    ok`, `rig       humanoid v1: 55 bones (27 driven by cskel27), 5 socket(s), rigs/humanoid — glb sha ok, blend sha ok, no drift`. Doctor exits 1 while *any* backend is not `ok` (on this machine `moss_tts   partial`) — that does not block a lift; `trellis2` and `blender` do. |
+| The name is free | `just catalog --kind body` | `<name>` absent from the `name` column (taken → `--overwrite` at step 6, only if replacing is the intent) |
+| Backends and tools | `just doctor` | `trellis2 ok`, `skintokens ok`, `blender ok`, `rig humanoid v1: 55 bones (27 driven by cskel27), 5 socket(s), rigs/humanoid — glb sha ok, blend sha ok, no drift`. Doctor exits 1 while any *chosen* backend is not `ok`; a kind the project did not choose reads `off` and is not a reason to stop. |
 | nvdiffrast | same table | `warn notice: nvdiffrast is non-commercial: …` is expected and stays. A commercial project must decide before lifting; the lift record will name it. |
-| The GPU is free | `just gpu` | `holding   nobody` and `largest   trellis2 needs 22 GB (22528 MiB): fits`. Seen `does NOT fit — stop what holds the card before a generate` (exit 1): the `holding   pid N … GB  <process>` line names the holder. The ComfyUI host holding the last model: `forge gpu --free`, or `systemctl --user stop forge-comfy`. A studio window: close it. Anything else: by PID, never `pkill -f`. Never start a lift while another generate runs. |
+| The GPU is free | `just gpu` | `holding nobody` and the largest budget fitting. Never start a generate while another runs, and never while a studio window holds the card. The ComfyUI host holding the last model: `forge gpu --free`, or `systemctl --user stop forge-comfy`. Anything else: by PID, never `pkill -f`. |
 | The project's style doc, if it has one | `designs/style-guide-template.md` is the template | it decides proportions and the look; the PNG has to already be in that register — the pipeline does not restyle |
 
-Blender is `$BLENDER_BIN` or `blender` on PATH (doctor prints which);
-TRELLIS.2 runs in `backends/trellis2/.env` and needs the DINOv3 gate
-accepted (`doctor` says `hf auth login --token` when it is not).
+`ref-import` runs the keyer under the **trellis2** backend's interpreter (it
+is `mesh.py`'s keyer, and that env holds its Pillow, numpy and OpenCV), so a
+machine without that backend gets exit 3 in ~100 ms naming it.
 
-## Step 0 — judge the PNG before any GPU time
+## Step 0 — the format, and judging the PNG before any GPU time
 
 **The reference is brought, not made here.** No image model ships in this
 toolkit — one was measured on 2026-08-30 and set aside, because a picture a
 person draws in the tool they already have beats two minutes of the whole
-card and a fit gate that cannot see limb volume (`designs/decisions.md`,
-"The reference image stays brought"). Draw it, or have the user draw it, and
-bring it in through `import_reference` / `forge ref import` (Phase 3; until
-that door lands, copy the PNG in and write its `SOURCES.md` row by hand as
-below). The sample library's references were made in **Grok**, and
-`SOURCES.md` says so.
+card (`designs/decisions.md`, "The reference image stays brought"). The
+sample library's references were made in **Grok**, and `SOURCES.md` says so.
 
-`Read` the PNG (the Read tool shows images). The gates downstream measure
-geometry, not intent: the image has to *be* a T-pose, not describe one. A
-lift is minutes of a 22 GB card; a look is free.
+This is the format the door holds a picture to, and the door is where the
+text lives — regenerate this block with `just ref-format markdown`, never
+edit it:
+
+<!-- GENERATED by `just ref-format markdown` from python/forge_gen/reference.py's
+     FORMAT. The format text has one home; do not edit this block, regenerate it. -->
+> A reference is one PNG, 1024 px or more on its long side, of one subject on
+> a flat, uniform background: no floor, no shadow, no gradient, nothing behind
+> it. The subject fills about nine tenths of the height, and is exactly as
+> tall as it is wide: head-to-toe equals fingertip-to-fingertip.
+>
+> CHARACTER: the front view, facing the camera, in a strict T-pose — arms
+> straight out and horizontal, palms down, legs slightly apart, feet flat —
+> holding nothing, with no hair, cloth or gear crossing the silhouette of the
+> arms or legs. "Chunky" is volume, never proportion: a large head, big hands
+> and boots, limbs as wide as the neck, a baked key with occlusion painted
+> into the pits. A picture that passes every gate here can still lift to a
+> sliver, because no picture can be measured for volume — the sliver check is
+> on the prepared mesh, at `forge gen prepare`.
+>
+> PROP: a three-quarter view that shows the top and one side, the whole object
+> inside the frame, resting the way it will rest in the game.
+>
+> The importer keys the background to alpha, hashes the file, writes the
+> SOURCES.md row from the source you state, and runs the silhouette
+> pre-checks the fit gate would otherwise fail after a lift.
+>
+> Amended 2026-08-30: the format used to say "at seven heads or more, because
+> the fit gate measures reach against wrist span and arm height against the
+> wrists". Phase 2 fitted the skeleton to the body and deleted that gate, so
+> proportion is no longer a rule. The door refuses below three heads and notes
+> anything under seven; the four-head witch the old gate refused five times is
+> the body Phase 2 exists to ship.
+
+`Read` the PNG (the Read tool shows images) before you import it. The gates
+measure geometry, not intent: the image has to *be* a T-pose, not describe
+one. A lift is minutes of a 22 GB card; a look is free.
 
 | Seen | Consequence downstream | Fix (in the image — the pipeline never compensates) |
 |---|---|---|
-| Arms more than ~10° off horizontal, or bent | `rig: fit — … arm tips at z A vs wrist z W` fails on height → `not a T-pose` | both arms straight out at shoulder height, palms down |
-| Two forearms, a hanging gauntlet, a second limb on one side | fit fails on span, or the rig binds a third limb | one arm per side, shoulder to fist in one line |
-| Squat or wide: arm span visibly longer than height | reach > 1.45 (the first squat take measured 1.52) | taller, about six head heights, longer legs and torso, shoulders higher, so span ≈ height |
-| A crown, tall hood or headdress adding ~10 % height | the body scales down under it; shoulders land below the skeleton's; fit fails on arm *height* | not an image fix — `--stature 2.0` at step 3, then the span check still has to pass |
-| Gradient background, vignette, ground shadow | the keyer flood-fills from the border: a gradient keys as body (`the image border is not a flat background`) and a shadow lifts as a puddle under the feet | plain flat light background, no shadow |
+| Arms more than ~10° off horizontal, or bent | `prepare` refuses on arm height against **this body's own shoulder line** | both arms straight out at shoulder height, palms down |
+| Two forearms, a hanging gauntlet, a second limb on one side | the skinner weights a third limb and the fit reads it as an arm run | one arm per side, shoulder to fist in one line |
+| Thin wedges, spikes, thin straps, posterised shading, 25-pixel shins | `prepare` refuses on the **sliver** check — a limb thinner than the bone it hangs on animates as a sliver, and one measured 0.20 of its run and stretched to 2.8 m | thick shapes; tube limbs; oversized hands and boots; a baked key with occlusion painted into the pits — TRELLIS lifts volume out of shading |
+| Gradient background, vignette | `ref-import` refuses: the keyer's border vote is not flat | plain flat light background |
+| Ground shadow under the feet | `ref-import` refuses by name — it keys as a detached island above the dust threshold and rides a foot bone | no shadow, no floor |
 | Cropped at the feet or hands, a weapon, a cape, text | missing geometry, or an un-riggable shell stuck to the body | whole body in frame; weapons are props on sockets, not part of the body |
-| Side or three-quarter view | the rest pose faces the rig's front; a turned body fails fit or rigs twisted | front view |
-| Thin wedges, spikes, thin straps | TRELLIS reads thin shapes as cones or drops them | thick shapes; tube limbs; oversized hands and boots read best |
-| Subject tiny or filling the frame | `alpha keying kept N% of the image as subject` outside 5–95 % is refused | subject roughly a third to two thirds of the frame |
+| Side or three-quarter view | the rest pose faces the rig's front; a turned body rigs twisted | front view |
+| A crown, tall hood or headdress | fine now, and noted: the door counts a hat as head, so a pointed hat reads as fewer heads | nothing — the fitted skeleton is what made this legal |
 
-Legal but loud: oversized fists past the wrist joint are a register (the
-reach ceiling of 1.45 makes room); a mohawk or pauldron taller than the head
-is fine; asymmetry (one big cybernetic arm) is fine as long as it is still
-one arm.
+Legal but loud: **four heads is legal.** The four-head witch that the old
+reach gate refused five times is the body Phase 2 exists to ship, and she
+reads 3.37 heads through this door with a note and no refusal. A mohawk or
+pauldron taller than the head is fine; asymmetry (one big cybernetic arm) is
+fine as long as it is still one arm.
 
-Two files ride with the PNG:
+Optional: `assets-src/refs/characters/<name>.txt` — its first paragraph
+becomes the *lift* record's `prompt` (what the image was made with).
 
-- `assets-src/SOURCES.md` — add the row now, in the table under
-  `| File | Origin | For | Date |`. The first cell must contain the file
-  name. A PNG without a row fails `just verify`:
-  `FAIL <name>.png   assets-src/refs/characters/<name>.png has no row in SOURCES.md — a reference image claims a ledger row, or it cannot be accounted for`.
-  Origin is where it came from and on what terms — the licence answer lives
-  here and nowhere else.
-- `assets-src/refs/characters/<name>.txt` (optional) — its first paragraph
-  becomes the lift record's `prompt` (what the image was made with); `--prompt TEXT`
-  on the lift overrides, `--source TEXT` says where the image came from.
+## Step 1 — import: `just ref-import <drawn.png> <name> character "<source>"`
 
-## Step 1 — lift: `just character <name> [flags]`
+Runs `forge gen ref-import <png> --name <name> --kind character --source "…"`.
+It is the one way a PNG gets under `assets-src/refs/`, and it writes all
+three of the files that account for it: the PNG, `<name>.ref.json`, and the
+`SOURCES.md` row. **Write none of them by hand.** `--source` is required and
+is your words about where the picture came from — the licence answer lives in
+that cell and nowhere else. `--overwrite` replaces a reference and echoes the
+record it replaced.
+
+**The stored PNG is the file you drew, byte for byte** — not the keyed image.
+`mesh.py` keys again at lift time, so a keyed PNG in the source tree would be
+a derived artefact whose hash and ledger row describe something nobody drew.
+
+Everything below happens before a GPU minute. Captured 2026-08-30 on this
+repository's own references:
+
+| Log line | Healthy | Not |
+|---|---|---|
+| `mesh: keyed background, subject covers 19%` | the keyer voted a backdrop off the border and flooded it away | `the image border is not a flat background (median RGB (20, 20, 20), 90th-percentile spread 170 > 24) — cannot key alpha. Regenerate the reference with a plain flat backdrop.` → a gradient or a dark scene backdrop; redraw flat |
+| `1024x1024, subject 0.1859, span/height 0.983, heads 6.53, fill 0.797, islands 1` | this is `ember_knight_v3.png`. Subject 0.10–0.85, span 0.7–1.3, one island | any of them outside → a refusal below |
+| `note: 3.37 heads (crown to the arm line; a hat counts) — under the format's seven. That is allowed since the skeleton fits the body: judge it on the strip, not here.` | a **note**, not a refusal, from `moss_witch_v5.png` | below 3.0 refuses: there is no torso between the head and the shoulders for a skeleton to sit in |
+| `record assets-src/refs/characters/<name>.ref.json` / `ledger assets-src/SOURCES.md` | the two files the door wrote beside the PNG | — |
+
+The four refusals, in the order they fire, each quoted from a real picture in
+this repository:
+
+1. **floor band** — a drawn ground plane spanning the bottom of the frame.
+   It lifts as a slab welded to the boots.
+2. **contact shadow** —
+   `courier_v2_7.png: a detached island under the ankle is 3.6% of the subject's height and 3.2x the stance wide (572x34 px) — that is a contact shadow. It keys as an island above the dust threshold and rides a foot bone through the whole pipeline. Redraw with no shadow under the subject.`
+3. **flood-through hole** — the border flood matched something inside the
+   silhouette and ate it. Redraw with the backdrop further from the subject's
+   own colours.
+4. **retained alpha** — the key kept under 10 % or over 85 % of the frame.
+   Reframe the drawing; do not loosen the keyer.
+
+Then the geometry pre-checks. The one that fires most:
+`ember_knight.png: the subject is 1.321 as wide as it is tall, outside 0.7-1.3. Head-to-toe equals fingertip-to-fingertip: the fit scales a bone's length to this body, it cannot rotate an arm. Redraw with the arms straight out and horizontal.`
+— that is `ember_knight` v1, and `ember_knight_v3` at 0.983 is the redraw
+that fixed it.
+
+**What this door does not check: volume.** A picture that passes every gate
+here can still lift to a sliver, because only a mesh can be measured for
+thickness. That check is step 4.
+
+## Step 2 — lift: `just character <name> [flags]`
 
 Runs `forge gen mesh assets-src/refs/characters/<name>.png --preset character
 --out out/lifts/<name>.glb --record assets-src/refs/characters/<name>.lift.json`.
 The preset is the body register — **1024³ voxels, 25 000 vertices, 1024²
 texture, seed 42** — and it is the register, not a starting point: a
 1 500-vertex body melted gauntlets into cones and fused pauldrons into the
-torso, and the same reference at 25 000 brought the face back. Judge the
-register before blaming the image.
+torso, and the same reference at 25 000 brought the face back.
 
 Flags land after the preset: `--seed N`, `--verts N`, `--resolution 512`,
 `--texture 512`, `--source TEXT`, `--prompt TEXT`, `--created-by human|agent:<name>`.
 **Pass `--created-by`**: the record's default is `unknown`. 1536³ is refused
 (does not fit 24 GB).
 
-Read the log in order:
-
 | Log line | Healthy | Not |
 |---|---|---|
-| `mesh: keyed background, subject covers 24%` | 5–95 % (a T-pose on a square canvas is 20–30 %) | refused before the GPU: `the image border is not a flat background (median RGB …, 90th-percentile spread N > 24) — cannot key alpha` or `alpha keying kept N% of the image as subject …` → step 0, background |
-| `mesh: loading microsoft/TRELLIS.2-4B` | once, ~seconds from cache | minutes = weights downloading (doctor said `partial`); a DINOv3 401 = gate not accepted |
-| `mesh: running 1024_cascade seed 42 (attn flash_attn)` | `1024_cascade` is the preset's pipeline (`--resolution 512` prints `512`); `flash_attn` or `sdpa` both fine | an OOM here = the card was not free (`just gpu` first) |
+| `mesh: keyed background, subject covers 24%` | the same keyer step 1 already ran; it agrees by construction | — |
+| `mesh: loading microsoft/TRELLIS.2-4B` | once, ~seconds from cache | minutes = weights downloading; a DINOv3 401 = gate not accepted |
+| `mesh: running 1024_cascade seed 42 (attn flash_attn)` | `1024_cascade` is the preset's pipeline; `flash_attn` or `sdpa` both fine | an OOM here = the card was not free (`just gpu` first) |
 | `mesh: baking — decimating to 25000 vertices, 1024² texture, remesh` | the preset's numbers; `remesh` always | — |
-| `mesh: inner wrote …/out/lifts/torv_warden.glb — 20194 verts, 23818 tris` | tris near 2× the *mesh* vertices that survived decimation (a body at 25 000 comes back ~24k tris); the verts printed are **after** the UV unwrap split the seams, so they sit close to the tri count, not half of it | tris far under ~20k = the surface came back open or in pieces; look at it, then another seed |
-| `torv_warden.glb is self-contained — 2804 KiB, 1 node(s), 1 mesh(es), 2 embedded image(s), 0 skin(s); asset.generator = https://github.com/mikedh/trimesh; mesh names = geometry_0` | the file check; `2` images is the base colour plus the PBR map the rig step drops | a failure here is TRELLIS's export, not yours |
-| `record   …/assets-src/refs/characters/<name>.lift.json` / `output   …/out/lifts/<name>.glb` / `elapsed  86.9 s` | the summary `forge gen` prints; **about 90 s** at 1024³ / 25 000 on a 4090 with the weights cached | exit 3 `missing_backend` with the install line as hint; exit 4 `input_rejected`; exit 5 `backend_failed` with a log tail |
-
-Between `loading` and `inner wrote` the backend's own progress bars
-(`xatlas: Building output meshes …`) fill the log; nothing in them is
-yours to read.
+| `mesh: inner wrote …/out/lifts/torv_warden.glb — 20194 verts, 23818 tris` | tris near 2× the mesh vertices that survived decimation | tris far under ~20k = the surface came back open or in pieces; look at it, then another seed |
+| `torv_warden.glb is self-contained — 2804 KiB, 1 node(s), 1 mesh(es), 2 embedded image(s), 0 skin(s)` | the file check | a failure here is TRELLIS's export, not yours |
+| `record …` / `output …` / `elapsed 86.9 s` | **about 90 s** at 1024³ / 25 000 on a 4090 with the weights cached | exit 3 `missing_backend`; exit 4 `input_rejected`; exit 5 `backend_failed` with a log tail |
 
 The record beside the PNG carries the image sha256, the model and commit,
-every knob, the output sha256 and `texture_baker: "nvdiffrast (NVIDIA
-Source Code License, non-commercial)"`. Keep that field; it is a licence
-fact. **The last run's record is the committed one** — when sweeping
-seeds, finish on the seed you keep.
+every knob, the output sha256 and `texture_baker: "nvdiffrast (NVIDIA Source
+Code License, non-commercial)"`. Keep that field; it is a licence fact.
+**The last run's record is the committed one** — when sweeping seeds, finish
+on the seed you keep.
 
 Seed sweep: `just character <name> --seed 7`, then `--seed 1234`. Seeds
-differ in whether the rear of a skull closes, whether a strut survives,
-whether a back panel is clean. Seed 42 once lifted a front view into a
-mask that every downstream gate accepted; 7 and 1234 closed it.
+differ in whether the rear of a skull closes, whether a strut survives.
 
-## Step 2 — look: `just views out/lifts/<name>.glb`, then `Read out/views/<name>.png`
+## Step 3 — look: `just views out/lifts/<name>.glb`, then `Read out/views/<name>.png`
 
-Prints a stderr `note: under out/, so culling is off — a face's inside
-showing means the surface is missing`, then `7 cells, 384x512 each`,
-`adapter: NVIDIA GeForce RTX 4090`, `bounds:  1.00 x 0.93 x 0.25 m, lowest y
--0.465`, and `views: …/out/views/<name>.png (1542x1052)`, around Bevy's own
-`INFO` chatter. A raw lift is still in TRELLIS's unit cube, so the bounds
-and the header's `1.00 X 0.93 X 0.25 M` are not metres yet (the span is the
-1.00: a T-pose is wider than it is tall).
+Prints `note: under out/, so culling is off — a face's inside showing means
+the surface is missing`, then `7 cells, 384x512 each`, `bounds: 1.00 x 0.93 x
+0.25 m, lowest y -0.465`, and `views: …/out/views/<name>.png (1542x1052)`. A
+raw lift is still in TRELLIS's unit cube, so those bounds are not metres yet.
 
 The sheet: header `<NAME>.GLB  7 VIEWS  CULL OFF  W X H X D M`; top row
 `FRONT` `BACK` `LEFT` `RIGHT`; bottom row `HEAD FRONT` `HEAD BACK`
-`HEAD BACK TOP` (the last cell is empty).
+`HEAD BACK TOP`.
 
-**Orientation, as this build renders it.** `FRONT` is the file's +Z side
-— the contract's front. The profile's rest pose faces **+Z** (toes at
-z = +0.16), and a lift of a front-view reference comes out facing +Z — so
-a correctly facing lift shows its **face in `FRONT` and `HEAD FRONT`**
-and its back in `BACK`; `HEAD BACK` is the rear of the skull, `HEAD BACK
-TOP` the rear of the skull and the crown from above; `LEFT`/`RIGHT` are
-the subject's own left (+X) and right (−X). The shipped sample
-`vex_runner` renders exactly this way. If the face is in `BACK`, the lift
-faces the wrong way: rig it with `--yaw-deg 180`.
+**Orientation.** `FRONT` is the file's +Z side — the contract's front. The
+profile's rest pose faces **+Z**, and a lift of a front-view reference comes
+out facing +Z, so a correctly facing lift shows its **face in `FRONT` and
+`HEAD FRONT`**. If the face is in `BACK`, prepare it with `--yaw-deg 180`.
 
 Judge, in this order:
 
 - **Rear skull closed?** In `HEAD BACK` and `HEAD BACK TOP` you must see
-  scalp, hair or a helmet — not the inside of the face. With culling off a
-  missing rear surface shows as the face's inside: dark, the features
-  inverted like a mask seen from behind, the skull's outline reading as a
-  rim rather than a dome.
-  `LEFT`/`RIGHT` confirm the head has depth. Hollow → step 1 with another
-  seed, look again. The fix is never a patch in Blender.
-- **T-pose intact after the lift** — arms straight, nothing fused to the
-  torso, one hand per side.
-- **Nothing that is not the character** — a puddle under the feet (a ground
-  shadow lifted), a floating speck the size of a hand (dust the rig step
-  drops if it is under 2.5 cm; bigger than that, it ships).
-- **The register held** — gauntlets have fingers or a mitt, not a cone;
-  pauldrons are separate from the torso.
+  scalp, hair or a helmet — not the inside of the face. Hollow → step 2 with
+  another seed, look again. The fix is never a patch in Blender.
+- **T-pose intact** — arms straight, nothing fused to the torso.
+- **Limb thickness** — this is the sheet where a sliver is visible before the
+  gate names it. Limbs as wide as the neck, hands and boots oversized.
+- **Nothing that is not the character** — a floating speck (dust that
+  `prepare` drops if under 2.5 cm; bigger than that, it ships).
 
-Read every tile; one front view underdetermines a shape, which is why
-there are seven.
+Read every tile; one front view underdetermines a shape.
 
-## Step 3 — rig: `just rig-mesh <name> [--stature 1.80] [--yaw-deg 180] [--budget 60000]`
+## Step 4 — prepare: `just prepare <name> [--stature 1.80] [--yaw-deg 180] [--budget 60000]`
 
-Runs `forge gen rig out/lifts/<name>.glb --out assets-src/blender/<name>.blend
---record assets-src/blender/<name>.rig.json --name <name>` in headless
-Blender: opens the profile's `rig.blend` (the armature *is* the contract
-source), imports the lift as one `Body`, normalizes (yaw, stature, feet at
-Z = 0, centred on the hips), gates the pose, cleans, binds with bone heat,
-rescues what bone heat left weightless, mattes, packs the texture, saves.
-Add `--created-by` here too; `--prompt TEXT` records the reference's prompt
-as an input.
+Runs `forge gen prepare out/lifts/<name>.glb --out out/prepare/<name>.glb
+--record out/prepare/<name>.prepare.json --name <name>` in headless Blender:
+normalises (yaw, stature, feet at y = 0, centred on the hips), drops dust,
+mattes, inserts the profile's skeleton — and **binds nothing**. The skinner
+wants a bare mesh, and the door refuses one that arrives with a vertex group.
 
-- `--stature` is the height the top of the mesh is fitted to (profile
-  default 1.80 m; rig check accepts 1.4–2.2). A crown or hood that is a
-  tenth of the figure scales the body down under it and drops the shoulders
-  below the skeleton's — fit then fails on arm *height*. A taller stature
-  buys that back only while the span check still passes. **When the two
-  checks pull against each other** (2.0 fails on span, 1.85 on height) the
-  reference's proportions are wrong — the "taller, six heads, shoulders
-  higher" edit — and the stature then comes down.
-- `--budget` is the triangle ceiling before a decimate kicks in; 60 000
-  keeps a 25k-vertex lift intact. Lower it only to cap a lift that came
-  back heavier; never raise it by reflex.
+Two gates, both about the picture and never about the weights:
 
-The whole step is seconds (`elapsed  3.2 s` on a 23k-tri body), not
-minutes. The first line is Blender's `Read blend: "…"` naming the
-**project's** profile directory, `assets-src/rigs/humanoid/rig.blend` —
-at the toolkit root the project's profile *is* `rigs/humanoid`, so the
-two paths are the same directory there (see known limits); then glTF's
-`INFO: glTF import finished`, then the `rig:` lines. Captured on `torv_warden`; the
-dust, decimate and bone-heat lines did not fire on that body and are
-quoted from `python/forge_gen/blender/rig.py`, the refusals likewise:
-
-| Log line | Healthy | Not |
+| Gate | Number | What a refusal means |
 |---|---|---|
-| `rig: fit — reach 1.35 of wrist span (wrist x 0.719 m, mesh half-span 0.969 m), arm tips at z 1.407 vs wrist z 1.480 m` | reach `0.80 ≤ R ≤ 1.45` and `abs(tips − wrist) ≤ 0.15`; 1.35 is a body with oversized fists past the wrist joint, and the gate makes room for exactly that | exit 4: `forge: input_rejected: not a T-pose: the mesh spans 1.52x the skeleton's wrist reach (the gate is 0.80–1.45) — arms are not straight out to the sides …` or `… the widest geometry sits at z 1.20 m but the wrists rest at 1.40 m (more than 0.15 m apart) — arms are not horizontal. The rest pose is frozen, so fix the reference image (arms straight out, horizontal) and regenerate the mesh — do not bend weights around it.` → step 0, then 1–3 again. Never the weights, never the thresholds. |
-| `rig: dropped N dust island(s) of [sizes] face(s), each under 2.5 cm across` | **absent** when nothing was dust (the record then says `dust_islands_dropped: 0`); a few islands, each tiny (single digits to low tens of faces) | hundreds of faces in the list = a real part was dropped; it was under 2.5 cm across *after* scaling to stature, so the lift is in pieces — look at the raw sheet, then another seed or more verts |
-| `rig: decimated T -> A tris for the 60000 budget` | absent for a 25k lift | present = the lift came back heavier than the register; fine if the sheet still reads |
-| `rig: bone heat lost N of T verts — weighting a voxel-remeshed proxy` then `rig: proxy has P verts, Q weightless after bone heat` | **absent**: the pair prints only when the first bind left more than 20 % of the mesh weightless and the proxy had to be tried | the proxy is the last rung: exit 5 `forge: backend_failed: even the voxel-remeshed proxy left N of T vertices weightless (more than 20%) — the surface is broken; regenerate the mesh (another seed, or a higher decimation target at the lift)` → step 1 |
-| `rig: 793 vert(s) in detached shells re-weighted from the surface they sit on, overriding bone heat` | any count: a plated body has dozens of shells and ~2k verts in them, a cloth body a handful, this warden 793 in 11. Each island under 2 % of the mesh — a lamp, a buckle, a plate — rides the surface it sits on as one rigid piece, nearest-first, so a lamp on a pad borrows from the pad and not the thumb. | — (a large count on a plated body is the asset's shape, not a defect) |
-| `rig: rescued 793 weightless vert(s) from the nearest weighted vertex — 0 sliver(s) smoothed, 11 detached shell(s) kept rigid` | the same count as the line above; well under a fifth of the mesh | — |
-| `Info: 16105 vertex weights limited` / `Info: Saved as "torv_warden.blend"` | Blender's own: the four-influence cap, then the save | — |
-| `rig: packed N image(s)` | **absent** on a lift: a glb's images arrive packed and the line prints only when something had to be packed; the export gate is what refuses a missing or unpacked image | — |
-| `rig: 11669 verts, 23597 tris, 793 vert(s) rescued from the nearest weighted vertex, saved …/assets-src/blender/torv_warden.blend` then `rig: next — forge-gen export …/assets-src/blender/torv_warden.blend --out <glb> --record <json>` | present; tris under the budget; the verts are Blender's (seams merged: 20 194 in the lift → 11 669 here) | — |
-| `record   …/assets-src/blender/<name>.rig.json` / `output   …/assets-src/blender/<name>.blend` / `elapsed  3.2 s` | the summary | — |
+| arm height | `[fit] arm_height_tolerance_m = 0.15` — a **budget** | the arm tips are not level with **this body's own shoulder line** (the median height of vertices past 0.55 of the half-span). It refuses a *pose*, and says nothing about stature. The four-head witch is **not** this refusal: against her own shoulders she is inside 3.4 cm |
+| sliver, arms | `[fit] limb_radius_min_fraction = 0.22` — **measured** | an arm run's median cross-section is under 0.22 of its own length. Measured: the body that walked with a 2.8 m arm read 0.200–0.214, `vex_runner`'s thinnest arm reads 0.245, `courier_v2` 0.505–0.674 |
+| sliver, legs | none — measured and printed only | `vex_runner`'s thighs read 0.149 and the sliver's 0.296. The number does not separate, because a T-pose isolates an arm and does not isolate a leg. It is in the record and it is not a gate |
 
-Finger leaves collect little or no weight on a mitt-resolution mesh. That
-is the register, not a defect: the contract wants every bone present and
-every vertex weighted to *some* bone, not every bone deforming.
+The sliver refusal, as the door states it:
 
-## Step 4 — promote: `just promote-mesh <name> [--overwrite] [--created-by …] [--tag …] [--note …]`
+```
+prepare: courier_qwen's left upper arm measures 0.20 of its run across
+  (5.9 cm through a 29.5 cm bone), under [fit] limb_radius_min_fraction
+  0.22; the right reads 0.21. A limb thinner than the bone it hangs on
+  animates as a sliver. This is the reference, not the lift: a posterized
+  picture with 25-pixel shins gives TRELLIS.2 no shading to lift volume
+  from. Redraw with the guide's volume sentences — a large head, big hands
+  and boots, limbs as wide as the neck, a baked key with occlusion painted
+  into the pits — or re-lift at another seed and look at the seven views.
+```
 
-Three commands in the order the gates have to run, about two seconds in
-all; any `FAIL` or non-zero exit is a stop (the one `WARN` below is not —
-the recipe carries on, and you read the result as partial).
+`--stature` is the height the top of the mesh is fitted to (profile default
+1.80 m; rig check accepts 1.4–2.2). Since the skeleton now fits the body, a
+tall hat no longer forces stature up to buy back arm height — the hat is
+counted as head and the shoulders land where they are. `--budget` is the
+triangle ceiling before a decimate; 60 000 keeps a 25k-vertex lift intact.
+
+The record is `out/prepare/<name>.prepare.json`, and `skin` hashes *this*
+glb, so the chain `lift → prepare → skin` is by hash.
+
+## Step 5 — skin: `just skin <name>`
+
+Runs `forge gen skin out/prepare/<name>.glb --out assets-src/blender/<name>.blend
+--record assets-src/blender/<name>.rig.json --name <name>`. **Needs the card**
+(SkinTokens is 3.3–4.4 GB and runs twice); `just gpu` first. `just body <name>`
+runs step 4 and step 5 together.
+
+Five steps, one door, no options about the number of passes:
+
+1. skin the prepared glb with SkinTokens;
+2. **fit** — read those weights as a picture of where each joint is: the
+   weight-product centroid of every transition band, projected onto the
+   contract's frozen direction, measured per *landmark run* rather than per
+   bone, because no skinner draws a line between a collarbone and a shoulder.
+   The root and the shoulder line come from **geometry**, not from the
+   weights: the weights know a limb's end and not a body's centre (they put
+   `vex_runner`'s root six centimetres high);
+3. re-prepare on the fitted skeleton;
+4. re-skin;
+5. re-attach.
+
+**One pass, and that is a measurement.** A second fit does not converge — it
+walks the torso downhill by 74 mm a time.
+
+| Gate | Number | Where it came from |
+|---|---|---|
+| ratio band | a run fitted outside `[0.4, 2.5]` | a bone at 0.02 of reference is a collapsed skeleton, not a short body |
+| support | a run resting on fewer than 8 effective vertices | the thinnest real support measured is 25.0 (`vex_runner`'s left thigh) |
+| symmetry, arms | raw L/R gap over `[fit] asymmetry_arms = 0.35` | **measured worst 28.7 %** on the drow warlock's forearm — a body that walks at 28.7 % is why 0.25 was too tight |
+| symmetry, elsewhere | over `[fit] asymmetry_other = 0.20` | **measured worst 16.2 %**, the hip, on two bodies |
+| grounding, off-axis, `motion_scale` | warnings, not refusals | the three bodies measured 1.138 / 1.1675 / 1.2175 grounding and 0.978 / 1.016 / 1.06 scale |
+
+What to read in the record (`<name>.rig.json`, `params.fit`): `passes: 1`,
+`motion_scale`, `sources` (`limbs: weights`, `root/shoulder_line/ground:
+geometry`), the per-run table with `reference_length_m`, `ratio`, `support`
+and `off_axis_m`, `raw_asymmetry` and `symmetry_worst`. `seed` stays `null`:
+SkinTokens samples with no seed, two runs of the same input give different
+hashes, and **a rig claims integrity, never reproduction**. `null` means
+unknown, not zero.
+
+## Step 6 — promote: `just promote-body <name> [--overwrite] [--created-by …] [--tag …] [--note …]`
+
+(`just promote-mesh` prints "promote-mesh became promote-body when the
+skinner changed; the rig step is now prepare + skin" and exits 1.)
+
+Three commands in the order the gates have to run; any `FAIL` or non-zero
+exit is a stop.
 
 1. `forge gen export assets-src/blender/<name>.blend --out out/export/<name>.glb --record out/export/<name>.export.json`
    — the export gate. Every check runs before a byte is written and all
-   failures are listed together, in Blender's vocabulary: one armature named
-   `Armature`, every contract bone under its contract parent, rest pose
-   within 0.1 mm of the profile's `rig.blend`, extra bones only as leaves,
-   meshes skinned, untransformed, textured, every image packed. Healthy:
+   failures are listed together: one armature named `Armature`, every
+   contract bone under its contract parent, meshes skinned, untransformed,
+   textured, every image packed. **The rest-pose rule is the one that
+   changed.** Lengths are this body's, so the exporter checks the
+   **direction** of each local rest translation within
+   `[export] rest_direction_tolerance_deg = 1.0°` (the spike's whole fitted
+   skeleton drifted **0.0000°**), the length **ratio** inside 0.4–2.5, and a
+   zero-length segment under 1e-4 m. Rest **rotations** are unchanged at
+   `[bones] rest_rotation_tolerance` (measured drift 3.1e-6). The refusal:
+   ```
+   export: Head's rest translation points 2.3 deg off the contract's
+     (+0.000, +0.094, +0.011 against +0.000, +0.094, -0.009). Clips are baked
+     against rest ROTATIONS, and a rotated bone binds perfectly and animates
+     wrongly. Lengths are yours; directions are not.
+   ```
+   Healthy:
    ```
    export: 1 mesh object(s), 1 material(s)
    export: torv_warden.blend passed every pre-export check
    export: wrote …/out/export/torv_warden.glb
    export: torv_warden.glb is self-contained — 2555 KiB, 57 node(s), 1 mesh(es), 1 embedded image(s), 1 skin(s); asset.generator = Khronos glTF Blender I/O v5.2.39; mesh names = Body
-   record   …/out/export/torv_warden.export.json
-   output   …/out/export/torv_warden.glb
-   elapsed  1.7 s
    ```
-   (57 nodes = 55 bones + the armature + the body; `1 skin(s)`.) A refusal
-   leaves no half-right `.glb` behind. Flags you pass to `promote-mesh` do
-   **not** reach this step, so the export record says `created_by: unknown`
-   — known, and harmless: the body's sidecar carries who promoted.
-2. `forge rig check out/export/<name>.glb` — the hierarchy as the engine
-   will bind it. Expected, every line `ok:`:
-   ```
-   subject:   out/export/torv_warden.glb
-   profile:   humanoid v1
-   reference: clips/walk.glb
-   ok:   animation root is named Armature
-   ok:   armature transform is identity
-   ok:   Hips found at depth 2, directly under the animation root
-   ok:   all 55 contract bones present at contract depth
-   ok:   rest rotations match the contract
-   ok:   no unknown bones between Hips and the leaves
-   ok:   skin present, 19717 weighted vertices
-   ok:   height 1.80 m, within 1.4-2.2 m
-   ok:   feet at y=0.000 m
-   ok:   reference clip: 27 bone(s) driven, 31 at rest, 0 orphaned curve(s)
-   10 finding(s) passed, 0 failed, 0 note(s), 0 warning(s)
-   ```
-   `note: extra leaf bone X` is allowed and reported. **In a library with
-   no `walk` clip yet** (every fresh `forge init` project) the third line
-   is `reference: none in the library`, the last finding is `WARN: no
-   reference clip 'walk' in the library; walk binding not checked — promote
-   it, or bind this mesh in the studio to see what moves`, the tally is `9
-   finding(s) passed, 0 failed, 0 note(s), 1 warning(s)` and the exit is 0:
-   binding was *not* checked, the promote still runs, and step 5 proves
-   the binding once a clip exists (`forge-clip`, or promote the toolkit's
-   sample take as `walk`). A `FAIL:` here after a clean export gate is a
-   new bug, not a flag to add.
-3. `forge promote body out/export/<name>.glb <name> --blend … --lift-record
-   assets-src/refs/characters/<name>.lift.json --rig-record
-   assets-src/blender/<name>.rig.json --export-record
-   out/export/<name>.export.json` plus your flags. Prints
-   `ingested torv_warden.glb: 19717 verts, 23597 tris, 55 bones, 1.80 m tall; source
-   assets-src/blender/torv_warden.blend`, `manifest refreshed`, then
-   `-> bodies/torv_warden.glb (recorded, trellis2, created 2026-08-23 by agent:e2e)`
-   (the verts are the glTF's seam-split count, so they differ from the
-   `rig:` line's 11 669; `by human` unless you passed `--created-by`).
-   Refused with exit 2 when the name exists: `<name> already exists as
-   bodies/<name>.glb; pass overwrite to replace it` → `--overwrite`, only
-   when replacing is the intent; the replaced asset's tags survive unless
-   restated. Every record is checked for kind — a lift record handed to
-   `--rig-record` is refused, not filed. A `--note` or `--prompt` with
-   spaces does not survive the recipe's `*flags` (the shell re-splits it);
-   run this promote by hand for those.
+   (57 nodes = 55 bones + the armature + the body.) Flags you pass to
+   `promote-body` do **not** reach this step, so the export record says
+   `created_by: unknown` — known, and harmless.
+2. `forge rig check out/export/<name>.glb` — the hierarchy as the engine will
+   bind it. Every line `ok:`: the animation root named `Armature`, identity
+   transform, `Hips` at depth 2, all 55 contract bones at contract depth,
+   rest rotations matching, no unknown bones between `Hips` and the leaves,
+   skin present, height within 1.4–2.2 m, feet at y = 0, and the reference
+   clip driving 27 bones with 0 orphaned curves. **Two findings are new**,
+   and they exist because the old check passed the fitted witch 10 of 10
+   with joints 252 mm off the contract:
+   - `ok: rest translation directions match the contract (worst 0.03 deg, LeftHandIndex3)`
+     — and on failure `FAIL: LeftFoot's rest translation points 1.9 deg off
+     the contract — lengths are per body, directions are not`;
+   - the planted foot's **own lowest skinned vertex** within
+     `[bones] contact_foot_tolerance_m = 0.05` of y = 0 on the reference
+     clip's contact frames. Measured: the fitted witch −1.5…+3.0 cm, the
+     baseline −3.3…+0.8 cm. This is not the whole-clip minimum (which read
+     −0.103 m on the same body); they are different questions, and the
+     whole-clip `lowest_y` line stays a note.
 
-Writes `assets/bodies/<name>.glb` + `<name>.json` (schema 1 sidecar:
-integrity of the glb and the blend, the three records, `rig: humanoid`)
-and refreshes `assets/library.json`.
+   In a library with no `walk` clip the binding finding is a `WARN` and the
+   exit is 0: binding was *not* checked, the promote still runs, and step 7
+   proves it once a clip exists.
+3. `forge promote body out/export/<name>.glb <name> --blend … --lift-record …
+   --rig-record … --export-record …` plus your flags. Prints
+   `ingested torv_warden.glb: 19717 verts, 23597 tris, 55 bones, 1.80 m tall`,
+   `manifest refreshed`, then
+   `-> bodies/torv_warden.glb (recorded, trellis2, created 2026-08-23 by agent:e2e)`.
+   Refused with exit 2 when the name exists → `--overwrite`, only when
+   replacing is the intent. Every record is checked for kind. A `--note` with
+   spaces does not survive the recipe's `*flags`; run this promote by hand
+   for those.
 
-## Step 5 — verify
+Writes `assets/bodies/<name>.glb` + `<name>.json` and refreshes
+`assets/library.json`. **The sidecar is schema 2** and carries a `body` block:
+`motion_scale` (this body's `Hips` rest height over the contract's, four
+decimals — the number a consumer multiplies the root translation track by,
+and nothing else) and `bones[]`, 55 local rest translations in contract node
+order, metres, six decimals. `promote body` reads those from the **glb**,
+never from the rig record, so the sidecar's claim is re-derivable — and
+`forge verify` re-derives it and fails on a gap over 0.1 mm.
 
-- `just views <name>` — the shipped file by library name, culling **on**
-  (how an engine draws it): `bounds:  1.94 x 1.80 x 0.48 m, lowest y
-  -0.000` — metres now, 1.80 tall, feet on the floor. The skull check
-  again, post-cleanup; add `--cull-off` to see through again.
+## Step 7 — verify
+
+- `just views <name>` — the shipped file by library name, culling **on**:
+  `bounds: 1.94 x 1.80 x 0.48 m, lowest y -0.000` — metres now, feet on the
+  floor. The skull check again, post-cleanup.
 - `just check-mesh assets/bodies/<name>.glb --out out/sheets/<name>.png` —
-  the same findings, plus the body playing the reference walk. The report
-  must say `reference clip: 27 bone(s) driven`; `0 bone(s) driven` is a
-  bone-name mismatch and the body would stand in T-pose in the game. The
-  terminal also prints the sheet's summary (`8 cells, 384x512 each`,
-  `clip:    2.600s, 8 sampled`, `times:   0.00 0.37 …`, `bones:   27
-  driven, 31 at rest, 0 orphaned`, `sheet: out/sheets/<name>.png`).
-  `Read` the sheet: header `SUBJECT.GLB / REFERENCE.GLB  2.60S  27 BONES
-  DRIVEN` (the check stages copies under those names), eight
-  `THREE_QUARTER` cells labelled `#N T.TTS THREE_QUARTER` across the walk
-  — look for candy-wrapper elbows and knees, a shoulder plate that drifts
-  off the arm (a detached shell weighted to the wrong surface — step 1
-  with another seed, not a weight edit), feet through the floor, a rigid
-  cape. **With no `walk` in the library** the terminal says `rendered at
-  rest: no reference clip in the library to play` and the PNG is a
-  seven-view rest sheet (`SUBJECT.GLB  7 VIEWS  CULL ON …`) — the views
-  again, not the binding check; ship a `walk` first. `just sheet walk
-  --body <name> --views all --head-row` gives every band and the face row
-  (in a project whose `forge.toml` names no `[studio] stage_body` it says
-  `warning: no [studio] stage_body in forge.toml — posing on the first
-  body, <name>`). `forge-review` has the full reading order.
-- `just studio --model <name>` — for the user's eyes, orbitable, clips on
-  the transport. Their verdict outranks every sheet: "still hollow" means
-  still hollow; go back to the seed or the reference.
-- `just check-bodies` (`== assets/bodies/<name>.glb`, the findings, then
-  `1 body(ies) conform to the rig profile`), `just manifest-check`
-  (`1 checked, ok` / `assets/library.json matches a rebuild of the
-  library`), `just verify` (`N checked, ok`: the ledger row, hashes,
-  drift), `just audit`. Those are the project's gates; `just ci` is the
-  toolkit's own gate, run from the checkout — its dev recipes always act
-  on the checkout, never on your project.
+  the same findings plus the body playing the reference walk. The report must
+  say `reference clip: 27 bone(s) driven`; `0 bone(s) driven` is a bone-name
+  mismatch and the body would stand in T-pose in the game.
+- **Every clip on the new body, as a strip, judged by eye.** This is the
+  judge of the whole fitted-skeleton path, and numbers are not: look for
+  candy-wrapper elbows, a shoulder plate drifting off the arm, sleeves
+  bunched past the hands (the fit put the wrist bone past the wrist), feet
+  through the floor.
+- `just studio --model <name>` — for the user's eyes. Their verdict outranks
+  every sheet: "still hollow" means still hollow; go back to the seed or the
+  reference.
+- `just check-bodies`, `just manifest-check`, `just verify`, `just audit` —
+  the project's gates. `just ci` is the toolkit's own gate, run from the
+  checkout.
 
-## Step 6 — commit set (only when the user asks)
+## Step 8 — commit set (only when the user asks)
 
-`assets-src/refs/characters/<name>.png` + `<name>.lift.json` (+ `<name>.txt`
-if one exists); the `assets-src/SOURCES.md` row;
-`assets-src/blender/<name>.blend` + `<name>.rig.json`;
+`assets-src/refs/characters/<name>.png` + `<name>.ref.json` +
+`<name>.lift.json` (+ `<name>.txt` if one exists); the `assets-src/SOURCES.md`
+row the door wrote; `assets-src/blender/<name>.blend` + `<name>.rig.json`;
 `assets/bodies/<name>.glb` + `<name>.json`; `assets/library.json`.
-**Never** `*.blend1`, never `out/` (the lift, the export and the sheets are
-derived and gitignored), never the PNG without its row.
+**Never** `*.blend1`, never `out/` (the lift, the prepare, the export and the
+sheets are derived and gitignored), never the PNG without its row.
 
 ## Known limits (say them, don't fight them)
 
-- Face texel density: a full-body reference at 1024² gives a soft face.
-  A closer reference is a different character, not a fix.
-- Emissive, gloss, metal: the register strips everything but the base
-  colour and forces `metallic 0.0 / roughness 0.9`, double-sided. A visor
-  glow ships flat matte; an emissive channel is an offered follow-up.
-- One mesh wearing its clothes as paint. No wardrobe, no parts: an outfit
-  change is a new reference and a new lift. Equipment (a sword, a pistol)
-  is a prop on a socket (`forge-prop`) and needs nothing from the body.
+- **A reference that passes every gate can still lift to junk.** The import
+  door cannot measure volume; `prepare`'s sliver check is the first place
+  thickness is a number, and the strip on the real body is the last word.
+- Face texel density: a full-body reference at 1024² gives a soft face. A
+  closer reference is a different character, not a fix.
+- Emissive, gloss, metal: the register strips everything but the base colour
+  and forces `metallic 0.0 / roughness 0.9`, double-sided.
+- One mesh wearing its clothes as paint. An outfit change is a new reference
+  and a new lift. Equipment is a prop on a socket (`forge-prop`).
 - Finger bones carry ~no weight on a mitt mesh — per contract.
-- `forge views` labels `FRONT` as the file's +Z side — the profile's
-  front, so on a promoted body `FRONT` is the face and `LEFT`/`RIGHT` are
-  the subject's own. A raw lift is not yet normalized: its labels name
-  the file's axes, so read those tiles as described in step 2 and turn a
-  wrong-facing lift with `--yaw-deg 180` at step 3.
-- The texture bake is nvdiffrast, non-commercial, named in every lift
-  record; a replacement baker is a follow-up, not a flag.
+- A rig record's `seed` is `null` and always will be: SkinTokens samples with
+  no seed. A rig claims integrity, never reproduction.
 - Bodies claim integrity, not reproduction: Blender's glTF export is not
-  byte-stable, so `just rebake` skips them loudly and `just audit` holds
-  them to the hash that was approved (`note <name>   body skipped:
-  integrity-only, no recipe`, then `1/1 bodies conform to the contract`).
-- `forge gen rig` and `forge gen export` open the project's profile
+  byte-stable, so `just rebake` skips them loudly and `just audit` holds them
+  to the hash that was approved.
+- The texture bake is nvdiffrast, non-commercial, named in every lift record.
+- `forge gen prepare`, `skin` and `export` open the **project's** profile
   (`Read blend: "…/assets-src/rigs/humanoid/rig.blend"` is the first log
-  line; at the toolkit root that is `rigs/humanoid`) — the same profile
-  `forge rig check` holds the body to. `--profile DIR` or
+  line; at the toolkit root that is `rigs/humanoid`). `--profile DIR` or
   `$FORGE_RIG_PROFILE` override it.
