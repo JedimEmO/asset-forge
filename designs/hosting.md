@@ -654,14 +654,19 @@ own floors rather than an explicit pin. Not a change anyone would notice on an
 installed host; a fresh install is where it would show, and it has not been
 run since.
 
-**What the live host still carries, said out loud.** The `ComfyUI-GGUF` clone
-and its pips are still installed on this machine's unit, so the committed
-`backends/comfy/snapshot.json` — which is the Manager's own answer and is
-never hand-edited — still lists them. It was not uninstalled and the snapshot
-was not re-fetched: that needs `systemctl --user restart forge-comfy`, and the
-card is shared with whatever else is running. `probe.py` does not mind (a pack
-the description does not name is not a defect it looks for), and the next
-install on a host where the pack is gone will re-fetch the snapshot honestly.
+**What the live host still carried, and when it stopped.** The
+`ComfyUI-GGUF` clone stayed installed on this machine's unit for an hour
+after the group left, because the agent that removed the group would not
+restart a service it could not see the other users of; the committed
+snapshot listed it for that hour. At 17:10 the same day, with the card idle
+and no job in the daemon's table, the clone was removed, the unit restarted
+(`/system_stats` answered within a second, 697 classes, no `*GGUF*`
+loader), and `backends/comfy/snapshot.json` was re-fetched from
+`GET /v2/snapshot/get_current` — it now lists TTS-Audio-Suite alone, with
+the same ComfyUI commit and the same pips, which is the fact about pips
+above stated by the Manager itself: uninstalling a pack's clone leaves its
+pips in the venv. `probe.py` does not mind either way (a pack the
+description does not name is not a defect it looks for).
 `probe.py`'s wanted-node list, which used to be the eight loaders the
 reference templates named, is now derived from the packs `backend.toml`
 declares — the host asserts nothing about ComfyUI's native surface, because
