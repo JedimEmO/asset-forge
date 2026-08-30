@@ -631,6 +631,17 @@ impl Executor {
 /// one of them is chosen.
 pub const COMFY_BACKEND: &str = "comfy";
 
+/// The host program a mesh kind needs, added to the chosen set whenever
+/// props or characters is chosen.
+///
+/// Blender is not in [`MakeKind::backends`] because that map is about
+/// generators — what makes the thing — and Blender makes nothing. It is
+/// what *normalises* a prop and what prepares a body's geometry before the
+/// skinner, so a props-only project whose Blender is missing must not read
+/// green; it is added here, beside the comfy host, for the same reason and
+/// in the same way.
+pub const BLENDER_BACKEND: &str = "blender";
+
 /// One backend a kind can need: which executor runs it, what it costs on
 /// disk, and which licences it carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -654,7 +665,7 @@ pub struct BackendNeed {
 /// Every backend the six kinds can need, with its executor, its disk and
 /// its licences. The counterpart to [`MakeKind::backends`]: that says which
 /// backends a kind needs, this says what each backend costs and carries.
-pub const BACKEND_NEEDS: [BackendNeed; 8] = [
+pub const BACKEND_NEEDS: [BackendNeed; 9] = [
     BackendNeed {
         name: "trellis2",
         executor: Executor::Env,
@@ -704,6 +715,14 @@ pub const BACKEND_NEEDS: [BackendNeed; 8] = [
         executor: Executor::Comfy,
         disk_gb: 12.0,
         disk_note: "MOSS-TTS 4B ~8 GB + MOSS-VoiceGenerator ~4 GB — backends/README.md",
+        licences: &[],
+    },
+    BackendNeed {
+        name: BLENDER_BACKEND,
+        executor: Executor::Tool,
+        disk_gb: 0.0,
+        disk_note: "a host program: `$BLENDER_BIN` or `blender` on PATH, >= 4.2. \
+                    Nothing installs it here and nothing of it ships in an asset",
         licences: &[],
     },
     BackendNeed {
@@ -838,7 +857,8 @@ impl MakeKinds {
     }
 
     /// **The chosen backend set**: every backend the chosen kinds need, plus
-    /// [`COMFY_BACKEND`] when any of them is hosted by the `comfy` executor.
+    /// [`COMFY_BACKEND`] when any of them is hosted by the `comfy` executor
+    /// and [`BLENDER_BACKEND`] when a mesh kind is chosen.
     /// Sorted, deduplicated — this is what `forge gen doctor --chosen` is
     /// handed, and what decides which rows may vote on the exit code.
     #[must_use]
@@ -857,6 +877,12 @@ impl MakeKinds {
             && !names.contains(&COMFY_BACKEND)
         {
             names.push(COMFY_BACKEND);
+        }
+        // The two host rows follow what chose them: a mesh kind cannot be
+        // normalised or prepared without Blender, so a props-only project
+        // whose Blender is missing is not green.
+        if (self.props || self.characters) && !names.contains(&BLENDER_BACKEND) {
+            names.push(BLENDER_BACKEND);
         }
         names.sort_unstable();
         names
@@ -1644,7 +1670,14 @@ mod tests {
         assert_eq!(
             project.chosen_backends(),
             vec!["comfy", "moss_sfx", "moss_tts"],
-            "anything comfy adds the host"
+            "anything comfy adds the host, and no mesh kind adds no Blender"
+        );
+        assert!(
+            MakeKinds::parse_list("props")
+                .expect("parse")
+                .backends()
+                .contains(&BLENDER_BACKEND),
+            "a prop is normalised in Blender"
         );
         let text = std::fs::read_to_string(dir.path().join(PROJECT_FILE)).expect("read");
         assert!(text.contains("sfx        = true"), "{text}");
