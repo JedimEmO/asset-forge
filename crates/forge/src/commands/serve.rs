@@ -81,7 +81,7 @@ fn serve(project: &Project, args: &ServeArgs) -> Outcome {
 
     let queue = LocalQueue::open(
         project,
-        LocalQueueOptions::for_project(
+        LocalQueueOptions::for_daemon(
             project,
             std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge")),
         ),

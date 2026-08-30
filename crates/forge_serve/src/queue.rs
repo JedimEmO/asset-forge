@@ -77,8 +77,19 @@ pub struct LocalQueueOptions {
     /// says. `None` falls back to the host backend's own `[server]` block.
     pub comfy_url: Option<String>,
     /// Whether to run the worker at all. A test that only exercises
-    /// admission sets this to false.
+    /// admission sets this to false, and so does every read verb.
     pub run_worker: bool,
+    /// Whether to take rows a **previous** process left `queued` or
+    /// `blocked` onto this queue's FIFO.
+    ///
+    /// True for the daemon, which owns the state directory and will still
+    /// be there when they finish. False for an in-process queue, which
+    /// exists to run the one job its door was asked for: a `forge gen sfx`
+    /// that adopted another session's forgotten row ran a stranger's job on
+    /// the card first, unannounced, and then ran its own (2026-08-30). The
+    /// rows are left exactly as they are — `forge jobs` shows them, and the
+    /// next daemon picks them up in submitted order.
+    pub adopt: bool,
     /// What to spawn instead of the toolkit's `python/forge_gen`.
     ///
     /// The seam this crate's own tests put a stub generator through — one
@@ -96,6 +107,7 @@ impl Default for LocalQueueOptions {
             tier: String::from("full"),
             comfy_url: None,
             run_worker: true,
+            adopt: true,
             launcher: None,
         }
     }
@@ -118,7 +130,20 @@ impl LocalQueueOptions {
             forge,
             tier: project.tier().as_str().to_owned(),
             comfy_url: Some(project.hardware.comfy_url.clone()),
+            // An in-process queue runs the job its door was asked for and
+            // nothing else. See [`Self::adopt`].
+            adopt: false,
             ..Self::default()
+        }
+    }
+
+    /// The options **the daemon** opens its queue with: it owns the state
+    /// directory, so it takes what a previous run left.
+    #[must_use]
+    pub fn for_daemon(project: &Project, forge: PathBuf) -> Self {
+        Self {
+            adopt: true,
+            ..Self::for_project(project, forge)
         }
     }
 
@@ -187,7 +212,11 @@ impl LocalQueue {
         let store = JobStore::open(&project.root)?;
         let requeue = if options.run_worker {
             let _ = store.prune();
-            store.reconcile()?
+            let left = store.reconcile()?;
+            // Reconciling is honest bookkeeping — a row whose process is
+            // gone says so — but *running* what a previous process queued
+            // is a decision only the daemon may take.
+            if options.adopt { left } else { Vec::new() }
         } else {
             Vec::new()
         };

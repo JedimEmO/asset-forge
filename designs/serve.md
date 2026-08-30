@@ -224,11 +224,19 @@ across intact.
 
 On start the daemon reconciles every row:
 
-- `queued` and `blocked` → re-queued in `submitted` order. **They never
-  ran and derived nothing**; the one-way rule is about a file that exists,
-  and there is no half-written `.glb` here to repair.
+- `queued` and `blocked` → re-queued in `submitted` order, **by the daemon
+  and only by the daemon**. They never ran and derived nothing; the one-way
+  rule is about a file that exists, and there is no half-written `.glb`
+  here to repair. An *in-process* queue — `forge gen`, `forge mcp` with no
+  daemon up — reconciles but adopts nothing: it exists to run the one job
+  its door was asked for, and adopting turned a `forge gen sfx` into
+  another session's forgotten job running on the card first, unannounced.
+  Those rows are left as they are, `forge jobs` shows them, and the next
+  daemon takes them.
 - `running` → `interrupted`, `exit: null`, with a message naming the
-  restart. Not for an `env` child and not for a `comfy` one. A restarted
+  restart — **unless its pid is still alive**, in which case the row is
+  left `running` and the next card job blocks behind that pid by name. A
+  generator that is still rendering has not been interrupted. Not for an `env` child and not for a `comfy` one. A restarted
   daemon cannot `waitpid` on a process it did not fork and cannot read a
   pipe that died with its parent, so it can observe neither the exit code
   nor the last JSON line; and finishing a comfy row out of

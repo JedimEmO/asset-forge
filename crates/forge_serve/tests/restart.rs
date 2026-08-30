@@ -153,3 +153,73 @@ print(json.dumps({{"ok": True, "outputs": []}}))
     );
     queue.stop();
 }
+
+/// Only the daemon takes what a previous process left.
+///
+/// A `forge gen sfx` with no daemon up opens a queue of its own to run one
+/// job. It used to reconcile and adopt every `queued` and `blocked` row on
+/// disk first — a plain `forge jobs` had turned another session's `blocked`
+/// row back into `queued`, and the next generate ran a stranger's forgotten
+/// job on the card before its own, with nothing on stdout saying so
+/// (2026-08-30). The row is left exactly as it is; `forge jobs` shows it,
+/// and the next daemon picks it up in submitted order.
+#[test]
+fn an_in_process_queue_runs_its_own_job_and_adopts_nothing() {
+    let (dir, project) = common::project();
+    let store = JobStore::open(&project.root).expect("store");
+    write_row(
+        &store,
+        "j-20260830-141201-left",
+        JobState::Queued,
+        ExecutorKind::Env,
+        None,
+    );
+    let trace = dir.path().join("ran.txt");
+    let script = common::stub(
+        dir.path(),
+        "ran.py",
+        &format!(
+            r#"
+import json, os
+with open({trace:?}, "a") as f:
+    f.write(os.environ.get("FORGE_JOB_ID", "?") + "\n")
+print(json.dumps({{"ok": True, "outputs": []}}))
+"#,
+            trace = trace.display().to_string()
+        ),
+    );
+    let queue = forge_serve::LocalQueue::open(
+        &project,
+        forge_serve::LocalQueueOptions {
+            adopt: false,
+            ..common::options(Some(&script))
+        },
+    )
+    .expect("queue");
+    let mine = queue
+        .submit(JobSpec::new(
+            "generate_audio.sfx",
+            vec![String::from("sfx")],
+            "cli",
+        ))
+        .expect("admitted");
+    let mine = common::finished(queue.as_ref(), &mine.id, 30);
+    assert_eq!(mine.state, JobState::Done, "{:?}", mine.message);
+
+    let left = queue
+        .get(&JobId::from("j-20260830-141201-left"))
+        .expect("read")
+        .expect("still there");
+    assert_eq!(
+        left.state,
+        JobState::Queued,
+        "the row a previous process left is untouched, not run"
+    );
+    let ran = std::fs::read_to_string(&trace).unwrap_or_default();
+    assert_eq!(
+        ran.lines().collect::<Vec<_>>(),
+        vec![mine.id.as_str()],
+        "exactly one job ran, and it is this door's own"
+    );
+    queue.stop();
+}
