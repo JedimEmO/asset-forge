@@ -440,6 +440,21 @@ or leave it on and record on the first real run how long the compile takes
 and whether the inductor cache survives a restart. Either way it belongs in
 the unit file, because it is now a property of the host. 2026-08-30.
 
+**`install.sh --models` decides which weights come down, and `forge setup`
+never asks for the FLUX group.** The installer fetched all 73.67 GB every
+time, so `forge setup music` — one screen, 9.5 GB, one licence fact — pulled
+the whole image stack for a backend whose one file
+`backends/acestep/install.sh` fetches. The groups are `all` (the default a
+hand-run install means), `qwen_image` (33.60 GB fp8 + the 13.07 GB Q4_K_M
+GGUF), `flux` (22.72 GB, the Phase 0 spike's losing candidate) and `none`;
+`forge setup` names the group the chosen kinds need. The FLUX pose
+ControlNet keeps its `confirm_license` prompt and its `--no-flux-controlnet`
+flag, and `forge setup` always passes the flag: that licence is
+**non-commercial**, has no id in the toolkit's table, and was being accepted
+on the strength of a blanket `--yes` about nvdiffrast. An installer is now
+handed `--yes` only when this machine's receipt covers every id it prompts
+for. 2026-08-30.
+
 ### The first real run of the audio path, 2026-08-30
 
 Everything below was measured driving `forge serve` from both doors on this

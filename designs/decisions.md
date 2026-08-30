@@ -589,6 +589,70 @@ nine ACE-Step renders from that afternoon and passes every sound in the
 library, which is the pair of facts that says it is the same gate.
 2026-08-30.
 
+**One fact, one place, both doors — and a default is where a fact goes to
+die.** Five of the phase-1 audit's findings were one shape. The terminal
+door submitted every `forge gen sfx` with `backend: null` while the MCP
+door named `moss_sfx`, so a row said `executor: "env", need_gb: null` for a
+run whose own record said `comfy`, and neither the foreign-holder block nor
+the comfy free/restart/withhold ladder ever ran for it. Every door built
+its queue options with `..default()`, so `[hardware] tier` never arrived
+and a `--tier fake` project ran the *real* generator with `FORGE_FAKE`
+unset. The release ladder compared free VRAM against a number read seconds
+earlier — which an earlier job's leftovers are inside of — so 16.44 →
+16.38 GB was "the card is back" with 7.3 GB of MOSS resident. `forge
+setup`'s screen billed 9.5 GB in front of a 73.7 GB download because the
+figures were constants beside the files that state them. **Why they are one
+lesson:** in each case the fact existed, in one place, correctly — a map, a
+`forge.toml`, a card, a `backend.toml` — and the second reader had a
+default instead of a reference. A default is indistinguishable from an
+answer at the call site and it never gets a review comment, which is why
+these lived through the phase's own tests. The fixes are all the same
+shape: `backend_for_verb` read by both doors, `LocalQueueOptions::for_project`
+built by every door, a floor read from the card's own `vram_total`, and a
+test that holds the disk table to each `backend.toml`. **And the gate
+lesson underneath:** `ci-fake` and `mcp-session` both export `FORGE_FAKE=1`,
+so neither could ever see the tier default — a gate that sets the thing it
+is meant to prove cannot prove it, and `cli.rs` now has a leg that removes
+`FORGE_FAKE` from the environment on purpose. 2026-08-30.
+
+**A door that reads must not write, and a door that stops must not leave a
+child.** Two halves of the same carelessness about who owns the state
+directory. `forge jobs`, `forge job show|log` and `forge serve --status`
+opened a full queue: reconciliation rewrote rows, and a `blocked` row an
+ended MCP session had left came back as `queued` at the head of the FIFO,
+so the next `forge gen` in that project ran a stranger's forgotten job on
+the card first. And `stop` set a flag: the daemon exited with the generator
+alive in its own process group, dropping `card.lock` while the card was
+still held, and a later start stamped the row `interrupted` although
+nothing had interrupted it. So: read verbs open the store with no worker
+and reconcile nothing; only the daemon adopts rows a previous process left,
+because only it will be there when they finish; a stop cancels its child by
+recorded pid and waits for the terminal row before the process exits; and
+`reconcile` leaves a `running` row alone while its pid is alive, with
+`card_is_held` blocking the next card job behind that pid by name.
+**Why cancel rather than drain:** a `forge stop` that blocks for a
+four-minute render is a stop nobody believes, `^C` on a followed job has
+always meant "give the card back", and the row says `cancelled` with the
+note rather than a state nobody can act on. 2026-08-30.
+
+**A blanket `--yes` at the second door undoes the gate at the first.**
+`forge setup` refuses a bare `--yes` from a human — and then ran
+`bash backends/comfy/install.sh --yes`, whose `confirm_license` took it as
+consent to the Shakker-Labs FLUX.1-dev ControlNet under a **non-commercial**
+licence that is not one of the five ids, was never on the screen and landed
+in no receipt. The same call fetched 73.7 GB of image weights for a project
+that makes music. An installer is handed `--yes` only when this machine's
+receipt covers every id its own `confirm_license` asks about
+(`BackendNeed::installer_prompts`), the comfy host is told which model
+group the chosen kinds need (`--models qwen_image`, `--models none`), and
+`--no-flux-controlnet` is always passed. **Why the FLUX ControlNet did not
+become a sixth licence id:** an id in the table is shown on the screen of
+every project whose kinds touch the comfy host, so a music project would be
+asked to read a non-commercial notice for a model no kind in the map uses;
+declining it at the door is the smaller and truer statement, and the group
+stays fetchable by hand for the tracked template that is the losing side's
+evidence. 2026-08-30.
+
 **A server with no project is a session, not a refusal — and the tool that
 makes a project is inside it.** `forge mcp` in a directory with no
 `forge.toml` used to exit 2 before the handshake, with `forge init` as the
