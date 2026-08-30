@@ -34,9 +34,7 @@ use std::process::Command;
 
 use clap::Args;
 use forge_library::Project;
-use forge_library::project::{
-    BLENDER_BACKEND, Licence, MakeKind, MakeKinds, SetupPlan, licences,
-};
+use forge_library::project::{BLENDER_BACKEND, Licence, MakeKind, MakeKinds, SetupPlan, licences};
 use serde_json::Value;
 
 use crate::commands::generate;
@@ -106,7 +104,11 @@ pub(crate) fn run(project: &Project, args: &SetupArgs) -> Outcome {
         let ids: Vec<&str> = missing.iter().map(|licence| licence.id).collect();
         let answer = ask(&format!(
             "Accept {} ({})? [y/N]",
-            if ids.len() == 1 { "this licence" } else { "these licences" },
+            if ids.len() == 1 {
+                "this licence"
+            } else {
+                "these licences"
+            },
             ids.join(", ")
         ))?;
         if !matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes") {
@@ -169,7 +171,10 @@ pub(crate) fn run(project: &Project, args: &SetupArgs) -> Outcome {
         }
     }
     if failed.is_empty() {
-        println!("setup: every backend for {} is in place. `forge doctor` says what each one sees.", label(&plan.kinds));
+        println!(
+            "setup: every backend for {} is in place. `forge doctor` says what each one sees.",
+            label(&plan.kinds)
+        );
         return Ok(());
     }
     Err(Failure::failed(format!(
@@ -242,7 +247,10 @@ mod tests {
         let plan = SetupPlan::for_kinds(&[MakeKind::Props], Tier::Full);
         let missing = plan.missing_accepts(&licences::Receipt::default(), &[]);
         let refusal = SetupPlan::refusal(&missing);
-        assert!(refusal.starts_with("refused: nothing was installed."), "{refusal}");
+        assert!(
+            refusal.starts_with("refused: nothing was installed."),
+            "{refusal}"
+        );
         for id in ["nvdiffrast", "dinov3"] {
             assert!(refusal.contains(id), "{refusal}");
         }

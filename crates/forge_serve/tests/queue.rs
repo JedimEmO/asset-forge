@@ -145,9 +145,27 @@ sys.exit(4)
 /// A backend nobody installed cannot run, so the queue does not hold a job
 /// that cannot run: the row is refused with the table's own exit 3 before
 /// anything is spawned.
+///
+/// The project is pointed at an EMPTY backends directory rather than left to
+/// find the toolkit's own. Absence is a property of the machine, and this
+/// phase moved `moss_sfx` into the comfy executor — on a developer's box,
+/// where the `ComfyUI` unit is up, the old form of this test admitted the job
+/// and spent the card inside `just ci`. A gate never depends on what happens
+/// not to be installed.
 #[test]
 fn a_missing_backend_is_refused_with_exit_three_before_the_queue() {
-    let (_dir, project) = common::project();
+    let (dir, project) = common::project();
+    let empty = dir.path().join("no-backends-here");
+    std::fs::create_dir_all(&empty).expect("an empty backends directory");
+    let toml = project.root.join("forge.toml");
+    let text = std::fs::read_to_string(&toml).expect("forge.toml");
+    let pointed = text.replace(
+        "[backends]\n",
+        &format!("[backends]\ndir = \"{}\"\n", empty.display()),
+    );
+    assert_ne!(pointed, text, "the template still has a [backends] table");
+    std::fs::write(&toml, pointed).expect("point the project at it");
+    let project = forge_library::Project::load(&project.root).expect("reload");
     let queue = common::queue(&project, None);
     let job = queue
         .submit(JobSpec {

@@ -877,23 +877,33 @@ fn a_stale_daemon_json_falls_back_in_process() {
 
     // And with no daemon at all, a generate still runs in this process and
     // still leaves a row, so `forge jobs` and `list_runs` see it later.
-    let out = exits(
-        &project,
-        &[
+    //
+    // FORGE_FAKE=1, not a missing backend: `moss_sfx` runs in the comfy
+    // executor now, so on a developer's own machine — where the ComfyUI unit
+    // is up — an unqualified `forge gen sfx` here posted a real graph and
+    // spent the card inside `just ci`. A gate never touches a real
+    // generator. A fake job is an ordinary job (`designs/serve.md` §1.2): it
+    // takes the queue and the lease and writes its row like any other, which
+    // is the thing this leg is about.
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
             "gen",
             "sfx",
             "--prompt",
             "a door",
             "--out",
             "out/audio/sfx/door.wav",
-        ],
-        3,
-    );
-    assert!(
-        out.contains("moss_sfx")
-            || out.contains("missing_backend")
-            || out.contains("not installed"),
-        "with no backend the refusal is the Python table's exit 3: {out}"
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&project)
+        .output()
+        .expect("run forge");
+    assert_eq!(
+        code(&output),
+        0,
+        "--- stdout\n{}\n--- stderr\n{}",
+        stdout(&output),
+        stderr(&output)
     );
     let rows = ok(&project, &["jobs", "--json"]);
     assert!(

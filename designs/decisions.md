@@ -489,3 +489,65 @@ it out of the map entirely would have let a props-only project with no
 Blender read green, so it is added to the chosen set the way the comfy host
 is: by what chose it, not by being a generator. Same for `comfy` itself.
 2026-08-30.
+
+**The graph client is Python; the card protocol is Rust.** Loading a
+workflow, patching its knobs, POSTing it and fetching what came out is
+`python/forge_gen/comfy.py`; taking the card, reading free VRAM and calling
+`POST /free` is `forge_serve::card`. **Why:** `records.py` is the one writer
+that knows key order, sorted free-form maps, the atomic write and the
+None-means-unknown rule, and `python_records.rs` pins it and the Rust reader
+to the same bytes — a Rust graph client would be a third writer of one
+schema, and this ledger already records what three readers of one record
+format did to each other. With the graph in Python both executors are one
+mechanism (spawn `forge gen <verb>`, stream the log, hold the last JSON
+line), so `just sfx` with no daemon up runs the code the daemon runs;
+`run_fake` never imports the client, which is the only reason `ci-fake` is a
+control for the move rather than a second thing it can break; and the spike
+code had already run on the real host. The card half cannot be Python for
+the opposite reason: the lock must hold with no Python process alive —
+after a crash, before the first job, and inside `forge gpu`. 2026-08-30.
+
+**The card lock is a `flock(2)`, not a pid file.** `out/serve/card.lock` is
+taken exclusively by whichever door is up — the daemon's worker, or
+`commands/generate.rs` when there is no daemon — and `out/serve/card.json`
+beside it is only a projection for humans and for `forge gpu`, the same
+relation sidecars and the manifest already have. The reason is one sentence:
+**the kernel drops a flock when the holder dies, and that is the promise a
+pid file cannot make.** A SIGKILLed holder, an OOM kill or a closed laptop
+leaves a stale `card.json` and a free lock, so the next acquirer simply
+overwrites the sidecar; the pid-file version of this leaves a lock nobody
+holds and a stranger's pid that a later run will eventually signal — which
+is exactly the bug `music.py`'s resident server shipped with, and which went
+out with it. An in-process worker being singular is *not* the card lock: it
+holds nothing against a second terminal. 2026-08-30.
+
+**An interrupted job is never completed by inference.** When the daemon
+restarts, a `running` row becomes `interrupted` with `exit: null` and stays
+there — for an `env` child and a `comfy` one alike. A restarted daemon
+cannot `waitpid` on a process it did not fork and cannot read a pipe that
+died with its parent, so it can observe neither the exit code nor the last
+JSON line; and finishing a comfy row out of `GET /history/{prompt_id}` would
+drag `/view` fetching, `measure_wav` and a record write into Rust — the
+second record writer this whole design refuses. `null` means unknown,
+applied to a process. Whatever record the generator did manage to write is
+found by `list_runs`, which is the correct authority because it reads the
+file rather than remembering, and the fix is a re-run from the spec. Rows
+that were `queued` or `blocked` are re-queued in submitted order instead:
+they never ran and derived nothing, and the one-way rule is about a file
+that exists. 2026-08-30.
+
+**A gate that can reach a real generator is not a gate.** `just ci` ran a
+real ComfyUI graph on the card on 2026-08-30, from
+`crates/forge/tests/cli.rs::a_stale_daemon_json_falls_back_in_process`: the
+test asserted exit 3 for `forge gen sfx`, which was true while `moss_sfx`
+was a venv nobody had installed on a runner, and stopped being true the
+moment `moss_sfx` became a comfy backend — because the developer's own
+ComfyUI unit *is* up, so the door resolved, the graph was posted and the
+card was leased inside the gate. Nothing was harmed and the run happened to
+fail on a missing pip, which is how it was noticed at all. The lesson is
+that **a test must never rely on a backend being absent**: absence is a
+property of the machine, and this phase changed which machines have it.
+`FORGE_FAKE=1` is the way to exercise a generate in CI, and it costs
+nothing here — a fake job takes the queue and the lease and writes its row
+like any other (`serve.md` §1.2), which is exactly what that test is about.
+2026-08-30.

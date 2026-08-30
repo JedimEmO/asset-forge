@@ -292,7 +292,12 @@ impl ForgeServer {
         for licence in &plan.licences {
             let state = if receipt.has(licence.id) {
                 let row = receipt.row(licence.id).expect("just checked");
-                format!("already accepted by {} at {} ({})", row.by, row.at, row.via.as_str())
+                format!(
+                    "already accepted by {} at {} ({})",
+                    row.by,
+                    row.at,
+                    row.via.as_str()
+                )
             } else if licence.needs_accept {
                 String::from("NEEDS YOUR YES — pass this id in setup's accept")
             } else {
@@ -378,7 +383,11 @@ impl ForgeServer {
         if !missing.is_empty() {
             // The gate. A refusal, not a prompt: this call cannot succeed
             // until the ids are in it, and the ids are in the message.
-            return util::refuse(format!("{}\n\n{}", SetupPlan::refusal(&missing), plan.screen()));
+            return util::refuse(format!(
+                "{}\n\n{}",
+                SetupPlan::refusal(&missing),
+                plan.screen()
+            ));
         }
         let unknown: Vec<&String> = args
             .accept
@@ -458,12 +467,10 @@ impl ForgeServer {
              `forge setup {}{}{}`\nit skips every backend doctor already calls ok, so it is \
              safe to re-run; then call doctor.\n",
             label(&kinds).replace(", ", " "),
-            accepted
-                .iter()
-                .fold(String::new(), |mut line, id| {
-                    let _ = write!(line, " --yes {id}");
-                    line
-                }),
+            accepted.iter().fold(String::new(), |mut line, id| {
+                let _ = write!(line, " --yes {id}");
+                line
+            }),
             if args.no_models { " --no-models" } else { "" }
         );
         util::report(out)
@@ -505,11 +512,7 @@ impl ForgeServer {
 /// The two tables as they were written, so the answer shows the file rather
 /// than describing it.
 fn toml_tables(project: &Project) -> String {
-    format!(
-        "{}\n{}",
-        project.make.to_toml(),
-        project.hardware.to_toml()
-    )
+    format!("{}\n{}", project.make.to_toml(), project.hardware.to_toml())
 }
 
 /// Whether a Hugging Face token is stored or exported. The same rule
@@ -570,20 +573,24 @@ mod tests {
         // sfx carries a fact that is told, not asked, so it is not gated.
         let sfx = SetupPlan::for_kinds(&[MakeKind::Sfx], Tier::Fake);
         assert!(
-            sfx.missing_accepts(&licences::Receipt::default(), &[]).is_empty(),
+            sfx.missing_accepts(&licences::Receipt::default(), &[])
+                .is_empty(),
             "sfx must not be gated: its one licence fact needs no yes"
         );
         assert!(
-            sfx.licences.iter().any(|licence| licence.id == "comfyui_gpl"),
+            sfx.licences
+                .iter()
+                .any(|licence| licence.id == "comfyui_gpl"),
             "and it is still shown"
         );
 
         // Naming one id leaves the other named.
-        let missing = plan.missing_accepts(
-            &licences::Receipt::default(),
-            &[String::from("nvdiffrast")],
+        let missing =
+            plan.missing_accepts(&licences::Receipt::default(), &[String::from("nvdiffrast")]);
+        assert_eq!(
+            missing.iter().map(|l| l.id).collect::<Vec<_>>(),
+            vec!["dinov3"]
         );
-        assert_eq!(missing.iter().map(|l| l.id).collect::<Vec<_>>(), vec!["dinov3"]);
     }
 
     #[test]

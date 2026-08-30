@@ -41,10 +41,10 @@ generators, then the two the Phase 0 spikes stood up:
 |---|---|---|---|---|
 | `trellis2` | image → textured mesh | microsoft/TRELLIS.2 @ `75fbf018` | conda, python 3.11, CUDA 12.4 | `forge gen mesh` |
 | `ardy` | prompt → motion take | nv-tlabs/ardy @ `693f74d1` | venv, python 3.12 | `forge gen motion sweep\|keys` |
-| `acestep` | prompt → music | ACE-Step/ACE-Step-1.5 @ `82252c24` | **comfy executor** — native in the host, no env of its own | `forge gen music` |
-| `moss_sfx` | prompt → sound effect | OpenMOSS/MOSS-TTS @ `58b20a0d`, `moss_soundeffect_v2/` | **comfy executor** — TTS-Audio-Suite in the host | `forge gen sfx` |
-| `moss_tts` | text → speech; description → voice | OpenMOSS/MOSS-TTS @ `58b20a0d` | **comfy executor** — TTS-Audio-Suite in the host | `forge gen speech`, `forge gen voice` |
-| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `city96/ComfyUI-GGUF` @ `6ea2651e`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host; `backends/comfy/workflows/*.api.json` are what it is sent |
+| `acestep` | prompt → music | ACE-Step 1.5, native to the pinned ComfyUI | **none of its own** — runs on the `comfy` host | `forge gen music` |
+| `moss_sfx` | prompt → sound effect | MOSS-SoundEffect-v2.0 through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen sfx` |
+| `moss_tts` | text → speech; description → voice | MOSS-TTS-Local-Transformer (1.7B) and MOSS-VoiceGenerator through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen speech`, `forge gen voice` |
+| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ two node packs, `city96/ComfyUI-GGUF` @ `6ea2651e` and `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host; `backends/comfy/workflows/*.api.json` are what it is sent |
 | `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
 
 Doctor prints an eighth row, `blender`, between the two groups: it is
@@ -68,8 +68,10 @@ skintokens`; `clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice �
 moss_tts`; anything `comfy` adds the `comfy` host, and a mesh kind adds
 Blender.
 
-`moss_sfx` and `moss_tts` share one clone and keep two venvs: the
-sound-effect model pins a different torch. `moss_tts` hosts two models:
+`moss_sfx` and `moss_tts` share the ComfyUI host, not a clone: since the
+three MOSS models moved onto TTS-Audio-Suite neither has an environment,
+a torch pin or a checkout of its own, and their installers only check that
+the host has the pack at its pin. `moss_tts` hosts two models:
 MOSS-TTS clones a line from a 5–15 s reference clip, and MOSS-VoiceGenerator
 designs that clip from a description (`forge gen voice`) so a project never
 has to bring a voice it does not own. Nothing heavy lives in this tree. Envs and clones go under `$PREFIX` — `${FORGE_BACKENDS_HOME:-~/.cache/
@@ -154,9 +156,9 @@ lift record, and keep the Llama 3 notice in `ardy/backend.toml`.
 ## VRAM and co-residency
 
 One 24 GB card with a desktop resident (~0.8 GB). Approximate peaks; two
-rows never share the card. `just gpu` before any generate, stop the
-ACE-Step server before a lift, and stop or `POST /free` the ComfyUI unit
-before either. Doctor says who is holding the card
+rows never share the card. `just gpu` before any generate, and `forge gpu
+--free` or `systemctl --user stop forge-comfy` before a lift — the audio
+models are the host's now, and it is the host that holds them. Doctor says who is holding the card
 (`GPU busy: pid … 8.1 GB`); believe it. The measured figures and how they
 were sampled are in `designs/hosting.md` § GPU co-residency.
 
@@ -165,10 +167,10 @@ were sampled are in `designs/hosting.md` § GPU co-residency.
 | `trellis2` at 1024³ | **4.7 GB measured** (2026-08-30) — the ~22 GB this row carried for a week was a budget nobody had sampled | no |
 | `trellis2` at 512³ | **3.1 GB measured** (2026-08-30) | no |
 | `ardy` sweep | **15.4 GB measured** (2026-08-30; one model load covers a batch) | no |
-| `acestep` server | ~8 GB (budget, unmeasured) | **yes**, until `forge gen music --stop-server` |
-| `moss_tts` (Local-Transformer 4B) | ~12 GB (budget, unmeasured) | no |
+| ACE-Step 1.5 in the host | ~8 GB (budget, unmeasured) | held by the host until `POST /free` or the unit stops |
+| `moss_tts` (Local-Transformer 1.7B, in the host) | budget, unmeasured — the 4B figure was the venv's model, which the pack does not offer | held by the host until `POST /free` or the unit stops |
 | `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | ~12 GB measured at the peak of a 7 s audition — the generation loop, not the weights | no |
-| `moss_sfx` | ~6–8 GB (budget, unmeasured) | no |
+| `moss_sfx` (in the host) | ~6–8 GB (budget, unmeasured) | held by the host until `POST /free` or the unit stops |
 | `skintokens` skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
 | Qwen-Image fp8 + ControlNet at 1024², in `comfy` | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
 | Qwen-Image Q4_K_M GGUF + ControlNet, the lean form | **16.2 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
@@ -193,11 +195,21 @@ Each installer is idempotent (`set -euo pipefail`, sources
 1. `bash backends/ardy/install.sh` — venv, `transformers==5.8.1`,
    `numpy<2`; assembles the Llama-3 + LLM2Vec text encoder under `$PREFIX`
    (the Llama 3 notice prints; `--yes` accepts it without a TTY).
-2. `bash backends/moss_sfx/install.sh` and `bash backends/moss_tts/install.sh`
-   — one clone, two venvs; weights download on first run (~11 GB / ~8 GB,
-   plus ~4 GB for the voice designer).
-3. `bash backends/acestep/install.sh` — venv, the soundfile patch,
-   `ACESTEP_CHECKPOINTS_DIR` at the minimal ~7.5 GB model set.
+2. `bash backends/comfy/install.sh` — venv (python 3.12, torch cu130), the
+   pinned ComfyUI clone, **two** node packs (`ComfyUI-GGUF` for the lean
+   tier's Q4 reference, `TTS-Audio-Suite` for the three MOSS models), a
+   systemd `--user` unit on `127.0.0.1:8188`, ~74 GB of image weights and
+   ACE-Step's 10.03 GB checkpoint. It asks before fetching the FLUX pose
+   ControlNet, which is **non-commercial**; `--no-flux-controlnet`
+   declines, `--no-service` skips systemd. Every audio kind runs on this
+   host, so it comes before them.
+3. `bash backends/moss_sfx/install.sh`, `bash backends/moss_tts/install.sh`
+   and `bash backends/acestep/install.sh` — none of which install anything.
+   Each checks that the host is there, that its pack is at the pin this
+   backend names and that the node classes the tracked graph needs are
+   registered, and names the fix when one is not. The MOSS weights (~11 GB
+   for the effect model, ~4 GB for the voice designer) download into the
+   same HF cache every other backend fills, on the node's first run.
 4. `bash backends/trellis2/install.sh --yes` — conda (python 3.11, CUDA
    12.4.1 from the label channel, gcc 13), torch cu124, the CUDA extensions,
    and **nvdiffrast after the licence prompt**. DINOv3 is gated: accept on
@@ -206,11 +218,6 @@ Each installer is idempotent (`set -euo pipefail`, sources
 5. `bash backends/skintokens/install.sh` — venv (python 3.11, torch
    cu128), the two patches under `patches/` applied to the clone, ~1.6 GB
    of weights under `$PREFIX/weights`.
-6. `bash backends/comfy/install.sh` — venv (python 3.12, torch cu130), the
-   pinned ComfyUI clone, the ComfyUI-GGUF node pack, a systemd `--user`
-   unit on `127.0.0.1:8188`, and ~74 GB of image weights. It asks before
-   fetching the FLUX pose ControlNet, which is **non-commercial**;
-   `--no-flux-controlnet` declines, `--no-service` skips systemd.
 
 ### What doctor's words mean
 
@@ -257,12 +264,13 @@ bash backends/trellis2/install.sh --adopt-env ~/anaconda3/envs/trellis2 \
     --adopt-checkout ~/src/TRELLIS.2
 bash backends/ardy/install.sh --adopt-env ~/src/ardy/.venv --adopt-checkout ~/src/ardy \
     --adopt-text-encoders ~/src/text-encoders
-bash backends/acestep/install.sh --adopt-env ~/src/ACE-Step-1.5/.venv \
-    --adopt-checkout ~/src/ACE-Step-1.5 --adopt-checkpoints ~/src/ACE-Step-1.5/checkpoints
-bash backends/moss_tts/install.sh --adopt-env ~/src/MOSS-TTS/.venv --adopt-checkout ~/src/MOSS-TTS
-bash backends/moss_sfx/install.sh --adopt-env ~/src/MOSS-TTS/moss_soundeffect_v2/.venv \
-    --adopt-checkout ~/src/MOSS-TTS/moss_soundeffect_v2
+bash backends/comfy/install.sh --adopt-env ~/src/ComfyUI/.venv \
+    --adopt-checkout ~/src/ComfyUI
 ```
+
+There is nothing to adopt for `acestep`, `moss_sfx` or `moss_tts`: they have
+no env and no checkout of their own since the audio kinds moved onto the
+host. Adopt the host, and their installers will find the pack there.
 
 Adopting writes the `.env`/`.checkout` links and `installed.json`
 (`"adopted": true`), runs the probe, and installs nothing. A checkout at

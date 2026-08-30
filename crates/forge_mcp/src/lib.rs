@@ -285,16 +285,17 @@ mod tests {
     fn the_tool_surface_is_the_eighteen_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
-        // Fifteen of the eighteen are produced here; `init_project`,
-        // `licences` and `setup` arrive with tools/setup.rs. The list is
-        // asserted rather than counted so a rename shows up as a diff of
-        // names, which is what `just mcp-check` compares against.
-        let mine = [
+        // The list is asserted rather than counted so a rename shows up as a
+        // diff of names, which is what `just mcp-check` compares against and
+        // what `mcp_session.rs` asserts over both transports.
+        let eighteen = [
             "cancel",
             "doctor",
             "generate_audio",
             "generate_clips",
+            "init_project",
             "inspect_audio",
+            "licences",
             "list_audio",
             "list_clips",
             "list_models",
@@ -303,29 +304,13 @@ mod tests {
             "promote_clip",
             "render_clip_strip",
             "render_model",
+            "setup",
             "status",
             "wait",
         ];
-        let names = server.tool_names();
-        for name in mine {
-            assert!(names.contains(&String::from(name)), "{name} is missing");
-        }
-        let extra: Vec<&String> = names
-            .iter()
-            .filter(|name| !mine.contains(&name.as_str()))
-            .collect();
-        for name in &extra {
-            assert!(
-                matches!(name.as_str(), "init_project" | "licences" | "setup"),
-                "{name} is not one of the eighteen"
-            );
-        }
-        assert!(
-            !names
-                .iter()
-                .any(|n| n == "promote_mesh" || n == "promote_body" || n == "promote_model"),
-            "a mesh has no promote door here: {names:?}"
-        );
+        let mut names = server.tool_names();
+        names.sort();
+        assert_eq!(names, eighteen, "the surface drifted from mcp-check's pin");
     }
 
     #[test]

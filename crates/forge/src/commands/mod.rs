@@ -17,6 +17,7 @@ pub(crate) mod mcp;
 pub(crate) mod promote;
 pub(crate) mod rig;
 pub(crate) mod serve;
+pub(crate) mod setup;
 pub(crate) mod studio;
 
 /// One line of at most `width` characters, for a table cell.

@@ -225,6 +225,10 @@ def test_doctor_says_off_for_an_unchosen_kind_and_exits_zero(backends_tree):
 # ------------------------------------------------------------- comfy host --
 
 
+# A comfy backend, in `backend.toml`'s second form: no interpreter, no
+# `env_kind`, no checkout of its own. Saying `python` here is refused at
+# parse time by `backends.py` (designs/serve.md §4), which is why this
+# fixture cannot carry the env keys it used to.
 COMFY_TOML = """
 name = "tts"
 role = "speech"
@@ -232,10 +236,8 @@ upstream = "https://github.com/OpenMOSS/MOSS-TTS"
 commit = "58b20a0d35989d71cd17ff2895fdc735097b92d1"
 license = "Apache-2.0"
 executor = "comfy"
-env_kind = "none"
-python = "3.12"
+host = "comfy"
 entry = "speech"
-cwd = "none"
 resident = false
 
 [comfy]

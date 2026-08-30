@@ -21,12 +21,12 @@ From a project made by `forge init` the recipes run as `just --justfile
 - `just doctor` — the `ardy` row reads `ok`. `partial` names the weight or
   text encoder that is missing; `missing` is not installed → `forge-setup`.
   The other rows do not matter for a clip.
-- **The GPU is free.** `just gpu`. ARDY wants ~16 GB; the usual holder is
-  the ACE-Step server (`holding pid N 10.4 GB …/backends/acestep/.env/bin/python`),
-  which stays resident until `target/debug/forge gen music --stop-server`
-  (there is no bare `just music` form — the recipe needs a name and a
-  prompt). A studio window with a model loaded on the real adapter holds
-  the card too; close it first.
+- **The GPU is free.** `just gpu`. ARDY wants ~16 GB (15.4 GB measured);
+  the usual holder is the ComfyUI unit, which keeps whatever model the last
+  audio or image job loaded (`holding pid N … …/backends/comfy/.env/bin/python`).
+  Give the card back with `target/debug/forge gpu --free`, or stop the host
+  with `systemctl --user stop forge-comfy`. A studio window with a model
+  loaded on the real adapter holds the card too; close it first.
 - **A body on the stage.** `just catalog --kind body` lists what there is;
   `forge.toml [studio] stage_body` names the one `sheet`, `bones` and the
   studio pose on, else the first body, else the fixture mannequin

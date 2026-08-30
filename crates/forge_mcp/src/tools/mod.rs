@@ -21,6 +21,7 @@ mod jobs;
 mod list;
 mod promote;
 mod render;
+mod setup;
 
 /// Every tool the server offers.
 pub(crate) fn router() -> ToolRouter<ForgeServer> {
@@ -31,4 +32,5 @@ pub(crate) fn router() -> ToolRouter<ForgeServer> {
         + generate::router()
         + jobs::router()
         + promote::router()
+        + setup::router()
 }

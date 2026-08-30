@@ -161,6 +161,20 @@ pub(crate) fn resolve_sound(
         }
         return Ok(SoundTarget::File(absolute));
     }
+    // A path the caller was handed by `generate_audio` is relative to the
+    // PROJECT, and this process's working directory is wherever the server
+    // was launched — the toolkit checkout, for an editor's MCP client. So a
+    // relative path is tried against the project root too, or an agent is
+    // refused the very path the tool before it printed.
+    let from_project = project.root.join(wanted);
+    if !wanted.is_empty() && from_project.is_file() {
+        if let Some(rel) = project.rel_to_assets(&from_project)
+            && let Some(record) = sounds.resolve(&rel, None)
+        {
+            return Ok(in_library(record));
+        }
+        return Ok(SoundTarget::File(from_project));
+    }
     if let Some(record) = sounds.resolve(wanted, None) {
         return Ok(in_library(record));
     }

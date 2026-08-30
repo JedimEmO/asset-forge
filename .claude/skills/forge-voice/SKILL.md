@@ -27,8 +27,10 @@ Every command and log line below was captured on a real run (2026-08-23,
   moss_tts` does. `missing` → `forge-setup`.
 - **The GPU is free enough.** `just gpu`. The design peaks at ~12 GB (the
   generation loop, not the 1.7B's weights), the cloner at ~12 GB; neither
-  co-resides with a lift (22 GB) or a sweep (16 GB), and the ACE-Step server
-  holds ~8 GB until `--stop-server`. Never two generates at once.
+  co-resides with a sweep (15.4 GB measured) or the image model (23.3 GB).
+  Both run inside the ComfyUI host now, so what holds the card afterwards is
+  the host: `forge gpu --free`, or `systemctl --user stop forge-comfy`.
+  Never two generates at once.
 - A name: `[a-z0-9_]+`, the character's, because it becomes a directory and
   the `--voice` argument of every line.
 
@@ -153,7 +155,7 @@ generator block. The log lines, the plot and the refusals are in
 | `…/ref.wav exists — a designed voice is a source …` (exit 4) | refused | another name; `--overwrite` only to re-voice the character, then re-render its lines |
 | the audition is 4 s, or 17 s | the cloner warns or refuses (under 3 s, over 30 s) | another seed; a longer or shorter `--line` |
 | `tail 0 ms` and a wall in the plot | the line was cut mid-word | reroll |
-| CUDA out of memory | the card was held — the ACE-Step server, a studio window, a generate you forgot | `just gpu`; `--stop-server`; never two at once |
+| CUDA out of memory | the card was held — the ComfyUI host still holding the last model, a studio window, a generate you forgot | `just gpu`; `forge gpu --free` or `systemctl --user stop forge-comfy`; never two at once |
 | `Could not load libtorchcodec` on the *speech* step | the reference went to the processor as a path (torchaudio → torchcodec → ffmpeg collides with glib here) | it does not: the inner half reads the clip with soundfile and tokenizes it itself; seeing this means that code regressed |
 | `forge verify`: `… is not the clip its voice.json describes — a designed voice is never edited` | someone edited or replaced `ref.wav` by hand | re-design with `--overwrite` so the record and the clip agree |
 | the user says it does not sound like the character | the plot passed and the ear did not | the description or the seed; the knobs (`--temperature`, `--top-p`, `--top-k`, `--rep-penalty`) are the card's defaults and move prosody, not identity |

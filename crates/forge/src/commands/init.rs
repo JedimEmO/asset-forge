@@ -68,11 +68,7 @@ pub(crate) struct MakeFlags {
 /// Make a project at `root` (the `--project` directory, else the working
 /// directory).
 pub(crate) fn run(root: Option<&Path>, args: &InitArgs) -> Outcome {
-    // The flag table grows `--make`, `--tier`, `--comfy-url` and `--yes`
-    // beside the other init flags; until it does, the answers here are the
-    // detected ones and `init_project` over MCP is the door that states
-    // them.
-    run_with(root, args, &MakeFlags::default())
+    run_with(root, args, &args.make)
 }
 
 /// [`run`] with the three answers already in hand.

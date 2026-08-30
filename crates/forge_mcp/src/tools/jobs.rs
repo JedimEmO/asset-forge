@@ -347,6 +347,11 @@ impl ForgeServer {
             "hint": job.hint,
             "cached": job.cached,
             "same_as": job.same_as,
+            // Read from the record the generator wrote, never from the
+            // daemon's memory of what it launched: a placeholder an agent
+            // cannot tell from a sound is a promote nobody meant. `null`
+            // when there is no record to ask.
+            "fake": self.record_fake(job),
         });
         if job.cached {
             let same = job
@@ -378,6 +383,18 @@ impl ForgeServer {
             blocks.extend(self.audio_block(&sound).await);
         }
         CallToolResult::success(blocks)
+    }
+
+    /// Whether the record beside this job's output says it is a `--fake`
+    /// placeholder. The record is the authority — the daemon observes
+    /// nothing it did not run — and `None` (rendered `null`) is the honest
+    /// answer when there is no record to read.
+    fn record_fake(&self, job: &Job) -> Option<bool> {
+        let path = job.record.as_ref()?;
+        let absolute = self.config.project.root.join(path);
+        forge_library::GeneratorRecord::load(&absolute)
+            .ok()
+            .map(|record| record.fake)
     }
 
     /// The audio file a finished job wrote, when it wrote one.

@@ -80,6 +80,7 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Outcome {
     match &cli.command {
         Command::Init(args) => commands::init::run(cli.project.as_deref(), args),
+        Command::Setup(args) => commands::setup::run(&project(cli)?, args),
         Command::Catalog(args) => commands::catalog::run(&project(cli)?, args),
         Command::Manifest(args) => commands::manifest::run(&project(cli)?, args),
         Command::Verify => commands::checks::verify(&project(cli)?),

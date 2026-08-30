@@ -24,7 +24,7 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 | The name is free | `just catalog --kind model` | `<name>` absent from the `name` column |
 | Backends and tools | `just doctor` | `trellis2   ok`, `blender    ok` (doctor exits 1 while any backend is not `ok`; only those two matter here) |
 | nvdiffrast | same table | `warn notice: nvdiffrast is non-commercial: …` is expected; the lift record names it. Decide before lifting if the project is commercial. |
-| The GPU is free | `just gpu` | `holding   nobody` and `largest   trellis2 needs 22 GB (22528 MiB): fits`. `does NOT fit — stop what holds the card before a generate` (exit 1) names the holder on the `holding   pid N … GB` line: ACE-Step → `forge gen music --stop-server`; a studio window → close it; else by PID. One generate at a time. |
+| The GPU is free | `just gpu` | `holding   nobody` and `largest   trellis2 needs 22 GB (22528 MiB): fits`. `does NOT fit — stop what holds the card before a generate` (exit 1) names the holder on the `holding   pid N … GB` line: the ComfyUI host → `forge gpu --free` or `systemctl --user stop forge-comfy`; a studio window → close it; else by PID. One generate at a time. |
 | The project's style doc, if any | `designs/style-guide-template.md` is the template | the PNG is already in that register; nothing here restyles |
 
 ## Step 0 — judge the PNG before any GPU time

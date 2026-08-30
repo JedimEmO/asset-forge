@@ -38,6 +38,9 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Make a project here: forge.toml, the asset directories, the rig profile
     Init(InitArgs),
+    /// Install the backends the chosen kinds need, after one screen naming
+    /// every licence they carry and what they cost on disk
+    Setup(crate::commands::setup::SetupArgs),
     /// What the library holds, one line per asset
     Catalog(CatalogArgs),
     /// Project the library into assets/library.json, or check the committed one
@@ -365,6 +368,10 @@ pub(crate) struct InitArgs {
     /// `rigs/<rig>`.
     #[arg(long, value_name = "DIR")]
     pub(crate) rig_dir: Option<PathBuf>,
+    /// The three questions, as flags: `--make`, `--tier`, `--comfy-url`,
+    /// `--yes`. Their text lives beside the code that answers them.
+    #[command(flatten)]
+    pub(crate) make: crate::commands::init::MakeFlags,
 }
 
 /// `forge catalog`.

@@ -268,9 +268,20 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
     )
     .await;
     let job = job_id(&started);
+    // A generate returns a JOB, not a finished sound. The frame names where
+    // the file WILL be — `designs/serve.md` §7 prints `out` and `record` in
+    // it, and `next` is the literal call to make — but its state is not
+    // terminal and nothing has been measured yet.
     assert!(
-        !started.contains("out/audio/sfx/door.wav"),
-        "a generate returns a JOB, not the file: the file is what `wait` hands back:\n{started}"
+        matches!(
+            job_state(&started).as_str(),
+            "queued" | "blocked" | "running"
+        ),
+        "a generate must not block until the sound exists:\n{started}"
+    );
+    assert!(
+        started.contains("wait"),
+        "and it hands back the literal call to make next:\n{started}"
     );
 
     // -- wait on it -------------------------------------------------------
@@ -299,7 +310,7 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
     let plot = ok(
         client,
         "inspect_audio",
-        json!({ "file": "out/audio/sfx/door.wav" }),
+        json!({ "name_or_path": "out/audio/sfx/door.wav" }),
     )
     .await;
     assert!(plot.contains("door"), "{plot}");
@@ -348,15 +359,32 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
     );
 }
 
-/// The job id out of a frame, by the shape every job frame carries.
+/// The job id out of a frame, read the way an agent reads it: the frame is
+/// one JSON object and the id is under `job`, exactly as `designs/serve.md`
+/// §7 prints it. Reading the key rather than scanning for a word shape is
+/// the point — an agent that had to guess the shape of an id would be the
+/// bug this gate exists to catch.
 fn job_id(frame: &str) -> String {
-    let Some(word) = frame
-        .split_whitespace()
-        .find(|word| word.starts_with("job_"))
-    else {
-        panic!("no job id in the frame a generate returned:\n{frame}")
+    let object: serde_json::Value = serde_json::from_str(frame)
+        .unwrap_or_else(|err| panic!("a job frame is JSON ({err}):\n{frame}"));
+    let Some(id) = object.get("job").and_then(serde_json::Value::as_str) else {
+        panic!("no `job` key in the frame a generate returned:\n{frame}")
     };
-    word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
+    assert!(
+        id.starts_with("j-"),
+        "a job id is the daemon's own `j-<stamp>-<nonce>`:\n{frame}"
+    );
+    id.to_string()
+}
+
+/// The state a frame reports, for the legs that care whether a call blocked.
+fn job_state(frame: &str) -> String {
+    let object: serde_json::Value = serde_json::from_str(frame)
+        .unwrap_or_else(|err| panic!("a job frame is JSON ({err}):\n{frame}"));
+    object
+        .get("state")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("no `state` key in a job frame:\n{frame}"))
         .to_string()
 }
 

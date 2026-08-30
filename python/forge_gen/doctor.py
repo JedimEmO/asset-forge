@@ -26,6 +26,7 @@ torch itself.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -446,11 +447,33 @@ def executor_of(backend: Backend) -> str:
 
 
 def comfy_table(backend: Backend) -> dict:
-    """The backend's ``[comfy]`` table, from the parser (or, on a v1 parser, its ``extra``)."""
+    """The backend's ``[comfy]`` table as a plain dict, whatever shape it arrives in.
+
+    ``backends.py`` parses ``[comfy]`` into a typed :class:`ComfySpec` with
+    everything it does not name — ``base_directory``, ``snapshot``, the
+    legacy ``[[comfy.models]]`` rows — kept in its ``extra``. Reading only
+    ``isinstance(table, dict)`` would silently see **no** nodes, **no**
+    workflows and **no** weights, and every comfy row would read ``ok`` for
+    the reason that nothing was checked. So the spec is rendered back to the
+    table it was written as, and an unparsed dict (an older parser, a raw
+    read) still works.
+    """
     table = getattr(backend, "comfy", None)
     if table is None:
         table = backend.extra.get("comfy")
-    return table if isinstance(table, dict) else {}
+    if isinstance(table, dict):
+        return table
+    if table is None:
+        return {}
+    rendered = dict(getattr(table, "extra", {}) or {})
+    rendered["workflows"] = list(getattr(table, "workflows", []) or [])
+    rendered["nodes"] = list(getattr(table, "nodes", []) or [])
+    rendered["unload_node"] = getattr(table, "unload_node", None)
+    rendered["packs"] = [
+        pack if isinstance(pack, dict) else dataclasses.asdict(pack)
+        for pack in (getattr(table, "packs", []) or [])
+    ]
+    return rendered
 
 
 class ComfyView:

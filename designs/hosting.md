@@ -158,8 +158,20 @@ prop path as systematically broken, on evidence that included a success.
   below is why that flag exists. 2026-08.
 - **`ACESTEP_CHECKPOINTS_DIR`** points the server at the minimal model set
   (~7.5 GB); without it the server downloads into its own tree. 2026-08.
+- **This whole section is the retired path.** Since 2026-08-30 ACE-Step 1.5
+  runs natively inside the ComfyUI host (§ ComfyUI): one tracked graph, one
+  10.03 GB checkpoint under the host's `models/checkpoints`, no venv, no
+  patch, no pid file and no `--stop-server`. The three traps above are kept
+  because the venv is still on disk and still in git history until a real
+  track has come out of the new path — nothing is deleted on a promise.
+  2026-08-30.
 
 ## MOSS-TTS and MOSS-SoundEffect (`backends/moss_tts`, `backends/moss_sfx`, commit `58b20a0`)
+
+**The retired path, kept while the venvs are.** Since 2026-08-30 all three
+MOSS models reach the card through TTS-Audio-Suite inside the ComfyUI host
+(§ ComfyUI). The entries below describe the venvs, which are still on disk
+and still in git history until a real sound has come out of the new path.
 
 - **One clone, two venvs.** The sound-effect model lives in a subdirectory
   with its own requirements; sharing the venv pins the wrong torch for one
@@ -188,6 +200,24 @@ prop path as systematically broken, on evidence that included a success.
   (a cold 4 GB safetensors); warm loads are ~20 s. The same seed gave the
   same bytes on two runs on this card. 2026-08-23.
 
+- **The pack does not offer the checkpoint the venv ran.** TTS-Audio-Suite's
+  MOSS-TTS variants at `fab00263` are 1.7B
+  (`OpenMOSS-Team/MOSS-TTS-Local-Transformer`), the 8B Delay checkpoints and
+  community fine-tunes of those; `MOSS-TTS-Local-Transformer-v1.5` is not
+  among them, and the 8B Delay model is the one this file records OOM-ing on
+  24 GB with the audio tokenizer loaded. `speech.api.json` therefore states
+  1.7B, and **a line cloned after the move is not the same voice as one
+  cloned before it at the same reference** (24 kHz where the old path was
+  48 kHz stereo). The voice designer is unaffected: the pack's "Voice Design
+  1.7B" is the same MOSS-VoiceGenerator weights. The speech reference now
+  travels as an uploaded file (`POST /upload/image` takes any file,
+  `LoadAudio` reads it, `CharacterVoicesNode.opt_audio_input` carries it to
+  `UnifiedTTSTextNode.opt_narrator`) and never as a path — which is the
+  structural answer to the 2026-08-23 torchcodec trap, made plausible by the
+  host's venv carrying PyAV 18.1.0, and **still a hypothesis**: one real
+  speech through the host must confirm it before `moss_tts`'s venv is
+  deleted. 2026-08-30.
+
 ## Blender (`BLENDER_BIN`, ≥ 4.2 headless; 5.2 is the reference)
 
 - Only the rig, export and prop-normalize steps need it; nothing in `just
@@ -215,7 +245,7 @@ flags are the flags.
 | torch | `2.13.0` from PyPI — the linux wheel is `2.13.0+cu130` |
 | ComfyUI-Manager | pip package `comfyui_manager==4.2.2`, pinned by the clone's own `manager_requirements.txt`, switched on with `--enable-manager`. Not a `custom_nodes` clone. |
 | frontend | `comfyui-frontend-package==1.49.6` (from `requirements.txt`) |
-| custom node packs | **one:** `city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a` (Apache-2.0), cloned into `$PREFIX/data/custom_nodes/`, with `gguf==0.19.0` and `protobuf==7.36.0` in the venv. It exists for one node, `UnetLoaderGGUF`, which is the only way to load the lean tier's Q4_K_M image model; every loader the fp8 templates need is native to v0.34.2. `backends/comfy/snapshot.json` records it. |
+| custom node packs | **two:** `city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a` (Apache-2.0, `gguf==0.19.0` + `protobuf==7.36.0` in the venv) — it exists for one node, `UnetLoaderGGUF`, the only way to load the lean tier's Q4_K_M image model; and `diodiogod/TTS-Audio-Suite` @ `fab00263fbdcdaddd4c721d1b560e1a08b6025ea` (v5.8.7, MIT, 185 MB, **no pips**), which is how the three MOSS models reach the host. Both cloned into `$PREFIX/data/custom_nodes/`; every other loader the fp8 templates and ACE-Step 1.5 need is native to v0.34.2. `backends/comfy/snapshot.json` records both. |
 | unit | `forge-comfy.service`, `Restart=on-failure`, `--listen 127.0.0.1 --port 8188 --disable-auto-launch --disable-api-nodes --base-directory $PREFIX/data --cache-none --enable-manager` |
 
 **The exact download list.** Into `$PREFIX/data/models/<folder>/`; sizes are
@@ -343,6 +373,73 @@ the gate" would have learned nothing. What separates them is the style
 line, the hands and the background, and all three are read by eye off the
 contact sheet.
 
+**A pack whose requirements you must not install.** TTS-Audio-Suite asks
+for `numpy>=1.26.4,<2.3.0`, which would downgrade the host's 2.5.2 under
+every image template, plus transformers, keras, funasr, faiss and forty
+more. None of it was installed and none of it was needed: the pack
+registers each node behind its own `try`/`except`, so all 58 of its classes
+came up on the first restart with torch 2.13.0, torchaudio 2.11.0 and numpy
+2.5.2 exactly as they were. The Manager's config has
+`allow_pip_install = False`, which is why dropping a clone into
+`custom_nodes` cannot run the pack's own `install.py` behind your back — if
+that ever flips, this install stops being free. The Manager writes this
+pack's hash into `snapshot.json` with a trailing newline inside the JSON
+string; that is its answer, it is committed as fetched, and tidying it by
+hand is hand-editing a snapshot. The snapshot endpoint is
+`GET /v2/snapshot/get_current`; `/api/manager/...` is 404 on this build.
+2026-08-30.
+
+**ComfyUI v0.34.2 cannot write a WAV.** `SaveAudio` saves FLAC and
+`SaveAudioAdvanced` offers flac, mp3 and opus — read off the node schemas
+on the running host, not from memory. Every audio record in this library
+measures a PCM WAV, so every comfy audio template ends in `SaveAudio` and
+the Python half transcodes the FLAC to 16-bit PCM before `measure_wav` or
+`add_output` see a file. FLAC is lossless, so nothing is lost — but sfx,
+speech and voice gain an **ffmpeg** dependency they did not have when they
+wrote the WAV themselves with soundfile, and a missing ffmpeg is refused as
+exit 6 before the card is leased. 2026-08-30.
+
+**`diffusers` is the pip TTS-Audio-Suite does need, and the host has not
+got it.** "No pips" is true for the pack's *registration* — all 58 classes
+come up without one — and false the moment `MossSoundEffectV2EngineNode`
+actually loads a model:
+`engines/adapters/moss_soundeffect_v2_adapter.py` → `unified_model_interface`
+→ `ModuleNotFoundError: No module named 'diffusers'`, on the host, at
+`POST /prompt` time, after the graph has been accepted and the card leased.
+Measured 2026-08-30 on this machine (`forge gen sfx`, prompt `a door`,
+prompt id `d490a5e9`), with the venv confirmed to hold torch 2.13.0,
+torchaudio 2.11.0, transformers 5.16.1, numpy 2.5.2, PyAV 18.1.0, gguf
+0.19.0, protobuf 7.36.0 — and no `diffusers` at all. So the pack's four
+places are right about the clone and wrong about `pips = []`, and this is
+the first thing the real sfx run has to settle: which `diffusers` the
+adapter wants, and whether installing it moves transformers or numpy under
+the image templates, which is the whole reason the pack's own
+`requirements.txt` was refused. Until that is measured, `moss_sfx` is
+`partial` at best and its installer should say so rather than let a
+stranger find out at `POST /prompt`. **Nothing has been installed into the
+host on the strength of this entry.** 2026-08-30.
+
+**The pack ships no unload node.** `designs/serve.md` names
+`TTSAudioSuiteUnload`; no such class exists among the 58 at this pin. So
+`unload_node` is `null` for `acestep`, `moss_sfx` and `moss_tts` alike, and
+`POST /free` plus the unit restart are the only levers the card has — which
+makes `forge_serve`'s ladder load-bearing rather than a safety net. Whether
+`/free` returns the card after a wrapper pack has loaded its own models is
+**unmeasured**, and is the first thing the real run should record.
+2026-08-30.
+
+**The sound-effect engine `torch.compile`s its DiT, and the unit does not
+stop it.** `MossSoundEffectV2EngineNode`'s own tooltip: the DiT uses
+`torch.compile` automatically, the first generation can spend several
+minutes compiling, and compiled artifacts are cached and reused across
+ComfyUI sessions. That is what `moss_sfx`'s `TORCHDYNAMO_DISABLE=1` existed
+to prevent, and that `[env]` value died with the venv. The choice is the
+host's now: `Environment=TORCHDYNAMO_DISABLE=1` in `forge-comfy.service`
+keeps the old behaviour at the cost of every effect being slower forever,
+or leave it on and record on the first real run how long the compile takes
+and whether the inductor cache survives a restart. Either way it belongs in
+the unit file, because it is now a property of the host. 2026-08-30.
+
 ## Onboarding, doctor and the licence gate
 
 **`nvidia-smi` is the tier detector, and its absence is an answer.**
@@ -394,15 +491,15 @@ is a drop-in. 2026-08-30.
 
 Approximate peaks on one 24 GB card with a desktop resident (~0.8 GB);
 rows marked not measured are exactly that. Two rows do not share the
-card; `just gpu` before any generate, and stop the ACE-Step server before
-a lift.
+card; `just gpu` before any generate, and give the card back with `forge
+gpu --free` before a lift.
 
 | Backend | VRAM | Resident after the call? |
 |---|---|---|
 | TRELLIS.2 at 1024³ | **4.7 GB measured** (2026-08-30, `vex_runner`) — the ~22 GB this row carried for a week was a budget nobody had run a sampler over; see the lean-tier section | no |
 | TRELLIS.2 at 512³ | **3.1 GB measured** (2026-08-30, the same reference) | no |
 | ARDY sweep | **15.4 GB measured** (2026-08-30, one prompt, two samples) — the ~16 GB this row carried was right | no |
-| ACE-Step server | ~8 GB | **yes**, until `--stop-server` |
+| ACE-Step 1.5 in the ComfyUI host | ~8 GB (budget) | held by the host until `POST /free`, `forge gpu --free` or the unit stops — there is no resident ACE-Step server any more |
 | MOSS-TTS (4B) | ~12 GB | no |
 | MOSS-SoundEffect | ~6–8 GB | no |
 | Qwen-Image fp8 + InstantX ControlNet at 1024² | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
