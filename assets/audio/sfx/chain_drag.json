@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "sfx",
   "name": "chain_drag",
   "prompt": "a heavy iron chain drags across stone and rattles to a stop",
@@ -30,6 +30,7 @@
     "root_motion": null,
     "mesh": null
   },
+  "body": null,
   "events": null,
   "content_hash": "sha256:0c164a6d0e67f9f7b49ccc21143a03bce0cbea76541ea9ba3a7d0df1d862edbc",
   "note": null

@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "body",
   "name": "vex_runner",
   "prompt": "Keep this exact character — same painted style, same magenta visor, teal mohawk, cybernetic arm with teal circuits, spiked pauldron, gunmetal jacket and boots, same flat light-grey background, same strict T-pose with both arms straight out horizontal — but change the proportions: make him taller and less squat, about six head heights tall, with longer straight legs and a longer torso, shoulders higher, so his total arm span from fingertip to fingertip is roughly equal to his height. Both arms stay straight out horizontal at shoulder height. Front view, whole body in frame, no ground shadow, no text.",
@@ -56,6 +56,451 @@
         ]
       ]
     }
+  },
+  "body": {
+    "motion_scale": 1.0,
+    "bones": [
+      {
+        "name": "LeftToeBase",
+        "rest_translation": [
+          0.0,
+          0.170969,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftFoot",
+        "rest_translation": [
+          0.0,
+          0.456091,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftLeg",
+        "rest_translation": [
+          0.0,
+          0.412118,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftUpLeg",
+        "rest_translation": [
+          0.094918,
+          -0.008646,
+          -0.026347
+        ]
+      },
+      {
+        "name": "RightToeBase",
+        "rest_translation": [
+          -0.0,
+          0.170969,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightFoot",
+        "rest_translation": [
+          -0.0,
+          0.456091,
+          0.0
+        ]
+      },
+      {
+        "name": "RightLeg",
+        "rest_translation": [
+          -0.0,
+          0.412118,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightUpLeg",
+        "rest_translation": [
+          -0.094918,
+          -0.008646,
+          -0.026347
+        ]
+      },
+      {
+        "name": "LeftHandEnd",
+        "rest_translation": [
+          0.00325,
+          0.06194,
+          -0.031601
+        ]
+      },
+      {
+        "name": "LeftHandIndex3",
+        "rest_translation": [
+          0.0,
+          0.026,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex2",
+        "rest_translation": [
+          0.0,
+          0.04,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex1",
+        "rest_translation": [
+          0.03,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle3",
+        "rest_translation": [
+          0.0,
+          0.028,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle2",
+        "rest_translation": [
+          -0.0,
+          0.043,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle1",
+        "rest_translation": [
+          0.01,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky3",
+        "rest_translation": [
+          -0.0,
+          0.021,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky2",
+        "rest_translation": [
+          -0.0,
+          0.033,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky1",
+        "rest_translation": [
+          -0.03,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing3",
+        "rest_translation": [
+          -0.0,
+          0.026,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing2",
+        "rest_translation": [
+          0.0,
+          0.04,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing1",
+        "rest_translation": [
+          -0.01,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb3",
+        "rest_translation": [
+          0.0,
+          0.032,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb2",
+        "rest_translation": [
+          -0.0,
+          0.057216,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb1",
+        "rest_translation": [
+          -0.00325,
+          0.047586,
+          0.031601
+        ]
+      },
+      {
+        "name": "LeftHand",
+        "rest_translation": [
+          -0.0,
+          0.232652,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftForeArm",
+        "rest_translation": [
+          -0.0,
+          0.295436,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftArm",
+        "rest_translation": [
+          0.0,
+          0.158908,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftShoulder",
+        "rest_translation": [
+          0.031995,
+          0.180438,
+          0.011652
+        ]
+      },
+      {
+        "name": "Head",
+        "rest_translation": [
+          0.0,
+          0.130147,
+          -0.0
+        ]
+      },
+      {
+        "name": "Neck",
+        "rest_translation": [
+          0.0,
+          0.2499,
+          -0.023304
+        ]
+      },
+      {
+        "name": "RightHandEnd",
+        "rest_translation": [
+          -0.00325,
+          0.061941,
+          -0.031601
+        ]
+      },
+      {
+        "name": "RightHandIndex3",
+        "rest_translation": [
+          0.0,
+          0.026,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex2",
+        "rest_translation": [
+          0.0,
+          0.04,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex1",
+        "rest_translation": [
+          -0.03,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle3",
+        "rest_translation": [
+          0.0,
+          0.028,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle2",
+        "rest_translation": [
+          0.0,
+          0.043,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle1",
+        "rest_translation": [
+          -0.01,
+          0.075,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky3",
+        "rest_translation": [
+          0.0,
+          0.021,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky2",
+        "rest_translation": [
+          0.0,
+          0.033,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky1",
+        "rest_translation": [
+          0.03,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing3",
+        "rest_translation": [
+          -0.0,
+          0.026,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing2",
+        "rest_translation": [
+          -0.0,
+          0.04,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing1",
+        "rest_translation": [
+          0.01,
+          0.075,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb3",
+        "rest_translation": [
+          0.0,
+          0.032,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb2",
+        "rest_translation": [
+          0.0,
+          0.057216,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb1",
+        "rest_translation": [
+          0.00325,
+          0.047586,
+          0.031601
+        ]
+      },
+      {
+        "name": "RightHand",
+        "rest_translation": [
+          0.0,
+          0.232652,
+          0.0
+        ]
+      },
+      {
+        "name": "RightForeArm",
+        "rest_translation": [
+          0.0,
+          0.295436,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightArm",
+        "rest_translation": [
+          0.0,
+          0.158908,
+          0.0
+        ]
+      },
+      {
+        "name": "RightShoulder",
+        "rest_translation": [
+          -0.031995,
+          0.180438,
+          0.011652
+        ]
+      },
+      {
+        "name": "Spine3",
+        "rest_translation": [
+          0.0,
+          0.094652,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine2",
+        "rest_translation": [
+          0.0,
+          0.094652,
+          -0.0
+        ]
+      },
+      {
+        "name": "Spine1",
+        "rest_translation": [
+          0.0,
+          0.094652,
+          -0.0
+        ]
+      },
+      {
+        "name": "Spine",
+        "rest_translation": [
+          -0.0,
+          0.067101,
+          0.052693
+        ]
+      },
+      {
+        "name": "Hips",
+        "rest_translation": [
+          0.0,
+          0.954413,
+          -0.0
+        ]
+      }
+    ]
   },
   "events": null,
   "content_hash": "sha256:27f1b0cad645599396a2954651490db0a1bba2a9ee44f6d9b4d34ed4971526f2",

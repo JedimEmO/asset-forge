@@ -6,11 +6,29 @@
 //! The migration rewrites durable, git-tracked records, so it is deliberately
 //! narrow about what it will touch:
 //!
-//! * A **schema 1** record is read, re-serialised by this build's writer,
-//!   and written back only if the bytes differ — key order, indentation, a
-//!   float's spelling. Nothing recorded is changed: a clip whose generator
-//!   block records a real seed keeps it, and a migration that nulled it on
-//!   the next run would undo the only honest provenance in the file.
+//! * A **current-schema** record is read, re-serialised by this build's
+//!   writer, and written back only if the bytes differ — key order,
+//!   indentation, a float's spelling. Nothing recorded is changed: a clip
+//!   whose generator block records a real seed keeps it, and a migration
+//!   that nulled it on the next run would undo the only honest provenance in
+//!   the file.
+//! * A **schema 1** record is brought to 2. Everything it said it keeps —
+//!   provenance included, which only ever moves down and is not touched here
+//!   — and a body gains its `body` block, **re-derived from the shipped
+//!   `.glb`**.
+//!
+//!   Not copied from the profile's contract, which would be quicker and
+//!   would be a default written where a measurement belongs. The old
+//!   exporter passed a body whose rest translations sat up to 0.1 mm off the
+//!   contract, so such a body is shipped, legitimate and re-derivable — and
+//!   a migration that wrote the contract's numbers into its record would
+//!   fail `verify`'s own 0.1 mm rule on the very first run, with no door to
+//!   fix it that is not a hand edit. The file is the measurement.
+//!
+//!   `motion_scale` is written as `1.0`: every body in a schema-1 library
+//!   was scaled to the profile before it was skinned, which is what
+//!   `1.0` means. It is a fact about how those bodies were made, not a
+//!   default standing in for one nobody took.
 //! * A record with an **empty content hash** gets one, because that is the
 //!   one claim that can be made about any file. A *stale* hash is not
 //!   repaired: that is `verify`'s finding, and quietly re-hashing over it
@@ -28,12 +46,15 @@
 //! diff at all — which is the property that makes it safe to wire into a
 //! justfile recipe a human will run more than once.
 
-use crate::schema::{Provenance, SCHEMA, Sidecar};
-use crate::{AssetRecord, Catalog, Project, Result, hash, sidecar};
+use crate::schema::{Body, Kind, MIGRATABLE_SCHEMA, Provenance, SCHEMA, Sidecar};
+use crate::{AssetRecord, Catalog, LibraryError, Project, Result, hash, read_bytes, sidecar};
 
 /// What happened to one asset's record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
+    /// It declared an older schema and now declares this one, with whatever
+    /// the new schema adds measured off the file rather than assumed.
+    Migrated,
     /// Its bytes were not what this writer produces; they are now.
     Rewritten,
     /// There was no record; there is one now.
@@ -49,6 +70,7 @@ impl Outcome {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Migrated => "migrated",
             Self::Rewritten => "rewritten",
             Self::Backfilled => "backfilled",
             Self::Hashed => "hashed",
@@ -103,7 +125,8 @@ impl MigrateReport {
         }
         let _ = write!(
             out,
-            "{} rewritten, {} backfilled, {} hashed, {} already current{}",
+            "{} migrated, {} rewritten, {} backfilled, {} hashed, {} already current{}",
+            self.count(Outcome::Migrated),
             self.count(Outcome::Rewritten),
             self.count(Outcome::Backfilled),
             self.count(Outcome::Hashed),
@@ -122,9 +145,13 @@ impl MigrateReport {
 /// record is a finding in the report, not an error.
 pub fn run(project: &Project, dry_run: bool) -> Result<MigrateReport> {
     let catalog = Catalog::scan(project);
+    // A body's block is measured against the project's contract, so a
+    // project whose profile does not load can migrate everything but its
+    // bodies — and says so on each one rather than failing the whole run.
+    let contract = project.profile().ok().map(|profile| profile.contract);
     let mut report = MigrateReport::default();
     for record in catalog.records() {
-        match plan(record) {
+        match plan(record, contract.as_ref()) {
             Err(error) => report.unreadable.push(format!("{}: {error}", record.name)),
             Ok((wanted, outcome)) => {
                 if outcome != Outcome::Unchanged && !dry_run {
@@ -142,7 +169,10 @@ pub fn run(project: &Project, dry_run: bool) -> Result<MigrateReport> {
 /// Reads the file itself rather than reusing the catalog's parsed copy, so
 /// the comparison is against the bytes on disk and not against a round trip
 /// through the types.
-fn plan(record: &AssetRecord) -> Result<(Sidecar, Outcome)> {
+fn plan(
+    record: &AssetRecord,
+    contract: Option<&forge_rig::Contract>,
+) -> Result<(Sidecar, Outcome)> {
     let path = record.sidecar_path();
     if !path.is_file() {
         let mut wanted = Sidecar::new(record.kind, &record.name);
@@ -155,17 +185,76 @@ fn plan(record: &AssetRecord) -> Result<(Sidecar, Outcome)> {
         return Ok((wanted, Outcome::Backfilled));
     }
     let on_disk = crate::read_bytes(&path)?;
-    let mut wanted = Sidecar::from_slice(&on_disk, &path)?;
-    wanted.schema = SCHEMA;
-    let mut outcome = Outcome::Unchanged;
+    let declared = declared_schema(&on_disk);
+    let mut wanted = read_forward(&on_disk, &path, declared)?;
+    let mut outcome = if declared == Some(SCHEMA) {
+        Outcome::Unchanged
+    } else {
+        Outcome::Migrated
+    };
     if wanted.content_hash.is_empty() {
         wanted.content_hash = hash::sha256_file(&record.path)?;
-        outcome = Outcome::Hashed;
+        if outcome == Outcome::Unchanged {
+            outcome = Outcome::Hashed;
+        }
+    }
+    if record.kind == Kind::Body && wanted.body.is_none() {
+        // Measured off the shipped `.glb`, never copied from the contract:
+        // see the module docs. A body promoted before schema 2 was scaled to
+        // the profile, so its root sits where the profile's does and the
+        // scale it was made at is 1.0.
+        let contract = contract.ok_or_else(|| {
+            LibraryError::rejected(format!(
+                "{}: the project's rig profile does not load, so this body's own skeleton \
+                 cannot be re-derived",
+                record.name
+            ))
+        })?;
+        let bytes = read_bytes(&record.path)?;
+        let mut body = Body::derive(contract, &bytes).map_err(|detail| {
+            LibraryError::rejected(format!(
+                "{}: the body's own skeleton cannot be read out of the .glb: {detail}",
+                record.name
+            ))
+        })?;
+        body.motion_scale = 1.0;
+        wanted.body = Some(body);
+        if outcome == Outcome::Unchanged {
+            outcome = Outcome::Migrated;
+        }
     }
     if outcome == Outcome::Unchanged && wanted.to_bytes()? != on_disk {
         outcome = Outcome::Rewritten;
     }
     Ok((wanted, outcome))
+}
+
+/// The `schema` a document declares, or `None` when it declares none.
+fn declared_schema(bytes: &[u8]) -> Option<u64> {
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()?
+        .get("schema")?
+        .as_u64()
+}
+
+/// Read a record at the current schema, or one schema back.
+///
+/// A schema-1 document is parsed by this build's types with its number
+/// raised first, which works because schema 2 added exactly one optional
+/// field: nothing schema 1 said has been renamed or dropped, so nothing is
+/// lost in the read. Anything older, or newer, is refused on the number —
+/// there is no legacy reader here, by design.
+fn read_forward(bytes: &[u8], path: &std::path::Path, declared: Option<u64>) -> Result<Sidecar> {
+    let mut value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| LibraryError::json(path, e))?;
+    if declared == Some(MIGRATABLE_SCHEMA)
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert(String::from("schema"), serde_json::Value::from(SCHEMA));
+    }
+    let mut record = Sidecar::from_value(value, path)?;
+    record.schema = SCHEMA;
+    Ok(record)
 }
 
 #[cfg(test)]

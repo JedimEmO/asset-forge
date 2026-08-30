@@ -37,9 +37,12 @@ pub(crate) struct ExportBundleArgs {
     /// Where to write it. A relative path is taken from the project root;
     /// out/bundles/<name>.glb is the convention.
     pub(crate) out: String,
-    /// Multiply the root travel by this — the body's leg length against the
-    /// rig profile's reference legs, so a body fitted to its own proportions
-    /// travels its own stride. Default 1.0; rotations are never touched.
+    /// Multiply the root travel by this — the body's own root height against
+    /// the rig profile's, so a body fitted to its own proportions travels
+    /// its own stride. Omit it and the body's record is read, which is
+    /// almost always what you want; rotations are never touched either way,
+    /// and the bundle record names which number it used and where it came
+    /// from.
     #[serde(default)]
     pub(crate) motion_scale: Option<f64>,
 }
@@ -74,7 +77,7 @@ impl ForgeServer {
             body: args.body,
             clips: args.clips,
             out,
-            motion_scale: args.motion_scale.unwrap_or(1.0),
+            motion_scale: args.motion_scale,
             created_by: Actor::Agent(String::from("mcp")),
         };
         // Reading a body, hashing it and writing a few megabytes is blocking

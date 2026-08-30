@@ -245,24 +245,30 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    // Sixteen of the nineteen `mcp-check` pins: `init_project`, `licences`
-    // and `setup` land with tools/setup.rs. Anything else appearing here is
-    // a surface change the skills are not written against.
+    // Twenty-two of the twenty-five `mcp-check` pins: `init_project`,
+    // `licences` and `setup` land with tools/setup.rs. Anything else
+    // appearing here is a surface change the skills are not written against.
     let mine = [
         "cancel",
         "doctor",
         "export_bundle",
         "generate_audio",
         "generate_clips",
+        "generate_mesh",
+        "import_reference",
         "inspect_audio",
         "list_audio",
         "list_clips",
         "list_models",
         "list_runs",
+        "prepare_body",
         "promote_audio",
+        "promote_body",
         "promote_clip",
+        "promote_model",
         "render_clip_strip",
         "render_model",
+        "skin_body",
         "status",
         "wait",
     ];
@@ -276,14 +282,17 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         assert!(
             mine.contains(&name.as_str())
                 || matches!(name.as_str(), "init_project" | "licences" | "setup"),
-            "{name} is not one of the nineteen --- stdout\n{out}"
+            "{name} is not one of the twenty-five --- stdout\n{out}"
         );
     }
+    // The mesh doors are here now, and their being here is the decision:
+    // what protects the library is the export gate, the rig check and the
+    // refused taken name, all of which promote_body runs — not a missing
+    // door that only made an agent ask a human to type its own command.
     assert!(
-        !listed
-            .iter()
-            .any(|name| name == "promote_mesh" || name == "promote_body"),
-        "a mesh has no promote door here: {listed:?}"
+        listed.iter().any(|name| name == "promote_body")
+            && listed.iter().any(|name| name == "promote_model"),
+        "the mesh doors are part of the surface: {listed:?}"
     );
 
     // No project is a **session**, not a refusal: this is where a stranger

@@ -58,9 +58,10 @@ impl ForgeServer {
     /// session: what the library is, and which tool does what.
     ///
     /// Written for an agent that has never seen this server. The verbs are
-    /// grouped the way the work goes — look, make, ship — and the two rules
-    /// that are not obvious from a tool's own description are said here:
-    /// promote writes the library *now*, and a mesh has no promote at all.
+    /// grouped the way the work goes — look, make, wait, ship — and the two
+    /// rules that are not obvious from any one tool's description are said
+    /// here: a promote writes the library *now*, and looking is not one of
+    /// the gates, which is why it has to be said out loud.
     pub(crate) fn instructions(&self) -> String {
         if !self.config.project_found {
             return format!(
@@ -117,9 +118,14 @@ impl ForgeServer {
              flat-topping, dead air as a gap and a truncated tail as a cliff; the numbers \
              carry the rest.\n\
              \n\
-             MAKING — writes only under out/, never the library: generate_clips draws motion \
-             takes from a prompt and hands back a review sheet of every take; generate_audio \
-             starts a sound, a track or a spoken line and hands back a JOB. {generation}\n\
+             MAKING — writes only under out/ and assets-src/, never the library: \
+             import_reference brings a PNG you drew into assets-src/refs/, checked and \
+             recorded (no image model runs here); generate_mesh lifts that PNG; prepare_body \
+             normalises the lift and puts a skeleton in it; skin_body weights it and fits \
+             that skeleton to this body's own proportions, which is what lets a short \
+             character and a giant play the same clips; generate_clips draws motion takes \
+             from a prompt and hands back a review sheet of every take; generate_audio starts \
+             a sound, a track or a spoken line and hands back a JOB. {generation}\n\
              \n\
              WAITING — a generate takes minutes and one card is shared by every door, so a \
              generate is queued: generate_audio returns a job id and the literal wait call to \
@@ -130,10 +136,12 @@ impl ForgeServer {
              whether each has been promoted.\n\
              \n\
              SHIPPING — direct writes: promote_clip bakes one take with a recipe you state in \
-             full into the library; promote_audio copies the sound you auditioned. Both REFUSE \
-             a name that is already taken unless you pass overwrite, and then echo the record \
-             they replaced. There is no promote for a body or a model: those go through the \
-             forge-character and forge-prop skills with a human looking at every step.\n\
+             full into the library; promote_audio copies the sound you auditioned; \
+             promote_body files a rigged body behind the export gate and rig check; \
+             promote_model files a normalised prop. Every one REFUSES a name that is already \
+             taken unless you pass overwrite, and then echoes the record it replaced. Nothing \
+             here replaces the eye: render_model and render_clip_strip exist beside these \
+             doors, not instead of them.\n\
              \n\
              When unsure what this machine can run, call doctor first. Refusals come back as \
              error results that name what would have worked; read them and correct the call \
@@ -158,7 +166,7 @@ impl ServerHandler for ForgeServer {
     ///
     /// The macro writes this one for us when we do not; we do, because a
     /// server started where there is no `forge.toml` has to answer
-    /// something better than a protocol error for the seventeen tools that
+    /// something better than a protocol error for the twenty-two tools that
     /// need a library. A refusal is a successful frame naming the tool that
     /// fixes it.
     async fn call_tool(

@@ -31,8 +31,8 @@ use forge_rig::measure::{GlbMeasurement, measure_glb, measure_glb_geometry};
 
 use crate::generator_record::{GeneratorRecord, RecordKind};
 use crate::schema::{
-    Actor, AnimEvent, ClipRecipe, EventOrigin, Generator, Kind, LiftParams, Measured, MeshMeasured,
-    PostStep, Provenance, RootMotion, SCHEMA, Sidecar, Source, valid_event_name,
+    Actor, AnimEvent, Body, ClipRecipe, EventOrigin, Generator, Kind, LiftParams, Measured,
+    MeshMeasured, PostStep, Provenance, RootMotion, SCHEMA, Sidecar, Source, valid_event_name,
 };
 use crate::{
     LibraryError, Project, Result, clock, hash, manifest, read_bytes, sidecar, write_atomic,
@@ -599,6 +599,15 @@ pub fn promote_body(project: &Project, request: &PromoteBody) -> Result<Promoted
         previous.as_ref(),
     );
     record.rig = Some(profile.contract.name.clone());
+    // Read from the bytes that were just written, never from the rig
+    // record: a sidecar's claim about a body's skeleton has to be
+    // re-derivable from the file it describes, or `verify` could only check
+    // it against the thing it was copied from.
+    record.body = Some(Body::derive(&profile.contract, &bytes).map_err(|detail| {
+        LibraryError::rejected(format!(
+            "the body's own skeleton cannot be read out of the .glb: {detail}"
+        ))
+    })?);
     record.content_hash = hash::sha256_file(&target)?;
     let sidecar_path = sidecar::path_for(&target);
     let record = save_record(&sidecar_path, &record)?;

@@ -576,7 +576,7 @@ impl ForgeServer {
 
     /// The refusal for a generate whose backend is not usable, decided
     /// before anything is spawned — or `None` when it is.
-    fn backend_refusal(&self, backend: &str, tool: &str) -> Option<CallToolResult> {
+    pub(crate) fn backend_refusal(&self, backend: &str, tool: &str) -> Option<CallToolResult> {
         if self.config.toolkit.is_none() {
             return Some(util::refuse(format!(
                 "{tool} is off: no toolkit checkout holding python/forge_gen was found from \

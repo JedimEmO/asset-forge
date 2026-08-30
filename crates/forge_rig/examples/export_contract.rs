@@ -18,8 +18,11 @@ use std::{path::PathBuf, process::ExitCode};
 use forge_rig::{CONTRACT_FILE, MOTION_SKELETON_FILE, MotionSkeleton, Stature, export};
 
 /// The humanoid profile's scalars: 1.80 m reference stature with a 1.4–2.2 m
-/// band, feet within 5 cm of the ground, a 1e-3 rest-rotation tolerance, and
-/// the walk as the binding reference.
+/// band, feet within 5 cm of the ground, a 1e-3 rest-rotation tolerance, the
+/// walk as the binding reference, and the four a fitted skeleton is held to —
+/// a bone's rest translation may not turn more than a degree, its length may
+/// land between 0.4 and 2.5 of the contract's, and the planted foot's own
+/// lowest vertex stays within 5 cm of the floor on a contact frame.
 fn humanoid(dir: &std::path::Path) -> export::Options {
     export::Options {
         name: String::from("humanoid"),
@@ -32,6 +35,10 @@ fn humanoid(dir: &std::path::Path) -> export::Options {
         },
         foot_tolerance_m: 0.05,
         rest_rotation_tolerance: 1e-3,
+        rest_direction_tolerance_deg: 1.0,
+        length_ratio_min: 0.4,
+        length_ratio_max: 2.5,
+        contact_foot_tolerance_m: 0.05,
         reference_clip: String::from("walk"),
         glb: String::from("rig.glb"),
         blend: dir

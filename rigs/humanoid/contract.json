@@ -11,6 +11,10 @@
   },
   "foot_tolerance_m": 0.05,
   "rest_rotation_tolerance": 0.001,
+  "rest_direction_tolerance_deg": 1.0,
+  "length_ratio_min": 0.4,
+  "length_ratio_max": 2.5,
+  "contact_foot_tolerance_m": 0.05,
   "driven_layout": "cskel27",
   "reference_clip": "walk",
   "sources": {

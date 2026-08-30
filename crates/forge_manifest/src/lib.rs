@@ -46,9 +46,19 @@ use serde::{Deserialize, Serialize};
 ///
 /// What the reset keeps is the mechanism, not the history: the schema field
 /// is the honesty device, and refuse-newer is the promise this crate makes.
-/// When 2 arrives, a consumer on 1 will be told "you are behind" rather than
-/// handed a document missing what 2 added.
-pub const SCHEMA: u64 = 1;
+///
+/// # Why 2
+///
+/// [`BodyEntry::motion_scale`]. Bone lengths belong to the body now, so a
+/// body's stride belongs to it too, and a consumer that ignored the number
+/// would walk a short character at a tall character's pace — feet sliding,
+/// with nothing in any log to say why. That is a change to what a consumer
+/// must **do** with what the manifest hands it, which is exactly the kind
+/// of change a schema number exists to announce; a reader on 1 is told it
+/// is behind rather than handed a document it would misuse. Nothing else
+/// moved: the rig block, the clips, the models and the sounds say what they
+/// said, and no clip was rebaked.
+pub const SCHEMA: u64 = 2;
 
 /// Everything a game needs to know about a shipped asset library.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -390,7 +400,7 @@ pub struct ModelEntry {
 /// Structurally close to a [`ModelEntry`]; kept as its own type because the
 /// two make different promises, and a consumer that wants "a thing every
 /// clip plays on" should not have to guess which models qualify.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BodyEntry {
     /// File stem — the name everything refers to the body by.
@@ -399,6 +409,15 @@ pub struct BodyEntry {
     pub path: String,
     /// `sha256:…` of the file as shipped.
     pub sha256: String,
+    /// This body's root rest height over the rig contract's.
+    ///
+    /// **Multiply the root bone's translation track by this and nothing
+    /// else.** Never a rotation and never another bone's translation: a
+    /// rotation is the same rotation on any length of bone, and a clip's
+    /// constant translation curves are rest offsets, which scaling would
+    /// move. `1.0` is a body built at the profile's own proportions and
+    /// leaves every clip byte alone.
+    pub motion_scale: f32,
     /// Free-form tags, lower-case by convention.
     pub tags: Vec<String>,
 }
@@ -595,12 +614,16 @@ mod tests {
                     name: String::from("vex_runner"),
                     path: String::from("bodies/vex_runner.glb"),
                     sha256: String::from("sha256:2222"),
+                    motion_scale: 1.0,
                     tags: vec![String::from("hero")],
                 },
                 BodyEntry {
                     name: String::from("torv_warden"),
                     path: String::from("bodies/torv_warden.glb"),
                     sha256: String::from("sha256:3333"),
+                    // A body fitted shorter than the profile: its stride
+                    // scales with its legs, which is the whole of schema 2.
+                    motion_scale: 0.978,
                     tags: Vec::new(),
                 },
             ],
@@ -692,7 +715,7 @@ mod tests {
     fn a_newer_schema_is_refused_naming_both_numbers() {
         let bytes = sample().to_vec_pretty().expect("serialize");
         let text = String::from_utf8(bytes).expect("utf8");
-        let newer = text.replace("\"schema\": 1", "\"schema\": 2");
+        let newer = text.replace("\"schema\": 2", "\"schema\": 3");
         assert_ne!(
             newer, text,
             "the replacement must have found the schema line"
@@ -702,15 +725,15 @@ mod tests {
             matches!(
                 error,
                 ManifestError::NewerSchema {
-                    found: 2,
+                    found: 3,
                     supported: SCHEMA
                 }
             ),
             "{error:?}"
         );
         let message = error.to_string();
+        assert!(message.contains("schema 3"), "{message}");
         assert!(message.contains("schema 2"), "{message}");
-        assert!(message.contains("schema 1"), "{message}");
     }
 
     /// The refusal is decided on the schema number alone: a newer document
@@ -790,7 +813,7 @@ mod tests {
         // And the text is the pretty form a reviewer diffs, keys in struct
         // order, starting with the schema.
         let text = String::from_utf8(first).expect("utf8");
-        assert!(text.starts_with("{\n  \"schema\": 1,\n"), "{text}");
+        assert!(text.starts_with("{\n  \"schema\": 2,\n"), "{text}");
     }
 
     #[test]

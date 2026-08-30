@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "sfx",
   "name": "door_metal",
   "prompt": "a heavy metal door closing with a latch",
@@ -32,6 +32,7 @@
     "root_motion": null,
     "mesh": null
   },
+  "body": null,
   "events": null,
   "content_hash": "sha256:8fb419a84e69fe7d9860d5787f70a29f5bb2ba53a8dffba08e8546b57f0e748b",
   "note": null

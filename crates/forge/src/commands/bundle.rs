@@ -33,12 +33,14 @@ pub(crate) fn run(project: &Project, args: &BundleArgs) -> Outcome {
         record.output.animations.len(),
         record.output.animations.join(", "),
     );
-    if (record.motion_scale - 1.0).abs() > f64::EPSILON {
-        println!(
-            "root travel scaled by {} — rotations unchanged",
-            record.motion_scale
-        );
-    }
+    // Printed even at 1.0, and with its source: "the root travel was not
+    // scaled" is as much a decision as scaling it, and a reader who cannot
+    // see which number was used cannot tell a measured stride from a
+    // forgotten flag.
+    println!(
+        "root travel scaled by {} ({}) — rotations unchanged",
+        record.motion_scale, record.motion_scale_source
+    );
     println!("{} bytes, {}", record.output.bytes, record.output.sha256);
     println!(
         "record: {}",

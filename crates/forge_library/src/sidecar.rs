@@ -19,7 +19,7 @@ pub fn path_for(asset: &Path) -> PathBuf {
     asset.with_extension("json")
 }
 
-/// Load a sidecar at schema 1.
+/// Load a sidecar at [`crate::schema::SCHEMA`].
 ///
 /// # Errors
 ///
@@ -57,8 +57,11 @@ pub fn load_beside(asset: &Path) -> Result<Option<Sidecar>> {
 ///
 /// # Errors
 ///
-/// Fails when the file cannot be written or the rename over the old one fails.
+/// Fails when the record is invalid ([`Sidecar::validate`] — a body block on
+/// a kind that has no skeleton), or the file cannot be written and the
+/// rename over the old one fails.
 pub fn save(path: &Path, sidecar: &Sidecar) -> Result<()> {
+    sidecar.validate(path)?;
     write_atomic(path, &sidecar.to_bytes()?)
 }
 
@@ -165,6 +168,17 @@ pub fn display_pairs(sidecar: &Sidecar) -> Vec<(String, String)> {
                 ),
             );
         }
+    }
+
+    if let Some(body) = &sidecar.body {
+        push(
+            "fitted skeleton",
+            format!(
+                "{} bones, motion scale {:.4}",
+                body.bones.len(),
+                body.motion_scale
+            ),
+        );
     }
 
     if let Some(events) = &sidecar.events {
@@ -290,7 +304,7 @@ mod tests {
         save(&path_for(&asset), &record).expect("save");
         assert_eq!(load_beside(&asset).expect("sidecar"), Some(record));
         let text = std::fs::read_to_string(path_for(&asset)).expect("read");
-        assert!(text.starts_with("{\n  \"schema\": 1,"), "{text}");
+        assert!(text.starts_with("{\n  \"schema\": 2,"), "{text}");
         assert!(text.ends_with("}\n"));
     }
 

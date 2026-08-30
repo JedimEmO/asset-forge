@@ -302,11 +302,12 @@ pub(crate) struct BundleArgs {
     /// `<stem>.bundle.json`.
     #[arg(long, value_name = "PATH")]
     pub(crate) out: PathBuf,
-    /// Multiply the root travel by this — the body's leg length against the
-    /// profile's reference legs, so a fitted skeleton travels its own
-    /// stride. Rotations are never touched.
-    #[arg(long, default_value_t = 1.0, value_name = "F")]
-    pub(crate) motion_scale: f64,
+    /// Multiply the root travel by this — the body's own root height against
+    /// the profile's, so a fitted skeleton travels its own stride. Rotations
+    /// are never touched. Unstated, the body's record says what it is; the
+    /// bundle record names which of the two it used.
+    #[arg(long, value_name = "F")]
+    pub(crate) motion_scale: Option<f64>,
     /// Who is exporting: human, `agent:<name>`, unknown.
     #[arg(long, default_value = "human", value_name = "WHO")]
     pub(crate) created_by: String,
