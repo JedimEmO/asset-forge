@@ -288,6 +288,41 @@ impl Project {
         })
     }
 
+    /// A project that is **not on disk**: the conventional layout under
+    /// `root`, held in memory, writing nothing.
+    ///
+    /// For the one door that has to answer before a project exists — `forge
+    /// mcp` started in a directory with no `forge.toml`, which is where a
+    /// stranger with no shell begins. That server refused to start at all
+    /// and told them to run `forge init`, so the one tool that *makes* a
+    /// project was reachable only from a server already bound to a
+    /// different one (2026-08-30). Nothing here is written and nothing is
+    /// promised: `init_project` is what turns it into a project, and every
+    /// other tool refuses while it is this.
+    #[must_use]
+    pub fn provisional(root: &Path) -> Self {
+        let name = root.file_name().map_or_else(
+            || String::from("unnamed"),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        let paths = PathsSection::default();
+        Self {
+            assets: root.join(&paths.assets),
+            sources: root.join(&paths.sources),
+            out: root.join(&paths.out),
+            rigs: root.join(&paths.rigs),
+            name,
+            library_version: String::from("0.0.0"),
+            rig_name: String::from(DEFAULT_RIG),
+            stage_body: None,
+            backends_dir: None,
+            backend_interpreters: std::collections::BTreeMap::new(),
+            make: MakeKinds::default(),
+            hardware: Hardware::default(),
+            root: root.to_path_buf(),
+        }
+    }
+
     /// Create a project at `root`: write a `forge.toml` naming it, and make
     /// every directory the convention expects — the six kind directories,
     /// `takes/`, `refs/`, `blender/` and `rigs/` under the sources, `out/`.

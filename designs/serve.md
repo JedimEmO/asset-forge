@@ -944,17 +944,38 @@ daemon needed; `forge_serve::runs` is the implementation and
 **`init_project {path, name?, make{}, tier?, comfy_url?, adopt?}`** →
 the `forge.toml` written and the next step; refuses a directory that
 already holds one unless `adopt: true`, and then updates only `[make]` and
-`[hardware]`.
+`[hardware]`. **It is reachable from a directory that is not a project**:
+`forge mcp` started where there is no `forge.toml` serves this tool,
+`licences` and a `doctor` that says "no project here", over a queue that
+writes nothing, and refuses every other tool with a frame naming this one.
+It used to exit 2 before the handshake, which left the tool that makes a
+project reachable only from a server already bound to a different one. When
+the path is not the project this server was started with, the frame says so
+and names the flag that reconnects it — a running server holds one project,
+settled at startup, and cannot follow.
 
 **`licences {kinds?}`** → per component, the **full text**, its id, its
 backend and `needs_accept: bool`. The text, not a summary: an agent cannot
 accept what it was not shown.
 
-**`setup {kinds?, backend?, accept[], no_models?, dry_run?}`** → a job.
-Without every required id in `accept` it returns a refusal listing exactly
-the ids missing and the sentence *call `licences` first and pass each id
-in `accept`*. That refusal is the gate, and it is a tool that does not
-exist rather than a prompt asking an agent to behave.
+**`setup {kinds?, backend?, accept[], no_models?, dry_run?}`** — the gate,
+the plan and the receipt. Without every required id in `accept` it returns
+a refusal listing exactly the ids missing and the sentence *call `licences`
+first and pass each id in `accept`*. That refusal is the gate, and it is a
+tool that does not exist rather than a prompt asking an agent to behave.
+
+**It does not install, and its description says so.** This section said
+"→ a job" while the tool returned the sentence *run the install: `forge
+setup …`* — a shell command, to a client the rest of this surface promises
+needs no shell (2026-08-30). The description and the frame now say what the
+tool is: it plans, it gates, it records the acceptance beside the installs,
+and it names the command a person runs. Making the install a real job is a
+decision this phase did **not** take, and the reason belongs here rather
+than in a `// until` comment: the queue schedules `forge gen` command
+lines, and an installer is not one — an install executor is a third
+executor shape with its own log, exit-code and cancel story, and a job that
+downloads 35 GB behind a `wait` needs an answer about what a cancel leaves
+behind.
 
 **`doctor {quick?}`** — unchanged in shape, gaining `executor`, `chosen`
 and the `off` word per row, with the exit reading of §4.

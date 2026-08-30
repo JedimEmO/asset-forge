@@ -589,6 +589,44 @@ nine ACE-Step renders from that afternoon and passes every sound in the
 library, which is the pair of facts that says it is the same gate.
 2026-08-30.
 
+**A server with no project is a session, not a refusal — and the tool that
+makes a project is inside it.** `forge mcp` in a directory with no
+`forge.toml` used to exit 2 before the handshake, with `forge init` as the
+way out: a shell command, handed to the one kind of client this whole
+surface exists for, which has no shell. So `init_project` — the tool whose
+entire job is to make a project — was reachable only from a server already
+bound to some *other* project, and the gate could not see it because
+`mcp-session` ran `forge init` from a shell first and then called
+`init_project` with `adopt: true`. The server now starts over a `NoQueue`
+that writes nothing anywhere, serves `init_project`, `licences` (whose ids
+are the toolkit's, not a project's) and a `doctor` that answers "no project
+here", and refuses the other fifteen with a frame naming the first. **Why a
+provisional `Project` rather than an `Option`:** every tool and every helper
+takes a project, and threading an `Option` through all of them to express a
+state in which almost nothing may run would put a `None` branch in fifteen
+places to be got wrong once; one boolean beside an in-memory layout puts the
+decision in the one place the refusal is written. A `forge.toml` that does
+not *parse* is still an error, because "there is no project here" and "your
+project is broken" are different answers and only one of them is fixed by
+`init_project`. And `init_project` on a path this server is not serving says
+so: a running server holds one project, settled at startup, and it cannot
+follow. 2026-08-30.
+
+**The MCP `setup` tool plans, gates and records; it does not install, and
+its description says so.** `serve.md` §7 has it returning a job. It returns
+the plan and the one command a human runs, and the honest fix for that
+mismatch was the *description*, not a hurried job: the queue schedules
+`forge gen` command lines and an installer is not one, so making the install
+a job means a third executor shape with its own log, exit-code and cancel
+story — and an answer to what a cancelled 35 GB download leaves behind.
+**Why the description and not the code:** a tool whose description says
+"install" and whose behaviour is "return a sentence" costs an agent a turn
+and its trust; a tool that says what it does costs neither, and the job can
+land later without breaking a promise anybody relied on. What the tool does
+do is the half that must not be automated anyway — the licence gate — and
+the acceptance it records means the human's install does not ask again.
+2026-08-30.
+
 **An unrepeatable measurement is worth more than a repaired one.** Two
 transformers-5 shims were written into the TTS-Audio-Suite clone to see how
 far the speech path could get; both worked, and the third result — 12.8 s of

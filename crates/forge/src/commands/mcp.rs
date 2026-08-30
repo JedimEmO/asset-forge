@@ -20,23 +20,61 @@
 //! nothing else. The one thing printed here is the failure line, and it
 //! goes to stderr through the usual exit path.
 
-use std::path::Path;
+use std::path::PathBuf;
 
+use forge_library::Project;
 use forge_mcp::{Config, PROJECT_ENV};
 
 use crate::cli::Cli;
 use crate::outcome::{Failure, Outcome};
 
 /// Serve until the client hangs up.
+///
+/// **A directory with no `forge.toml` is a session, not a refusal.** This
+/// used to exit 2 with `no forge.toml in <dir>` before the handshake, which
+/// made `init_project` — the one tool that makes a project — reachable only
+/// from a server already bound to some *other* project, and handed a client
+/// with no shell a shell command as its way out (2026-08-30). With no
+/// project found the server starts anyway over a
+/// [`forge_serve::NoQueue`], serving `init_project`, `licences` and
+/// `doctor` and refusing every other tool with a frame that names the
+/// first.
 pub(crate) fn run(cli: &Cli) -> Outcome {
-    let project = match std::env::var_os(PROJECT_ENV) {
+    let named = match std::env::var_os(PROJECT_ENV) {
         // The flag still wins: the environment is the launcher's default,
         // the flag is what this call said.
-        Some(dir) if cli.project.is_none() && !dir.is_empty() => crate::load_root(Path::new(&dir))?,
-        _ => crate::project(cli)?,
+        Some(dir) if cli.project.is_none() && !dir.is_empty() => Some(PathBuf::from(dir)),
+        _ => cli.project.clone(),
+    };
+    // Absent is a session; **broken is still an error**. A `forge.toml`
+    // that does not parse must not read as "there is no project here" —
+    // that would answer a typo with a fresh empty session.
+    let found = match &named {
+        Some(dir) if dir.join(forge_library::project::PROJECT_FILE).is_file() => {
+            Some(crate::load_root(dir)?)
+        }
+        Some(_) => None,
+        None => match Project::discover(&crate::cwd()?) {
+            Ok(project) => Some(project),
+            Err(forge_library::LibraryError::NoProject { .. }) => None,
+            Err(other) => return Err(other.into()),
+        },
+    };
+    let Some(project) = found else {
+        let root = match &named {
+            Some(dir) => std::path::absolute(dir).unwrap_or_else(|_| dir.clone()),
+            None => crate::cwd()?,
+        };
+        let config = Config::for_no_project(&root).map_err(|e| Failure::refused(e.to_string()))?;
+        return serve_with(config, std::sync::Arc::new(forge_serve::NoQueue));
     };
     let queue = crate::commands::generate::queue_for(&project)?;
     let config = Config::for_project(project).map_err(|e| Failure::refused(e.to_string()))?;
+    serve_with(config, queue)
+}
+
+/// Serve one configuration over stdio until the client hangs up.
+fn serve_with(config: Config, queue: std::sync::Arc<dyn forge_serve::Queue>) -> Outcome {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

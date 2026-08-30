@@ -285,11 +285,44 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         "a mesh has no promote door here: {listed:?}"
     );
 
-    // No project is the same refusal every other verb gives, before any
-    // frame is read.
+    // No project is a **session**, not a refusal: this is where a stranger
+    // with no shell starts, and the tool that makes a project is inside the
+    // server. It used to exit 2 here with a shell command as the way out,
+    // which made `init_project` reachable only from a server already bound
+    // to some other project (2026-08-30). The handshake completes; the
+    // banner says which three tools answer.
     let empty = tempfile::tempdir().expect("tempdir");
-    let text = exits(empty.path(), &["mcp"], 2);
-    assert!(text.contains("no forge.toml above"), "{text}");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .arg("mcp")
+        .current_dir(empty.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn forge mcp with no project");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        for frame in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli-test","version":"0"}}}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_audio","arguments":{}}}"#,
+        ] {
+            writeln!(stdin, "{frame}").expect("write a frame");
+        }
+    }
+    let output = child.wait_with_output().expect("forge mcp");
+    let err = stderr(&output);
+    assert_eq!(code(&output), 0, "{err}");
+    assert!(err.contains("no forge.toml at"), "{err}");
+    assert!(
+        err.contains("init_project, licences and doctor"),
+        "the banner names what still answers: {err}"
+    );
+    let refusal = stdout(&output);
+    assert!(
+        refusal.contains("init_project") && refusal.contains("isError"),
+        "a tool that needs a library refuses by naming the one that fixes it:\n{refusal}"
+    );
 }
 
 /// The looks that need no GPU: the binding report, the rig check without a

@@ -227,6 +227,52 @@ pub trait Queue: Send + Sync {
     fn wait(&self, id: &JobId, max: Duration) -> Result<Job, ServeError>;
 }
 
+/// The queue for a session that has no project: every method refuses, and
+/// nothing is written anywhere.
+///
+/// A `LocalQueue` would make `out/serve/` in whatever directory the client
+/// happened to launch the server from, which for a stranger's first session
+/// is their home or a scratch directory. There is nothing to schedule until
+/// there is a project, so this says so instead of preparing to.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoQueue;
+
+impl NoQueue {
+    /// The one sentence every method of this queue answers with.
+    fn refusal() -> ServeError {
+        ServeError::Refused(String::from(
+            "there is no project here, so there is no queue: nothing can be generated, waited              on or cancelled until `init_project` makes one (or the server is reconnected with              --project <path>)",
+        ))
+    }
+}
+
+impl Queue for NoQueue {
+    fn submit(&self, _spec: JobSpec) -> Result<Job, ServeError> {
+        Err(Self::refusal())
+    }
+    fn get(&self, _id: &JobId) -> Result<Option<Job>, ServeError> {
+        Ok(None)
+    }
+    fn list(&self, _filter: &JobFilter) -> Result<Vec<Job>, ServeError> {
+        Ok(Vec::new())
+    }
+    fn cancel(&self, _id: &JobId) -> Result<Job, ServeError> {
+        Err(Self::refusal())
+    }
+    fn log(&self, _id: &JobId, _from: u64) -> Result<LogChunk, ServeError> {
+        Err(Self::refusal())
+    }
+    fn status(&self) -> Result<Status, ServeError> {
+        Err(Self::refusal())
+    }
+    fn runs(&self, _filter: &RunFilter) -> Result<Vec<Run>, ServeError> {
+        Ok(Vec::new())
+    }
+    fn wait(&self, _id: &JobId, _max: Duration) -> Result<Job, ServeError> {
+        Err(Self::refusal())
+    }
+}
+
 /// A queue for this project: the daemon's if one is up, else one of our own.
 ///
 /// # Errors

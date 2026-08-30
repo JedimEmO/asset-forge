@@ -399,6 +399,70 @@ fn session_env(command: &mut tokio::process::Command, project: &Path) {
         .arg(project);
 }
 
+/// A stranger's very first session: a directory that is not a project yet.
+///
+/// `forge mcp` used to refuse to start here — exit 2, "no forge.toml in
+/// &lt;dir&gt;", stdout closed before the handshake — so the one tool that makes
+/// a project was reachable only from a server already bound to a different
+/// one, and the way out a client with no shell was handed was a shell
+/// command. The other two legs of this gate cannot see that: both run
+/// `forge init` from a shell first.
+#[tokio::test]
+async fn mcp_session_with_no_project_yet() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut command = tokio::process::Command::new(forge());
+    command.arg("mcp");
+    session_env(&mut command, dir.path());
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command.spawn().expect("forge mcp starts without a project");
+    let stdout = child.stdout.take().expect("the server's stdout");
+    let stdin = child.stdin.take().expect("the server's stdin");
+    let client = ()
+        .serve((stdout, stdin))
+        .await
+        .expect("the handshake completes where there is no forge.toml");
+
+    // Every tool is still advertised — the surface is the toolkit's, not
+    // the project's — and the seventeen that need a library refuse by
+    // naming the one that fixes it.
+    let blocked = refused(client_ref(&client), "list_audio", json!({})).await;
+    assert!(blocked.contains("init_project"), "{blocked}");
+    assert!(blocked.contains("no forge.toml"), "{blocked}");
+
+    // The two that answer without one, because their answers are the
+    // toolkit's and the machine's rather than a library's.
+    let licences = ok(client_ref(&client), "licences", json!({"kinds": ["props"]})).await;
+    assert!(licences.contains("nvdiffrast"), "{licences}");
+    let doctor = ok(client_ref(&client), "doctor", json!({"quick": true})).await;
+    assert!(!doctor.is_empty());
+
+    // And the one that ends the condition, which then says plainly that
+    // this session cannot follow it.
+    let made = ok(
+        client_ref(&client),
+        "init_project",
+        json!({ "path": dir.path().display().to_string(), "make": { "sfx": true }, "tier": "fake" }),
+    )
+    .await;
+    assert!(dir.path().join("forge.toml").is_file(), "{made}");
+    assert!(
+        made.contains("Reconnect it with `--project"),
+        "the frame says the running server is still holding what it started with:\n{made}"
+    );
+
+    let _ = client.cancel().await;
+    let _ = child.kill().await;
+}
+
+/// The borrow every helper takes, spelled once.
+fn client_ref(client: &RunningService<RoleClient, ()>) -> &RunningService<RoleClient, ()> {
+    client
+}
+
 /// The script over stdio: the transport an editor's MCP client uses.
 #[tokio::test]
 async fn mcp_session_stdio() {

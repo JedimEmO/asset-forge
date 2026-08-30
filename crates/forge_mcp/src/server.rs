@@ -62,6 +62,24 @@ impl ForgeServer {
     /// that are not obvious from a tool's own description are said here:
     /// promote writes the library *now*, and a mesh has no promote at all.
     pub(crate) fn instructions(&self) -> String {
+        if !self.config.project_found {
+            return format!(
+                "There is no forge project at {root} yet — no forge.toml — so this server \
+                 offers three tools and refuses the rest by name.\n\
+                 \n\
+                 - init_project {{\"path\": \"{root}\", \"make\": {{…}}, \"tier\": \"full|lean|fake\"}} \
+                 writes forge.toml and the asset directories. It is the first call, and after \
+                 it this server must be reconnected with --project <path> (or FORGE_PROJECT) \
+                 to work in what it made.\n\
+                 - licences {{}} returns every licence a kind carries, in full. The ids are \
+                 the toolkit's, not a project's, so they answer before there is one.\n\
+                 - doctor {{}} says what this machine can run at all.\n\
+                 \n\
+                 Everything else — the lists, the renders, the generators, the promotes — \
+                 works on a library, and there is none here yet.",
+                root = self.config.project.root.display(),
+            );
+        }
         let stage = self.config.stage_body.as_deref().map_or_else(
             || {
                 String::from(
@@ -126,8 +144,43 @@ impl ForgeServer {
     }
 }
 
+/// The three tools a session with no project may call.
+///
+/// `init_project` makes one, `licences` needs none — the ids and their
+/// texts are the toolkit's, not a project's — and `doctor` answers "what
+/// can this machine run", which is a fair question to ask before choosing a
+/// directory. Everything else works on a library that does not exist yet.
+const WITHOUT_A_PROJECT: [&str; 3] = ["init_project", "licences", "doctor"];
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ForgeServer {
+    /// Every tool call, with the no-project gate in front of it.
+    ///
+    /// The macro writes this one for us when we do not; we do, because a
+    /// server started where there is no `forge.toml` has to answer
+    /// something better than a protocol error for the seventeen tools that
+    /// need a library. A refusal is a successful frame naming the tool that
+    /// fixes it.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if !self.config.project_found && !WITHOUT_A_PROJECT.contains(&request.name.as_ref()) {
+            return Ok(crate::util::refuse(format!(
+                "{} needs a project and there is no forge.toml at {}.\ncall init_project \
+                 {{\"path\": \"{}\", \"make\": {{\"props\": true}}, \"tier\": \"full\"}} to make one \
+                 here — licences and doctor also work without one, and every other tool \
+                 refuses like this until there is a project. nothing was written.",
+                request.name,
+                self.config.project.root.display(),
+                self.config.project.root.display(),
+            )));
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
     fn get_info(&self) -> ServerInfo {
         // ServerInfo is #[non_exhaustive], so build from the default rather
         // than a struct literal.

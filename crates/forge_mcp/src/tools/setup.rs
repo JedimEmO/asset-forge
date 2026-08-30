@@ -201,10 +201,11 @@ impl ForgeServer {
             };
             return match project.set_make_hardware(make, &hardware) {
                 Ok(project) => util::report(format!(
-                    "adopted {}\n  {}\n{}\nnext: {}",
+                    "adopted {}\n  {}\n{}\n{}next: {}",
                     project.root.display(),
                     project.answered_line(),
                     toml_tables(&project),
+                    self.reconnect_note(&project.root),
                     project.next_step()
                 )),
                 Err(err) => util::refuse(err.to_string()),
@@ -244,13 +245,42 @@ impl ForgeServer {
         }
         match forge_library::project::create(&root, &name, make, &hardware, profile.as_deref()) {
             Ok((project, lines)) => util::report(format!(
-                "{}\n{}\nnext: {}",
+                "{}\n{}\n{}next: {}",
                 lines.join("\n  "),
                 toml_tables(&project),
+                self.reconnect_note(&project.root),
                 project.next_step()
             )),
             Err(err) => util::refuse(err.to_string()),
         }
+    }
+
+    /// What a caller has to do before this session can work in the project
+    /// it just made — when it is not the one this server is serving.
+    ///
+    /// A running server holds one project, settled at startup: it cannot
+    /// follow `init_project` to another directory, and it never said so. A
+    /// project was made from the toolkit's own server and every tool after
+    /// it went on answering about the toolkit (2026-08-30).
+    fn reconnect_note(&self, made: &std::path::Path) -> String {
+        if self.config.project_found && made == self.config.project.root {
+            return String::new();
+        }
+        let serving = if self.config.project_found {
+            format!(
+                "this server is still serving {}",
+                self.config.project.root.display()
+            )
+        } else {
+            String::from("this server started with no project and holds none")
+        };
+        format!(
+            "NOTE: {serving}. Reconnect it with `--project {}` (or FORGE_PROJECT={}) to work \
+             there; until then every tool but init_project, licences and doctor answers about \
+             what this server was started with.\n",
+            made.display(),
+            made.display()
+        )
     }
 
     /// What the chosen kinds ask of you, in full.
@@ -340,17 +370,20 @@ impl ForgeServer {
 
     /// Install what the chosen kinds need, after the gate.
     #[tool(
-        description = "Install the backends the chosen kinds need. RETURNS THE PLAN FIRST — \
-                       per kind the backends, what each costs on disk, the total, and every \
-                       licence fact they carry — because nothing here should download tens of \
-                       GB on a call nobody read. REFUSED unless accept names every licence id \
-                       whose needs_accept is true; the refusal lists exactly the ids that are \
-                       missing, and `licences` is where their text is. Already-installed \
-                       backends are skipped: doctor is asked first and anything it calls `ok` \
-                       is left alone, so this is safe to re-run. dry_run:true returns the plan \
-                       and stops. The DINOv3 weights are gated behind a Hugging Face token \
-                       that only a human holds — no argument gets past that, and the answer \
-                       names the two commands a human runs."
+        description = "Plan the install the chosen kinds need, hold it to its licence gate, \
+                       and record what you accept. IT DOES NOT INSTALL ANYTHING — the last \
+                       line of a cleared call is the one command a human runs, and there is \
+                       no tool that runs it for you. What it returns is the plan: per kind \
+                       the backends, what each costs on disk, the total, and every licence \
+                       fact they carry, because nothing should download tens of GB on a call \
+                       nobody read. REFUSED unless accept names every licence id whose \
+                       needs_accept is true; the refusal lists exactly the ids that are \
+                       missing, and `licences` is where their text is. An accepted id is \
+                       written to this machine's receipt as soon as this call clears, so the \
+                       human's install will not ask again. dry_run:true plans and records \
+                       nothing. The DINOv3 weights are gated behind a Hugging Face token that \
+                       only a human holds — no argument gets past that, and the answer names \
+                       the two commands a human runs."
     )]
     async fn setup(&self, Parameters(args): Parameters<SetupToolArgs>) -> CallToolResult {
         let kinds = match self.kinds_of(args.kinds.as_deref()) {
@@ -457,15 +490,22 @@ impl ForgeServer {
             return util::report(out);
         }
 
-        // Where the install becomes a job. Until the daemon's queue is up,
-        // this hands back the one command that runs it: fetching tens of GB
-        // inside a tool call is exactly what jobs exist to prevent, and a
-        // call that blocks for an hour is a session that ends.
+        // **This tool installs nothing, and says so.** `serve.md` §7 has it
+        // returning a job; the queue schedules `forge gen` command lines,
+        // and an installer is not one — making it a job means a third
+        // executor shape with its own log, exit-code and cancel story, and
+        // that is a decision of its own rather than a line added at the end
+        // of a fix. Until it is taken, the honest frame is this: the gate
+        // is what the tool is for, the acceptance is recorded where the
+        // installs are, and the install is a command a human runs.
         let _ = write!(
             out,
-            "\nthe gate is clear — every licence that needs a yes has one.\nrun the install: \
-             `forge setup {}{}{}`\nit skips every backend doctor already calls ok, so it is \
-             safe to re-run; then call doctor.\n",
+            "\nthe gate is clear — every licence that needs a yes has one, and the \
+             acceptance is recorded. NOTHING HAS BEEN INSTALLED: this tool plans and \
+             gates, and the install is a command a person runs in a shell —\n  forge setup \
+             {}{}{}\nit skips every backend doctor already calls ok, so it is safe to \
+             re-run, and it will not ask about the licences above again. Ask the person you \
+             are working with to run it, then call doctor to see what landed.\n",
             label(&kinds).replace(", ", " "),
             accepted.iter().fold(String::new(), |mut line, id| {
                 let _ = write!(line, " --yes {id}");
