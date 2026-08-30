@@ -1,0 +1,52 @@
+# ComfyUI as a systemd --user service, the host behind the "comfy" executor.
+#
+# Installed by backends/comfy/install.sh into ~/.config/systemd/user/ with
+# %h/.cache/asset-forge/backends/comfy rewritten to whatever --prefix said.
+# `%h` keeps this tracked copy free of absolute paths, the way every other
+# backend file is.
+#
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now forge-comfy.service
+#   journalctl --user -u forge-comfy.service -f
+#
+# The flags, each for a reason:
+#   --listen 127.0.0.1        loopback only; the daemon is the sole client
+#   --port 8188               what backend.toml's [server] says
+#   --disable-auto-launch     no browser; this is a service
+#   --disable-api-nodes       no node may call a paid API or reach the net
+#   --base-directory          models, input, output, user and custom_nodes
+#                             live under $PREFIX/data, never inside the
+#                             pinned clone, so the clone stays a clean
+#                             checkout at its commit
+#   --cache-none              every node re-executes each run: a "re-roll"
+#                             that returns a cached output is a job that
+#                             never ran, and the queue must not lie
+#   --enable-manager          ComfyUI-Manager (the pip package, pinned in
+#                             the clone's manager_requirements.txt); the
+#                             snapshot committed in the repo comes from it
+
+[Unit]
+Description=ComfyUI for asset-forge (the "comfy" executor)
+Documentation=https://github.com/comfyanonymous/ComfyUI
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.cache/asset-forge/backends/comfy/ComfyUI
+Environment=PYTHONNOUSERSITE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HOME=%h/.cache/huggingface
+ExecStart=%h/.cache/asset-forge/backends/comfy/venv/bin/python main.py \
+    --listen 127.0.0.1 \
+    --port 8188 \
+    --disable-auto-launch \
+    --disable-api-nodes \
+    --base-directory %h/.cache/asset-forge/backends/comfy/data \
+    --cache-none \
+    --enable-manager
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

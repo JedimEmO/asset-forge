@@ -272,3 +272,149 @@ through nvdiffrast (non-commercial), so an unqualified MIT grant over the
 repository handed a stranger files the repo's own records say may not be
 sold — the licence and the records told two different stories, and the
 records were right. 2026-08-23.
+
+**SkinTokens is a skinner, not a rigger: take the weights by joint order and
+keep the profile's armature.** `demo.py --use_skeleton` hands back a skeleton
+that is ours in count, order and parent array but not in name (`bone_0…`) or
+in position — every joint moved, 7.6 mm mean and 12.1 mm worst against a
+`rest_tolerance_m` of 0.1 mm, because the checkpoint tokenises joint
+positions on a 256-level grid. So the returned skeleton is discarded whole;
+the per-vertex joint indices are read as **skin-order indices**, given the
+name at the same index in the skin that went in, and bound to the profile's
+own untouched `rig.blend`. **Why:** the raw output fails `forge rig check`
+56 findings deep — 0 bones driven, 27 orphaned curves, the character frozen
+in its rest pose through every clip — and the identical file after the
+by-order re-attach passes 10 of 10 with the walk driving 27 of 27 and 0
+unweighted vertices. Nothing about the returned skeleton is repaired or
+averaged towards ours, because a rig nudged "to fit" is the one defect this
+ledger already records under a different name; it is thrown away and the
+contract's own rest pose is used, which is the pose every shipped clip was
+baked against. 2026-08-30.
+
+**A rigid shell wants one bone, not a blend.** SkinTokens binds each
+detached island of a plated body to a single joint (a `vex_runner` pauldron
+shell: LeftArm 100 %); the bone-heat ladder blended the same shell across
+three (LeftArm 50 %, LeftShoulder 36 %, LeftForeArm 14 %) and it shears on
+any clip that counter-rotates the shoulders. **Why:** a shell is a rigid
+object in the fiction and a smooth weight field is a lie about it — the
+repository already knew this, which is why `rig.py` carried a `shells_rigid`
+rescue; what the spike adds is that the skinner does it natively and better,
+and that the difference is visible on `pistol_shoot`, not in the numbers.
+2026-08-30.
+
+**The reference image is drawn by Qwen-Image, and the style line decided it,
+not the pose.** Both candidates were given one prompt — the style guide's
+line in front of one courier description — and pose-conditioned on the
+profile's own rest pose through a native ControlNet, four seeds each, on the
+same card the same afternoon. Qwen-Image held the arms within 0.2–1.6° of
+horizontal in 4 of 4 with flat palm-down hands, and drew flat, posterized,
+already-lit surfaces in 4 of 4; FLUX.1-schnell held 3.0–6.4° with splayed
+palm-forward hands and drew a photograph in 4 of 4, ignoring the style line
+entirely. **Why the style line outweighs the four-times-faster model:** the
+style guide says in so many words that the look is enforced at the reference
+and nothing downstream repaints a lifted mesh, so a model that will not take
+the project's style sentence cannot serve `generate_reference` at any speed.
+The licences agree with the pictures — Qwen-Image's pose ControlNet is
+Apache-2.0 and trained on the model it conditions, while every maintained
+FLUX pose ControlNet is FLUX.1-dev Non-Commercial and off-base for schnell —
+but that was not the deciding fact, and it is recorded here so nobody
+re-opens this on the assumption that it was. What the spike also showed is
+that **the fit gate does not choose an image model**: both winners lifted and
+passed it (reach 1.21 and 1.20 of wrist span, arm tips 22 mm and 35 mm under
+the wrists), because a 6° droop is well inside what the gate tolerates. The
+gate is the floor, the eye on the contact sheet is the choice. 2026-08-30.
+
+**A background the picture is judged on is not the background the keyer
+sees.** Two failures from the same afternoon, both invisible until the
+picture was measured: Qwen drew a soft contact shadow under the shoes on a
+seed whose background reads as flat, and the shadow's core sits further from
+the backdrop than the keyer's tolerance, so it survived, joined the shoes and
+lifted as **a slab under both feet** — a connected island the dust filter
+cannot drop and the fit gate does not look at; and FLUX drew a cream jacket
+on a light-grey ground, where the border flood reached through the sleeves'
+antialiasing and punched holes out of the torso. **Why:** "flat uniform light
+grey background, no floor, no shadow" in a prompt is a request, and the thing
+that decides whether a reference is liftable is `mesh.py`'s border flood run
+on the actual pixels. So the reference door runs that keyer on the drawn PNG
+before anything is lifted — the same check `import_reference` promises a
+brought image — and the backdrop value is stated *against* the character
+rather than as a constant. 2026-08-30.
+
+**A `vram_gb` is a budget, not a measurement, and half of ours were wrong by
+a factor of four.** Every VRAM figure in `CLAUDE.md`, `backends/README.md`,
+`hosting.md`'s co-residency table and each `backend.toml` was written from a
+README, an upstream claim or a planning estimate; on 2026-08-30 a 10 Hz
+`nvidia-smi` sampler finally ran over four of them. TRELLIS.2 at 1024³ is
+**4.7 GB**, not the ~22 GB every table said. SkinTokens is **3.3–4.4 GB**,
+not upstream's "at least 14 GB". ARDY is **15.4 GB**, which is the ~16 GB
+the table said. Qwen-Image fp8 really is 23.3 GB. So the two numbers that
+shaped the plan's hardware tiers — "a lift needs the whole card" and "the
+skinner is tight on 16 GB" — were both fiction, and the one thing that
+genuinely eats a 24 GB card is the *image model*. **Why:** an unmeasured
+budget reads exactly like a measurement once it is in a table, and this one
+had been quoted into `just gpu`'s sizing, into the co-residency rules and
+into the lean tier's whole shape. A figure nobody sampled belongs in a
+`vram_gb` field (it is a budget, and a conservative one is correct there) and
+**never in prose that reads as fact**; `hosting.md` now dates each measured
+peak and says which rows are still estimates. 2026-08-30.
+
+**The lean tier lifts at 1024³ too; 512³ is a speed knob, not a memory one.**
+`forge2.md`'s lean column had "512³" as what a 16 GB card must fall back to.
+Measured, a 1024³ lift peaks at 4.7 GB — a 16 GB card has three quarters of
+itself spare during one — while 512³ saves 16 s and costs the face: the same
+reference at the same seed came back with a doughy mask instead of a brow,
+nose and mouth, fingers fused into a mitt, and the magenta visor baked out
+purple and the scalp orange (`out/spike/lean/views_512.png` against
+`views_1024.png`; both closed, both in the T-pose, both at the same bounds).
+That is the 1 500-vertex register's failure again, milder. **Why:** the tier
+question is "what will not fit", and 1024³ fits; a register chosen to save
+memory that was never scarce buys nothing and spends the thing this library
+is judged on. What the lean tier does have to change is the *reference image*
+(Qwen-Image Q4_K_M GGUF, 13.07 GB, ~15.1 GB of run against fp8's 23.3 GB, and
+111 s against 113 s — Q4 costs about nothing in style, pose or time) and it
+has to admit that **ARDY at 15.4 GB is marginal on a real 16 GB part**, not
+comfortable. 512³ stays available as what it actually is: a faster lift for a
+crowd body nobody walks up to. 2026-08-30.
+
+**The host keeps the GGUF pack, and a pack lives in four places or nowhere.**
+The lean-tier spike cloned `city96/ComfyUI-GGUF` @ `6ea2651e` into the
+ComfyUI host by hand, put `gguf` and `protobuf` in its venv and pulled the
+13.07 GB `qwen-image-Q4_K_M.gguf`, while `snapshot.json` said
+`git_custom_nodes: {}`, `backend.toml` said `packs = []`, `install.sh` never
+fetched any of it and `hosting.md`'s pins row said "custom node packs: none"
+— with `workflows/reference_qwen_gguf.api.json` tracked and unable to run
+without the pack. The reconciliation goes towards **keeping** it: the ledger
+above already made Q4_K_M the lean tier's reference image, so the pack is
+part of the host's shape and not spike residue, and a stranger following
+`install.sh` must end up with a host that can run every tracked template.
+**Why the shape of the fix and not just the direction:** the four statements
+about a host — `[[comfy.packs]]`, `install.sh`, `snapshot.json` and the pins
+row — are one fact written four times, and `snapshot.json` is the Manager's
+own answer, so it was **re-fetched from `GET /v2/snapshot/get_current`, not
+hand-edited**; a snapshot typed by hand is the same defect as a hand-repaired
+`.blend`. `probe.py` now holds each pack's clone to its pinned commit the way
+it holds ComfyUI's, and `UnetLoaderGGUF` joined its wanted-node list, so the
+next drift is a doctor line rather than a `POST /prompt` failure in front of
+a stranger. 2026-08-30.
+
+**Phase 0 answers all three of its questions with a yes, and the plan stands
+as written.** Recorded as one verdict because the spikes were a gate: **the
+skinner is go** — SkinTokens skinned `vex_runner`'s raw lift to the profile's
+own armature by joint order, bound the detached pauldron shells rigidly to
+one bone each, and the result passed `forge rig check` 10 of 10 with the walk
+driving 27 of 27 and 0 unweighted vertices, so Phase 2 goes ahead whole and
+the bone-heat ladder is condemned rather than kept; **the reference model is
+`qwen_image`** — it took the style guide's sentence and held the arms within
+1.6° of horizontal in 4 of 4 where FLUX.1-schnell drew a photograph in 4 of
+4, so `backends/qwen_image/` is what Phase 3 builds and the FLUX template
+stays only as the losing side's evidence; **the lean tier has measurements
+where it had estimates** — four rows sampled at 10 Hz on the card, 1024³ on
+both tiers, and Q4_K_M GGUF as lean's only real substitution. **Why the
+verdict is its own entry and not just the three findings above it:** the risk
+table named "SkinTokens skin-only is a demo mode with no numbers" as the one
+risk that could shrink this plan to the daemon and the references, and a
+reader who finds three findings but no ruling has to re-derive the go/no-go
+from them — a gate that passed should say so once, in the file that wins over
+the plan. What Phase 0 did *not* answer, and does not pretend to: no number
+here was taken on a real 16 GB part, and ARDY at 15.4 GB is marginal on one.
+2026-08-30.

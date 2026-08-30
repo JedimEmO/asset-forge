@@ -1,0 +1,160 @@
+# ComfyUI — the host the "comfy" executor drives over HTTP. Not a generator:
+# it runs no forge module, holds no weights of its own and is not execed by
+# the launcher. `forge serve`'s comfy executor (Phase 1) posts a workflow to
+# 127.0.0.1:8188 and reads the result back; until then this directory exists
+# so `forge doctor` lists the host beside the generators, with its pin, its
+# licence and the models the reference spike fetched into it.
+#
+# Described like Blender — a host program, env_kind "none", probed from the
+# outside — with one difference: ComfyUI *is* a pinned checkout, so `commit`
+# names it and probe.py holds the running service to it. The venv, the clone
+# and the models live under $PREFIX (${FORGE_BACKENDS_HOME:-~/.cache/
+# asset-forge/backends}/comfy); this directory holds the .env and .checkout
+# links, the unit file, the paths config and the Manager snapshot.
+#
+# Install traps, dated: designs/hosting.md, "ComfyUI".
+
+name = "comfy"
+role = "host"                              # not "tool": Blender is a binary a module execs; this is a service a client calls
+executor = "tool"                          # forge2.md's second-form field; today's parser keeps it in `extra`
+upstream = "https://github.com/comfyanonymous/ComfyUI"
+commit = "169fcf35a2fc163fec31338b816503ddac0d3fcf"   # v0.34.2, 2026-08-27
+license = "GPL-3.0-or-later (ComfyUI; driven over HTTP from a separate process, so nothing of it is linked into the toolkit)"
+env_kind = "none"                          # doctor probes the service, not an interpreter; .env still points at the venv the unit runs
+python = "3.12"                            # the venv the systemd unit execs
+cuda = "13.0"                              # torch 2.13.0+cu130 in that venv
+vram_gb = 0.4                              # what the idle service holds (CUDA context); the models it hosts carry their own numbers
+entry = "forge_gen.comfy"                  # where Phase 1's HTTP client will live; nothing execs a host backend's entry
+cwd = "none"
+resident = true                            # a systemd --user unit: up across calls, unlike every other backend
+
+[env]
+PYTHONNOUSERSITE = "1"
+# Every node pack that downloads from the hub reuses the cache the other
+# backends already filled; the unit sets the same value.
+HF_HOME = "${HOME}/.cache/huggingface"
+
+[server]
+host = "127.0.0.1"
+port = 8188
+health = "/system_stats"
+unit = "forge-comfy.service"               # systemctl --user; probe.py names it in its hints
+ready_timeout_s = 120
+
+[comfy]
+# The Manager is a pip package now, not a clone: ComfyUI pins it in
+# manager_requirements.txt and `--enable-manager` turns it on.
+manager_package = "comfyui_manager"
+manager_version = "4.2.2"
+snapshot = "snapshot.json"                 # `GET /api/manager/snapshot/get_current`, committed beside this file
+base_directory = "data"                    # relative to $PREFIX: models/, input/, output/, user/, custom_nodes/
+# One custom node pack, and only one: everything the fp8 templates need is
+# native to v0.34.2, but the lean tier's reference image is a Q4_K_M GGUF and
+# only ComfyUI-GGUF can load it. Each entry is { repo, commit, dir, pips }:
+# `dir` is the directory name under $PREFIX/data/custom_nodes/, `pips` what
+# the pack needs in the comfy venv beyond ComfyUI's own requirements.
+[[comfy.packs]]
+repo = "https://github.com/city96/ComfyUI-GGUF"
+commit = "6ea2651e7df66d7585f6ffee804b20e92fb38b8a"   # 2026-01-12
+dir = "ComfyUI-GGUF"
+license = "Apache-2.0"
+pips = ["gguf==0.19.0", "protobuf==7.36.0"]
+nodes = ["UnetLoaderGGUF"]
+note = "loads qwen-image-Q4_K_M.gguf for reference_qwen_gguf.api.json — the lean tier's image model. The fp8 templates do not touch it."
+frontend = "1.49.6"
+
+# The models the Phase 0 reference spike fetched, by the ComfyUI model
+# folder they live in under $PREFIX/data/models/. `store` has no word for a
+# comfy folder yet (forge2.md's `comfy:models/...`), so they are listed here
+# rather than as [[models]]: doctor would look for them in the HF cache and
+# be wrong. probe.py checks them on disk and says which are absent.
+[[comfy.models]]
+repo = "Comfy-Org/Qwen-Image_ComfyUI"
+file = "split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors"
+folder = "diffusion_models"
+license = "Apache-2.0"
+gb = 20.43
+
+[[comfy.models]]
+repo = "Comfy-Org/Qwen-Image_ComfyUI"
+file = "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
+folder = "text_encoders"
+license = "Apache-2.0"
+gb = 9.38
+
+[[comfy.models]]
+repo = "Comfy-Org/Qwen-Image_ComfyUI"
+file = "split_files/vae/qwen_image_vae.safetensors"
+folder = "vae"
+license = "Apache-2.0"
+gb = 0.25
+
+[[comfy.models]]
+repo = "city96/Qwen-Image-gguf"
+revision = "e77babc55af111419e1714a7a0a848b9cac25db7"
+file = "qwen-image-Q4_K_M.gguf"
+folder = "diffusion_models"
+node = "UnetLoaderGGUF"                    # not UNETLoader: a .gguf is listed by the pack's own loader
+field = "unet_name"
+license = "Apache-2.0"
+gb = 13.07
+note = "the lean tier's Qwen-Image: 16.2 GB measured at 1024 with --reserve-vram 8, against fp8's 23.3 GB, and 111 s against 113 s. Needs the ComfyUI-GGUF pack above; the text encoder stays the fp8 Qwen2.5-VL"
+
+[[comfy.models]]
+repo = "Comfy-Org/Qwen-Image-InstantX-ControlNets"
+file = "split_files/controlnet/Qwen-Image-InstantX-ControlNet-Union.safetensors"
+folder = "controlnet"
+license = "Apache-2.0"
+gb = 3.54
+note = "InstantX Qwen-Image ControlNet-Union: canny, depth, pose, soft edge — native ControlNetLoader, no custom node"
+
+[[comfy.models]]
+repo = "Comfy-Org/flux1-schnell"
+file = "flux1-schnell-fp8.safetensors"
+folder = "checkpoints"
+license = "Apache-2.0"
+gb = 17.24
+note = "the fp8 form ComfyUI documents for schnell is the all-in-one checkpoint (CheckpointLoaderSimple); there is no fp8 UNET-only file, only a 23.8 GB bf16 one"
+
+[[comfy.models]]
+repo = "comfyanonymous/flux_text_encoders"
+file = "clip_l.safetensors"
+folder = "text_encoders"
+license = "Apache-2.0"
+gb = 0.25
+
+[[comfy.models]]
+repo = "comfyanonymous/flux_text_encoders"
+file = "t5xxl_fp8_e4m3fn.safetensors"
+folder = "text_encoders"
+license = "Apache-2.0"
+gb = 4.89
+
+[[comfy.models]]
+repo = "black-forest-labs/FLUX.1-schnell"
+file = "ae.safetensors"
+folder = "vae"
+license = "Apache-2.0"
+gb = 0.34
+note = "gated: auto — an HF token is required even though the licence is Apache-2.0"
+
+[[comfy.models]]
+repo = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+file = "diffusion_pytorch_model.safetensors"
+folder = "controlnet"
+local = "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors"
+license = "FLUX.1-dev Non-Commercial License"
+gb = 4.28
+note = "the only maintained pose ControlNet for the FLUX family; trained on FLUX.1-dev, applied to schnell off-base. Both facts are the spike's to weigh"
+
+[[notices]]
+title = "ComfyUI"
+text = "GPL-3.0-or-later. It runs as its own systemd --user service and is driven over HTTP; nothing of it is imported into the toolkit, and what it writes is the project's own. Started with --disable-api-nodes, so no node in it can call a paid API or reach the internet from the graph."
+
+[[notices]]
+title = "FLUX pose ControlNet"
+text = "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0 is under the FLUX.1-dev Non-Commercial License and was trained on FLUX.1-dev, not schnell. It is here only so the Phase 0 spike can condition both candidates on a pose; no reference record may name it until that licence is weighed. The Qwen-Image side (InstantX ControlNet-Union) is Apache-2.0 and on-base."
+
+[[notices]]
+title = "resident service"
+text = "the unit is up across calls and holds ~0.4 GB of the card for its CUDA context even with no model loaded; a loaded image model stays resident until the workflow's unload node or POST /free. Stop it (systemctl --user stop forge-comfy) before a 1024-cubed lift."

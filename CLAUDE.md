@@ -31,11 +31,17 @@ record to make a gate pass is the same defect in a smaller file.
 
 ## The GPU is shared
 
-One 24 GB card. TRELLIS.2 at 1024³ (~22 GB), ARDY (~16 GB), MOSS (~6–12 GB)
-and the ACE-Step server (resident ~8 GB until `--stop-server`) do not
-co-reside. `just gpu` before any generate; never run two generates at once,
-and never start one while a studio window with a model loaded is still up
-on the real adapter. Doctor says who is holding the card; believe it.
+One 24 GB card, and nothing on it co-resides. Peaks measured 2026-08-30
+(`designs/hosting.md` § GPU co-residency): the image model is the expensive
+one — Qwen-Image fp8 **23.3 GB**, its Q4 GGUF form **16.2 GB**, each alone
+on the card — then ARDY at **15.4 GB**; TRELLIS.2 at 1024³ is **4.7 GB**
+and SkinTokens **3.3–4.4 GB**. MOSS (~6–12 GB) and the ACE-Step server
+(resident ~8 GB until `--stop-server`) are budgets nobody has sampled, and
+each `backend.toml`'s `vram_gb` is a budget too — never quote one as a
+measurement. `just gpu` before any generate; never run two generates at
+once, and never start one while a studio window with a model loaded is
+still up on the real adapter — or while the ComfyUI unit holds a model.
+Doctor says who is holding the card; believe it.
 
 ## Records
 

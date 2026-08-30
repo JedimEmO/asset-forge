@@ -1,0 +1,29 @@
+make_asset(): count each child once (upstream issue #8).
+
+`make_asset` fills `sons` twice — once in the loop that sums bone lengths
+and again in the loop that jitters coincident joints — so every joint
+carries each child twice. `len(sons[i]) == 1` is then never true: the
+`connect_tail_to_unique_child` branch never runs, and `extrude_from_parent`
+fires for every bone instead. The tails come out as a fixed stub along the
+parent direction rather than reaching the child, which is what an exported
+armature is judged on and what a viewer draws.
+
+One line: drop the second append. The jitter loop needs `p` and the
+distance, not the child list.
+
+See designs/hosting.md, "SkinTokens", and
+https://github.com/VAST-AI-Research/SkinTokens/issues/8. Against
+VAST-AI-Research/SkinTokens @ 273b691d.
+
+diff --git a/src/rig_package/parser/bpy.py b/src/rig_package/parser/bpy.py
+index fc33b8c..d7f4de5 100755
+--- a/src/rig_package/parser/bpy.py
++++ b/src/rig_package/parser/bpy.py
+@@ -561,7 +561,6 @@ def make_asset(
+             p = asset.parents[i]
+             if p == -1:
+                 continue
+-            sons[p].append(i)
+             d = np.linalg.norm(joints[i] - joints[p])
+             if d <= length * 1e-2:
+                 max_d = max(length, 1e-5)

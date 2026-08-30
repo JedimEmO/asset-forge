@@ -1,0 +1,22 @@
+# Extra model search paths for the ComfyUI host. install.sh copies this file
+# into the pinned clone as extra_model_paths.yaml, which is where ComfyUI
+# looks for it by default (and which the clone's own .gitignore covers, so
+# the checkout stays clean at its commit).
+#
+# The models ComfyUI loads live under --base-directory, at
+# $PREFIX/data/models/<folder>/; that is not configured here, it is the flag.
+# What this adds is the shared Hugging Face cache the other backends already
+# fill (~/.cache/huggingface/hub), under the one key whose format matches
+# what the cache holds: `diffusers`. The single-file keys — diffusion_models,
+# text_encoders, vae, controlnet — are deliberately NOT pointed at the hub
+# cache: it stores every repo as blobs behind snapshot symlinks, so a
+# recursive scan would list hundreds of files under names no workflow can
+# name stably, and the loaders' enums would change with every unrelated
+# download.
+#
+# base_path goes through expanduser and expandvars, so ~ and $VARS work and
+# no absolute path is written here. Relative keys are joined to base_path.
+huggingface:
+    base_path: ~/.cache/huggingface/hub
+    is_default: false
+    diffusers: .

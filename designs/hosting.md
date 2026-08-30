@@ -96,8 +96,10 @@ not.
   ~1 800 triangles on a closed surface; the registers in `profile.toml`
   are stated in vertices for this reason. 2026-08-18.
 - **Never 1536³ on 24 GB.** 512³ and 1024³ both complete with a desktop
-  resident (~0.8 GB); the full-run peak at 1024³ was not pinned down.
-  Measure one before being tempted. 2026-08-18.
+  resident (~0.8 GB). The full-run peak at 1024³ was unpinned until
+  2026-08-30, when a sampler finally ran over one: **4.7 GB**, not the
+  ~22 GB this file and `backend.toml` had budgeted — see *Lean tier* below
+  before quoting either number. 2026-08-18, measured 2026-08-30.
 
 **A lift can die in the glb export with a JSON TypeError, and re-running
 the same seed fixes it.** Seen 2026-08-28 lifting a character at the 1024
@@ -197,6 +199,150 @@ prop path as systematically broken, on evidence that included a success.
   bodies and models claim integrity and not regeneration, and why `forge
   rebake` skips them loudly. 2026-08-20.
 
+## ComfyUI (`backends/comfy`, host, systemd `--user`, commit `169fcf35`)
+
+Installed 2026-08-30 for the Phase 0 reference-image spike. Not a
+generator: a service on `127.0.0.1:8188` that the `comfy` executor will
+drive over HTTP. `backends/comfy/README.md` says what is where and why the
+flags are the flags.
+
+**The pins.**
+
+| what | pin |
+|---|---|
+| ComfyUI | `comfyanonymous/ComfyUI` @ `169fcf35a2fc163fec31338b816503ddac0d3fcf` (v0.34.2, 2026-08-27) |
+| python | 3.12 venv under `$PREFIX/venv` |
+| torch | `2.13.0` from PyPI — the linux wheel is `2.13.0+cu130` |
+| ComfyUI-Manager | pip package `comfyui_manager==4.2.2`, pinned by the clone's own `manager_requirements.txt`, switched on with `--enable-manager`. Not a `custom_nodes` clone. |
+| frontend | `comfyui-frontend-package==1.49.6` (from `requirements.txt`) |
+| custom node packs | **one:** `city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a` (Apache-2.0), cloned into `$PREFIX/data/custom_nodes/`, with `gguf==0.19.0` and `protobuf==7.36.0` in the venv. It exists for one node, `UnetLoaderGGUF`, which is the only way to load the lean tier's Q4_K_M image model; every loader the fp8 templates need is native to v0.34.2. `backends/comfy/snapshot.json` records it. |
+| unit | `forge-comfy.service`, `Restart=on-failure`, `--listen 127.0.0.1 --port 8188 --disable-auto-launch --disable-api-nodes --base-directory $PREFIX/data --cache-none --enable-manager` |
+
+**The exact download list.** Into `$PREFIX/data/models/<folder>/`; sizes are
+the download, 73.7 GB in total.
+
+| folder | file | repo | GB | licence |
+|---|---|---|---|---|
+| `diffusion_models` | `qwen_image_fp8_e4m3fn.safetensors` | `Comfy-Org/Qwen-Image_ComfyUI` @ `split_files/diffusion_models/` | 20.43 | Apache-2.0 |
+| `text_encoders` | `qwen_2.5_vl_7b_fp8_scaled.safetensors` | `Comfy-Org/Qwen-Image_ComfyUI` @ `split_files/text_encoders/` | 9.38 | Apache-2.0 |
+| `vae` | `qwen_image_vae.safetensors` | `Comfy-Org/Qwen-Image_ComfyUI` @ `split_files/vae/` | 0.25 | Apache-2.0 |
+| `controlnet` | `Qwen-Image-InstantX-ControlNet-Union.safetensors` | `Comfy-Org/Qwen-Image-InstantX-ControlNets` @ `split_files/controlnet/` | 3.54 | Apache-2.0 |
+| `checkpoints` | `flux1-schnell-fp8.safetensors` | `Comfy-Org/flux1-schnell` | 17.24 | Apache-2.0 |
+| `text_encoders` | `clip_l.safetensors` | `comfyanonymous/flux_text_encoders` | 0.25 | Apache-2.0 |
+| `text_encoders` | `t5xxl_fp8_e4m3fn.safetensors` | `comfyanonymous/flux_text_encoders` | 4.89 | Apache-2.0 |
+| `vae` | `ae.safetensors` | `black-forest-labs/FLUX.1-schnell` | 0.34 | Apache-2.0, but the repo is gated `auto`: an `hf auth login --token` is required or it 401s |
+| `diffusion_models` | `qwen-image-Q4_K_M.gguf` | `city96/Qwen-Image-gguf` @ `e77babc5` | 13.07 | Apache-2.0, and needs the ComfyUI-GGUF pack above — the lean tier's image model |
+| `controlnet` | `FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors` | `Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0` (`diffusion_pytorch_model.safetensors`, renamed) | 4.28 | **FLUX.1-dev Non-Commercial License**, and trained on FLUX.1-dev rather than the schnell it conditions. `install.sh` asks before fetching it; `--no-flux-controlnet` declines. |
+
+The fp8 form differs per model, and the difference is upstream's, not a
+choice: ComfyUI documents Qwen-Image as three split files and
+FLUX.1-schnell's fp8 as one all-in-one checkpoint loaded with
+`CheckpointLoaderSimple`. There is no fp8 UNET-only schnell file — the
+split diffusion model exists only in bf16 at 23.8 GB, which the budget had
+no room for. The FLUX `clip_l` / `t5xxl_fp8_e4m3fn` / `ae` files are
+fetched anyway, because the lean tier's GGUF path will need them.
+2026-08-30.
+
+**A pack the host carries and the tracked files deny is a lie with a
+13 GB attachment.** ComfyUI-GGUF was cloned mid-spike, by hand, for the
+lean-tier image model, and for an afternoon `snapshot.json` said
+`git_custom_nodes: {}`, `backend.toml` said `packs = []`, `install.sh`
+never fetched it and this table's pins row said "custom node packs: none"
+— while `workflows/reference_qwen_gguf.api.json`, tracked, could not run
+without it. A stranger following the installer would have got a template
+that fails at `POST /prompt`. So a pack is written in four places at once
+or it is not installed: `[[comfy.packs]]` (repo, commit, dir, pips, the
+nodes it contributes), `install.sh` (cloned at its pin *before* the unit
+starts — packs are scanned once at startup), `snapshot.json` (re-fetched
+from `GET /v2/snapshot/get_current`, never hand-edited), and this row.
+`probe.py` holds the clone to its pinned commit the way it holds ComfyUI's
+own, and `UnetLoaderGGUF` is in its wanted-node list, so an absent pack is
+a doctor line and not a runtime surprise. 2026-08-30.
+
+**The reference spike: Qwen-Image wins, and the pose was never the close
+part.** 2026-08-30, the card otherwise idle. Two API-format templates —
+`backends/comfy/workflows/reference_qwen.api.json` and
+`reference_flux.api.json`, stable node ids, five patched inputs (prompt,
+negative prompt, pose image, seed, filename prefix) — driven by
+`python/forge_gen/spike_reference.py` over `POST /upload/image`, `POST
+/prompt`, `GET /history/{id}`, `GET /view`, `POST /free`, `GET
+/system_stats`. One prompt for both models: the style-guide line ("flat
+matte painted texture with the lighting painted in, posterized colour
+steps") in front of one courier description, the format sentences the
+reference door will carry, on `out/spike/tpose_pose.png` (the profile's own
+rest pose as an OpenPose figure). Four seeds each: 7, 11, 42, 1234.
+
+**Both sides ran with a ControlNet**, which is the only reason the
+comparison is fair and also the reason it is not free: Qwen-Image on
+InstantX ControlNet-Union (Apache-2.0, trained on the model it conditions),
+FLUX.1-schnell on Shakker-Labs FLUX.1-dev-ControlNet-Union-Pro-2.0 (**FLUX.1-dev
+Non-Commercial**, trained on dev and applied off-base to schnell). Both
+through native `ControlNetLoader` → `ControlNetApplyAdvanced` with the VAE
+connected, strength 0.85, 0.0–0.85 of the schedule; no `SetUnionControlNetType`
+(the Qwen union infers, and Union Pro 2.0 dropped the mode embedding).
+
+| measured | Qwen-Image fp8 | FLUX.1-schnell fp8 |
+|---|---|---|
+| seconds per 1024² image, mean of 4 | **113.6 s** (20 steps, cfg 2.5, euler/simple, shift 3.1) | **30.8 s** (4 steps, cfg 1.0 — schnell's own register; 35.0 s on the first seed, 29 s after) |
+| peak on the card, `nvidia-smi` at 10 Hz | **23 902 MiB (23.3 GB)** | **23 522 MiB (23.0 GB)** |
+| baseline before each run | 1 090–1 360 MiB | 1 280–1 525 MiB |
+| weights it moves per image | 20.43 + 9.38 + 0.25 + 3.54 GB | 17.24 + 0.34 + 4.28 GB |
+| strict T-pose, arms within 2° of horizontal | **4 of 4** (0.2°, 1.6°, 0.6°, 0.3°) | 0 of 4 (3.1°, 3.6°, 3.0°, 6.4°) |
+| flat keyable background (`mesh.py`'s own keyer) | 4 of 4 pass, but a floor band in 2 and a contact shadow in 2 | 3 of 4 pass; seed 11 refused, border spread 45 > 24 |
+| all five criteria (pose, single subject, flat ground, clean silhouette, ≥ 7 heads) | **2 of 4** (11, 42) | **0 of 4** |
+| the style line obeyed | 4 of 4 flat and posterized | 0 of 4 — photoreal every seed |
+
+**`POST /free` gave the card back both times**, so the unit-restart path
+`forge2.md` names as the fallback was never needed: 22.43 → 22.22 GB free
+across the Qwen run, 22.24 → 22.09 across the FLUX one. What does creep is
+the resident floor — 1.09 GB before the first run, 1.53 GB after seven
+model swaps — the CUDA context plus allocator residue, not a leaked model.
+Believe `/system_stats` for *free*, and `nvidia-smi` for *peak*: ComfyUI
+reports what torch has allocated now, which is nowhere near the peak of a
+run.
+
+**Both image models are alone-on-the-card jobs, exactly like a 1024³
+lift.** 23.3 and 23.0 GB peak on a 24 GB card is the whole card; the four
+weights of a Qwen image do not co-reside, so with `--cache-none` every
+prompt re-encodes the text through the 9.38 GB Qwen2.5-VL encoder and
+re-loads the 20.43 GB diffusion model, and that swap is most of the 113 s.
+The number to weigh in Phase 1 is not "Qwen is four times slower than
+schnell" but "the cache-off decision costs a model swap per image"; it is
+still the right decision while a job record cannot say `cached: true`.
+
+**The Qwen picture that shipped carries a floor the prompt forbade.** "no
+floor, no shadow, no gradient" in the prompt, and Qwen drew a lit ground
+plane in seeds 7 and 1234 and a soft contact shadow under the shoes in 11
+and 42. On seed 42 — the one lifted — the shadow's core is more than the
+keyer's 28-level tolerance from the backdrop, so it survives keying,
+connects to the shoes, and TRELLIS.2 lifts it as **a slab under both feet**
+(visible in `out/spike/views_courier_qwen.png`). The fit gate passes it
+anyway (it measures arms, not plinths) and the dust filter cannot drop it
+(it is connected, not an island). Phase 3's `generate_reference` needs the
+pose image framed with air under the feet, or a shadow check on the drawn
+PNG, or both.
+
+**A garment the value of the backdrop is unkeyable.** FLUX seed 7 drew a
+cream jacket on a 185-grey ground; `mesh.py`'s border flood reached through
+the antialiased sleeve edges and punched 1 771- and 1 053-pixel holes out
+of the torso and arms. The keyer is not at fault and a looser tolerance
+would be worse. It is an argument for saying the backdrop value in the
+prompt *against* the character ("light grey" beside a dark courier), and
+for running the keyer on the drawn PNG before a GPU minute is spent on a
+lift — which `import_reference` already promises to do and
+`generate_reference` must do too.
+
+**The lifts both passed, and that is the least interesting result.**
+`forge gen mesh --preset character` on each winner, first attempt, no retry
+needed (104.1 s Qwen, 83.0 s FLUX), then `prepare_spike.py`: Qwen reach
+1.21 of wrist span, arm tips 22 mm under the wrists; FLUX reach 1.20, tips
+35 mm under. Both inside the gate's 0.80–1.45 and 0.15 m. So the fit gate
+does **not** separate these two models — a 3–6° arm droop is well inside
+what it tolerates — and anyone choosing an image model on "which one passes
+the gate" would have learned nothing. What separates them is the style
+line, the hands and the background, and all three are read by eye off the
+contact sheet.
+
 ## GPU co-residency
 
 Approximate peaks on one 24 GB card with a desktop resident (~0.8 GB);
@@ -206,10 +352,317 @@ a lift.
 
 | Backend | VRAM | Resident after the call? |
 |---|---|---|
-| TRELLIS.2 at 1024³ | ~22 GB | no |
-| TRELLIS.2 at 512³ | completes beside the desktop; peak not measured | no |
-| ARDY sweep | ~16 GB | no |
+| TRELLIS.2 at 1024³ | **4.7 GB measured** (2026-08-30, `vex_runner`) — the ~22 GB this row carried for a week was a budget nobody had run a sampler over; see the lean-tier section | no |
+| TRELLIS.2 at 512³ | **3.1 GB measured** (2026-08-30, the same reference) | no |
+| ARDY sweep | **15.4 GB measured** (2026-08-30, one prompt, two samples) — the ~16 GB this row carried was right | no |
 | ACE-Step server | ~8 GB | **yes**, until `--stop-server` |
 | MOSS-TTS (4B) | ~12 GB | no |
 | MOSS-SoundEffect | ~6–8 GB | no |
+| Qwen-Image fp8 + InstantX ControlNet at 1024² | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
+| FLUX.1-schnell fp8 + Union-Pro ControlNet at 1024² | **23.0 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
+| Qwen-Image **Q4_K_M GGUF** + InstantX ControlNet at 1024², `--reserve-vram 8` | **16.2 GB measured** (2026-08-30) — **alone**; the lean tier's form | no, `POST /free` returns it |
+| SkinTokens skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
+| ComfyUI unit idle, nothing loaded | ~0.4 GB, creeping to ~0.7 GB after several model swaps | **yes**, until the unit stops |
 | studio viewer on the real adapter | small; not measured | while open |
+
+## SkinTokens (`backends/skintokens`, venv, commit `273b691d`)
+
+Phase 0 prep, 2026-08-30. The pins that were settled while standing the
+backend up; the traps that earned them are the spike's to write under this
+heading.
+
+- **Upstream** `https://github.com/VAST-AI-Research/SkinTokens` at
+  `273b691d35989d71cd17ff2895fdc735097b92d1` (HEAD on 2026-08-30, "modify
+  post-sampling strategy", authored 2026-05-12). MIT code, MIT weights.
+- **Env** venv, python **3.11** (upstream asks ≥ 3.11), torch
+  **2.7.0+cu128** with torchvision 0.22.0 and torchaudio 2.7.0 from
+  `https://download.pytorch.org/whl/cu128`, then upstream's
+  `requirements.txt` unpinned as written — resolved here to transformers
+  5.16.1, diffusers 0.40.0, lightning 2.6.5, bpy 5.0.1, trimesh 5.0.0,
+  open3d 0.19.0, fast-simplification 0.2.0, bottle 0.13.4, tornado,
+  numpy 1.26.4.
+- **flash-attn is not installed.** `patches/0001-sdpa-instead-of-flash-attn.patch`
+  rewrites both hard-coded `attn_implementation="flash_attention_2"` sites
+  (`src/model/tokenrig.py`, `src/server/spec.py`) to `"sdpa"` and gives the
+  two bare `flash_attn` imports a `scaled_dot_product_attention` fallback in
+  the same (B, L, H, D) layout that `src/model/skin_vae/attention_processor.py`
+  already uses upstream.
+- **`patches/0002-make_asset-sons-counted-once.patch`** is upstream issue #8,
+  one line: `make_asset()` appended every child twice into `sons`.
+- **Weights** `python download.py --model` run inside `$PREFIX/weights`
+  (~1.6 GB): `experiments/skin_vae_2_10_32768/last.ckpt`,
+  `experiments/articulation_xl_quantization_256_token_4/grpo_1400.ckpt`,
+  and `models/Qwen3-0.6B` (config and tokenizer only). The two directory
+  names are upstream's and are not ours to change. `.checkpoints` links
+  the directory; `SKINTOKENS_WEIGHTS` and `SKINTOKENS_CHECKOUT` carry it
+  into the env.
+- **VRAM** `vram_gb = 14`, upstream's own "at least 14 GB". Not measured
+  here — the spike measures it. Never beside TRELLIS.2, ARDY, MOSS or the
+  ACE-Step server.
+- **`demo.py` starts its own `bpy_server.py`, in its own process group, and
+  cleans it up from an `atexit` hook** (`preexec_fn=os.setsid`, port 59876
+  from `src/server/spec.py`). So a run that is killed or times out leaves
+  that server alive, and the *next* run's `wait_for_bpy_server` pings it,
+  finds it healthy and quietly talks to the orphan instead of starting one.
+  `spike_skin.py` refuses to start while the port answers and says so again
+  if one survives its own run; find it with `ss -lptn 'sport = :59876'` and
+  kill it by PID, never `pkill -f`. 2026-08-30.
+- **The run only works from the checkout.** `demo.py` launches
+  `bpy_server.py` by bare name and its `--model_ckpt` default is
+  `experiments/…` — both relative to the working directory, which is what
+  `cwd = "checkout"` and the two weight symlinks in the clone are for.
+  2026-08-30.
+
+**`--use_skeleton` gives back our skeleton, relabelled and quantised, so
+take the weights and leave the rig.** First run of the Phase 0 skin spike,
+2026-08-30: `vex_runner`'s mesh with the profile's 55-bone armature as a
+sibling and no vertex groups (`prepare_spike.py`), through `demo.py
+--use_skeleton --use_transfer --use_postprocess`, 8 s on an idle card. What
+came back: **55 joints, in the order they went in, with an identical parent
+array**, every one of the 55 contract bones carrying weight, 0 of 24 119
+vertices weightless, at most 4 influences — and **the names gone**
+(`bone_0…bone_54`, since a skeleton token carries geometry and not a label)
+and **every joint moved: 7.6 mm on average, 12.1 mm at worst**
+(`LeftHandEnd`). The contract's `rest_tolerance_m` is 0.1 mm and every clip
+in the library is baked against the frozen rest pose, so the returned
+*skeleton* is unusable as a rig by construction — the displacement is what
+the checkpoint's name says it is
+(`articulation_xl_quantization_256_…`: joint positions are tokenised on a
+256-level grid, and the error accumulates down a chain in world space). The
+weights are the deliverable and they are good; the rig they came back on is
+not. Anything downstream must re-attach the returned per-vertex joint
+indices — which are skin-order indices, so the mapping is by position in
+the joint list, not by name — onto the profile's own untouched armature.
+
+**Standing the env up, the traps worth the words.** All 2026-08-30.
+
+- **Without flash-attn the repository does not import at all**, and the
+  try/except that looks like it handles that does not: `src/model/tokenrig.py`
+  and `src/model/skin_vae_model.py` wrap `from flash_attn_interface import
+  flash_attn_func` in a `try`, and the *except branch imports flash-attn
+  again* (`from flash_attn.flash_attn_interface import …`). With no wheel,
+  `import src.model.tokenrig` raises. Two other call sites —
+  `src/model/skin_vae/attention_processor.py` and
+  `.../autoencoders/miche_transformer_blocks.py` — already carry correct SDPA
+  fallbacks upstream and are not patched. That is why `patches/0001` touches
+  four files and why doctor prints `attention=sdpa, patch:sdpa=applied`.
+- **`src` is a plain directory in the clone; nothing pip-installs it.**
+  `cwd = "checkout"` covers the launcher's `python -m forge_gen.<entry>`, but
+  doctor runs `probe.py` *by path*, so `sys.path[0]` is `backends/skintokens/`
+  and `import src` fails. Hence `[env] SKINTOKENS_CHECKOUT = "${CHECKOUT}"`
+  and a probe that puts it on `sys.path` itself; anything else that reaches
+  into the clone needs the same.
+- **The checkout is permanently dirty** — four tracked files carry the two
+  patches, so doctor reads `273b691d3598; dirty (4 tracked files modified)`.
+  Expected, exactly the way ACE-Step's soundfile patch is.
+- **`bpy` from PyPI resolves to 5.0.1 on python 3.11** — an entire Blender
+  inside the venv, unrelated to `$BLENDER_BIN` and the toolkit's Blender 5.2.
+  It is the mesh loader and exporter SkinTokens talks to over HTTP through
+  its own `bpy_server.py`, which is why `bottle` and `tornado` are in
+  `requirements.txt`. Do not try to point it at the system Blender.
+- **`miche_transformer_blocks.py` prints `use flash attention 2.` to stdout
+  at import time.** Anything whose contract is "the last stdout line is JSON"
+  — the probe, the launcher's `--json` — must write its object after every
+  import and flush. The probe does.
+- **transformers is unpinned (`>=4.57.0`) and resolved to 5.16.1, and it
+  works.** Unlike TRELLIS.2, which is pinned to 4.57.6 because 5.x
+  restructured DINOv3, SkinTokens imports and builds its Qwen3 config fine on
+  5.16.1 here. Recorded as a fact of this env, not as a pin; 4.57.6 is the
+  fallback if a real run ever disagrees.
+- **`download.py` uses `hf_hub_download`'s `local_dir` mode**, so it leaves a
+  `.cache/huggingface/` bookkeeping tree inside the weights directory.
+  Harmless, and it is why the directory measures a little over the stated
+  1.6 GB.
+
+**The spike's second half: the weights are good, and by-order re-attachment
+is the whole fix.** 2026-08-30, the card idle and held by nothing but the
+ComfyUI unit's 0.4 GB context.
+
+`out/prepare/vex_runner.glb` (`prepare_spike.py` off
+`assets-src/blender/vex_runner.blend` — 55 contract bones as a sibling
+armature, 0 vertex groups) → `spike_skin.py` → `spike_reattach.py`
+(rename each returned `bone_i` to the name at index *i* of the skin that
+went in, discard the returned skeleton whole, bind to `rigs/humanoid/rig.blend`'s
+own armature) → **`forge gen export`** → **`forge rig check`**.
+
+| measured | value |
+|---|---|
+| wall clock, whole `spike_skin.py` process | **27.5 s** (25.8 s on a second run); upstream's own sampling loop is 7.3 s of it, the rest is import and model load |
+| **peak VRAM, the SkinTokens process** | **4474 MiB (4.4 GB)**, twice, sampled at 10 Hz — **not the 14 GB `backend.toml` and upstream claim**. Peak on the card was 5800 MiB with a 1200 MiB idle baseline. |
+| `forge rig check` on the returned glb, unmodified | 6 passed, **56 failed** — 0 bones driven, 27 orphaned curves, every contract bone "missing" |
+| `forge rig check` after by-order re-attachment | **10 passed, 0 failed**: 55 bones at contract depth, rest rotations match, **the walk drives 27 of 27 with 0 orphaned**, feet at y=0.000, stature 1.80 m |
+| `forge gen export`'s rest-pose gate | passed — the profile's rest pose is exact, because it is the profile's own file and none of the returned skeleton survives |
+| unweighted vertices | **0 of 24 119** (`unweighted_abort_fraction` is 0.20) |
+| influences | max 4, against `[export] max_influences = 4` |
+
+**Detached shells are where SkinTokens beats the bone-heat ladder, and the
+picture says so.** `vex_runner` has twelve connected islands; the two big
+ones (776 and 744 vertices, x +0.10..+0.40, y 1.36..1.72) are the left
+spiked pauldron. SkinTokens binds each one **rigidly to a single bone**
+(LeftArm 100 %, and the right-side shell RightArm 88 %). The shipped
+bone-heat body blends the same shell across three (LeftArm 50 %,
+LeftShoulder 36 %, LeftForeArm 14 %), and on `pistol_shoot` — where the
+shoulders counter-rotate hardest — that shell shears: the spikes fan out
+into the air and the head disappears inside the shoulder mass. The
+SkinTokens body keeps the head, the visor and the mohawk readable through
+the same four frames. Rigid-per-shell is what `rig.py`'s `shells_rigid`
+rescue was written to force; SkinTokens does it natively, and it is the
+first thing to look at on any plated body.
+
+**There is no seed, and the skin is genuinely not reproducible.** Two runs
+of the same input, same knobs, minutes apart: identical output vertex count,
+identical 0 unweighted, identical skeleton displacement to five decimals
+(the skeleton half converges under `num_beams = 10`), **different glb
+hashes**, and per-bone weighted-vertex counts drifting by up to 807 vertices
+(`RightShoulder`). Both re-attached bodies pass `forge rig check` 10/10 and
+read the same on the strip, so the spread is under the eye's threshold here —
+but a rig claims **integrity, never reproduction**, and `seed: null` in the
+record means unknown, not zero.
+
+**What the export gate does not catch, and now must.** `forge rig check` on
+the raw SkinTokens output said `ok: rest rotations match the contract` while
+every joint sat up to 12.1 mm from where the contract puts it: the check
+compares rest *rotations*, and nothing compares rest joint *translations* in
+the glb. `forge gen export` does compare positions, but only against a
+`.blend`. A Phase 2 that skins in Rust and never passes through Blender needs
+that translation check moved into `forge_rig`.
+
+## Lean tier (16 GB, measured under a cap)
+
+2026-08-30, Phase 0 spike 3. `forge.toml`'s `[hardware] tier = "lean"`
+shipped three unmeasured cells in `forge2.md`'s table — "512³ (unmeasured)",
+"+ ~14 GB (tight)", "~16 GB (unmeasured on 16)" — and nobody here owns a
+16 GB card. These are what a 24 GB card says with the run held under a
+ceiling. **Every number below is approximate and the approximation is
+named**; none of it is a certificate that a 16 GB part is enough.
+
+**The cap, exactly.** Two different mechanisms, because the two executors
+are two different animals.
+
+*For an `env` backend* — TRELLIS.2, SkinTokens, ARDY — the inner half calls
+`torch.cuda.set_per_process_memory_fraction(16 GiB / 23.496 GiB) = 0.6810`
+before the first weight moves, from a new opt-in module
+`python/forge_gen/vram_cap.py`. It is switched on by `FORGE_VRAM_CAP_GB`
+and by nothing else: unset — every ordinary run — and not a byte of
+behaviour changes. Three entry points honour it: `forge_gen.mesh`'s inner
+half and `forge_gen.motion.sweep`'s call `vram_cap.apply()` after
+`import torch`; SkinTokens' `demo.py` is upstream's and not ours to edit,
+so `spike_skin.py` runs it as
+`python -m forge_gen.vram_cap demo.py …`, which sets the ceiling and then
+runs the script under its own `__main__` with `sys.argv` untouched. Every
+capped run in this section also exported
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, which is what keeps a
+tight ceiling failing on size rather than on fragmentation.
+
+    FORGE_VRAM_CAP_GB=16 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+        forge gen mesh ref.png --preset character --resolution 512 …
+
+**What that ceiling is not.** `set_per_process_memory_fraction` bounds
+*torch's caching allocator in that process*. Outside it sit the CUDA
+context itself (~300–400 MiB), cuBLAS/cuDNN workspaces, and nvdiffrast's
+own device allocations during the texture bake. So "peaked at 15.4 GB under
+a 16 GB ceiling" means the torch allocator stayed under 16 GB, not that a
+16 GB card would have survived — a real 16 GB part has roughly 15.0–15.5 GB
+usable once its context and a desktop are resident.
+
+*For ComfyUI* the unit was restarted with `--reserve-vram 8` added through a
+systemd drop-in (`~/.config/systemd/user/forge-comfy.service.d/`), which
+tells ComfyUI's model manager to keep 8 GB of the 24 free and plan against
+~16. That is a coarser approximation still: it bounds what the *model
+manager* will load and offload, not what a node may allocate around it. The
+drop-in was removed and the unit restarted on its tracked flags when the
+spike ended.
+
+**Peaks** are `nvidia-smi` at 10 Hz, sampled both card-wide
+(`--query-gpu=memory.used`) and per compute app
+(`--query-compute-apps`), so a run's own peak is separable from the
+baseline. The card baseline through all of it was 1 131–1 236 MiB: the
+desktop plus the idle ComfyUI unit's 386 MiB CUDA context.
+
+| what | under the cap | peak, the process | peak, the whole card | seconds |
+|---|---|---|---|---|
+| **TRELLIS.2 512³**, `vex_runner`, `--preset character` seed 7, 1024² texture | **completes**, first attempt, no retry | **3 200 MiB (3.1 GB)** | 4 482 MiB | **73.3 s** |
+| the same at `--texture 512` | completes, first attempt | 3 200 MiB (3.1 GB) | 4 435 MiB | 74.3 s |
+| **SkinTokens** skin-only + transfer + postprocess, `out/prepare/vex_runner.glb` | **completes** | **3 408 MiB (3.3 GB)** | 4 543 MiB | **30.9 s** |
+| **Qwen-Image Q4_K_M GGUF** + InstantX ControlNet-Union, 1024², seed 42, `--reserve-vram 8` | **completes** | n/a (the unit's own process) | **16 609 MiB (16.2 GB)**, i.e. ~15.1 GB of run over a 1 122 MiB baseline | **111.2 s** |
+| **ARDY** sweep, one prompt × one seed × two samples | **completes** | **15 808 MiB (15.4 GB)** | 17 041 MiB | **49.5 s** |
+
+**Four of four complete. Two of the four are marginal and one is not close
+to marginal at all.** TRELLIS.2 and SkinTokens finish with three quarters
+of a 16 GB card unused; ARDY at 15.4 GB and the quantised image model at
+~15.1 GB of run each sit within a few hundred megabytes of what a real
+16 GB part has left after its own context. The lean tier's constraint is
+**motion and the reference image**, and it always was — the lift never was.
+
+**The 22 GB that was never there.** For comparison the same reference was
+lifted at **1024³ uncapped, same seed, the same afternoon**: 89.6 s, process
+peak **4 790 MiB (4.7 GB)**, card peak 5 880 MiB. Every table in this repo
+had TRELLIS.2 at 1024³ down as "~22 GB — alone", and `backends/trellis2/backend.toml`
+budgets `vram_gb = 22`; this file said in so many words that the peak "was
+not pinned down". It is pinned now and it is **4.5× smaller than the
+budget**. The same is true one size down for SkinTokens: upstream says "at
+least 14 GB", `backend.toml` says `vram_gb = 14`, and it peaks at 3.3–4.4 GB.
+ARDY's ~16 GB is the one row that was right. One caveat kept honest: this
+is one reference whose keyed subject covers 18 % of the frame, and
+TRELLIS.2's cost follows the occupied voxels, so a fatter subject will cost
+more — but not four times more. **Do not re-quote a `vram_gb` as a
+measurement; it is a budget, and `just gpu` sizes the card against it.**
+
+**Reading the two lift sheets, which is the part no number settles.**
+`out/spike/lean/views_512.png` against `out/spike/lean/views_1024.png`,
+nine views each, culling off. Both are **closed** — no hole in the back of
+the skull at either register, the failure the seed sweep exists for — both
+hold the T-pose, and both land the same bounds (1.00 × 0.94 × 0.28 m) and
+the same vertex budget (21 828 vs 25 211). Where 512³ loses, it loses the
+same way the 1 500-vertex register once did, more mildly: **the face goes**
+(the 1024 head has a brow, a nose and a mouth line under the visor band;
+the 512 head is a soft doughy mask), **the fingers fuse** (the 1024 top view
+has separated fingers, the 512 a mitt), the boot soles lose their treads —
+and the **colours drift**: the reference's magenta visor bakes out purple
+and the scalp bakes orange at 512³ where 1024³ keeps them. The teal
+forearm circuitry is actually clearer at 512³, so it is not uniformly
+worse. Read as a rigging input it is fine; read as a hero face it is not.
+**Lean lifting at 512³ is a real register for crowd and background bodies
+and a downgrade for anything the camera walks up to** — and since a lean
+card has plenty of room at 1024³ (4.7 GB), the honest lean default is
+1024³ and 512³ is a speed knob, not a memory one.
+
+**The image model in its lean form.** Pack
+`city96/ComfyUI-GGUF` @ `6ea2651e7df66d7585f6ffee804b20e92fb38b8a`
+(2026-01-12), cloned into `$PREFIX/data/custom_nodes/`; `gguf 0.19.0` and
+`protobuf 7.36.0` into the comfy venv (`uv pip install --python
+$PREFIX/venv/bin/python`, because that venv has no `pip`). Weights
+`city96/Qwen-Image-gguf` @ `e77babc55af111419e1714a7a0a848b9cac25db7`,
+file `qwen-image-Q4_K_M.gguf`, **13.07 GB**, into
+`$PREFIX/data/models/diffusion_models/`. The template is
+`backends/comfy/workflows/reference_qwen_gguf.api.json` — the fp8 template
+with node `1` swapped from `UNETLoader` to `UnetLoaderGGUF` and nothing
+else moved, so the five patched inputs and every node id stay where
+`spike_reference.py` expects them. **The text encoder is not quantised**:
+the fp8 Qwen2.5-VL 7B (9.38 GB) still does the encoding, because
+`--cache-none` means it loads, encodes and goes before the diffusion model
+arrives, and 9.38 GB alone fits the lean budget.
+
+The picture, seed 42, the same prompt the fp8 comparison used
+(`out/spike/lean/reference/qwen_image_gguf_42.png` beside
+`out/spike/reference/qwen_image_42.png`): the style line is still obeyed —
+flat, posterized, painted lighting — the T-pose is strict, and
+`mesh.py`'s own keyer passes it with the fingertip line **0.00° off
+horizontal** (fp8: 0.03°) and the subject 94 % of the frame height. It is
+**cleaner at the feet than the fp8 image was**: the keyed alpha four pixels
+above the lowest subject pixel is 43 px on the GGUF draw and 299 px on the
+fp8 one, which is the contact shadow that lifted as a slab under both feet
+in the reference spike. One seed of one model is not evidence that Q4
+draws fewer shadows; what it is evidence of is that **Q4 costs about
+nothing in style adherence or pose and about nothing in time** — 111.2 s
+against fp8's 113.6 s, because with `--cache-none` most of both numbers is
+the model swap, not the sampling. `POST /free` gave the card back
+(22.40 → 22.28 GB free), as it did for the fp8 run.
+
+**What this section does not cover.** MOSS-TTS 1.7B on the lean tier
+(`forge2.md`'s table says ~5 GB) was not run; neither was a lean-tier
+prop lift or a lean `moss_sfx`. The gap this section left open on the day
+— `snapshot.json`, `backend.toml` and `install.sh` all saying the host
+carried no custom node packs while ComfyUI-GGUF sat in `custom_nodes/` —
+is closed: the pack, its two pips and the 13.07 GB Q4 file are recorded in
+all four places, and the trap that earned it is under § ComfyUI above.

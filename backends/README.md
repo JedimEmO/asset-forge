@@ -14,8 +14,9 @@ a follow-up; until then, decide before you lift.
 
 ## What a backend directory is
 
-A backend is one generator, hosted in its own environment, described by one
-directory under `backends/`:
+A backend is one generator — or, since Phase 0, one *host* a generator runs
+inside — kept in its own environment and described by one directory under
+`backends/`:
 
 ```
 backends/<name>/
@@ -23,7 +24,9 @@ backends/<name>/
                       the [env] the launcher exports, the [[models]] it needs, its [[notices]]
   install.sh          makes the env and the clone under $PREFIX, or adopts ones you have
   probe.py            run inside the env by doctor: imports, torch, CUDA, one JSON line
-  patches/            (acestep) what the clone needs changed before it runs
+  patches/            (acestep, skintokens) what the clone needs changed before it runs
+  workflows/          (comfy) API-format graphs the executor patches and posts
+  snapshot.json       (comfy) what the Manager says is installed: commit, node packs, pips
   .env        ->      gitignored symlink to the interpreter prefix (what the launcher execs)
   .checkout   ->      gitignored symlink to the upstream clone at the pinned commit
   .text-encoders ->   (ardy) gitignored symlink to the assembled text encoders
@@ -31,7 +34,8 @@ backends/<name>/
   installed.json      gitignored receipt: commit, python, torch, date, adopted
 ```
 
-The five the toolkit knows, in the order doctor lists them:
+The seven the toolkit knows, in the order doctor lists them — five
+generators, then the two the Phase 0 spikes stood up:
 
 | backend | role | upstream | env | entry |
 |---|---|---|---|---|
@@ -40,6 +44,12 @@ The five the toolkit knows, in the order doctor lists them:
 | `acestep` | prompt → music | ACE-Step/ACE-Step-1.5 @ `82252c24` | venv, python 3.12 | `forge gen music` (a resident server) |
 | `moss_sfx` | prompt → sound effect | OpenMOSS/MOSS-TTS @ `58b20a0d`, `moss_soundeffect_v2/` | venv, python 3.12 | `forge gen sfx` |
 | `moss_tts` | text → speech; description → voice | OpenMOSS/MOSS-TTS @ `58b20a0d` | venv, python 3.12 | `forge gen speech`, `forge gen voice` |
+| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `city96/ComfyUI-GGUF` @ `6ea2651e`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host; `backends/comfy/workflows/*.api.json` are what it is sent |
+| `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
+
+Doctor prints an eighth row, `blender`, between the two groups: it is
+described by a `backend.toml` like the rest so its version and licence
+notice have somewhere to live, but it is a host tool, not a backend (below).
 
 `moss_sfx` and `moss_tts` share one clone and keep two venvs: the
 sound-effect model pins a different torch. `moss_tts` hosts two models:
@@ -108,26 +118,51 @@ installers.
 | MOSS-SoundEffect-v2 | Apache-2.0 | |
 | Blender | GPL | A tool; nothing of it ships in an asset. |
 
+Added 2026-08-30, with the two Phase 0 backends:
+
+| component | licence | note |
+|---|---|---|
+| SkinTokens code + weights | MIT | |
+| SkinTokens `src/model/michelangelo/` | **open question** | derived from NeuralCarver/Michelangelo, GPL-3.0 upstream, shipped by SkinTokens under MIT; the authors have not answered (issue #9). It runs in its own process, nothing of it ships inside an asset, and every rig record names the `skinner`. |
+| ComfyUI | GPL-3.0-or-later | A service driven over HTTP from a separate process; nothing of it is linked into the toolkit, and what it writes is the project's own. |
+| `city96/ComfyUI-GGUF` | Apache-2.0 | The one custom node pack: `UnetLoaderGGUF`, which is the only way to load the lean tier's Q4 image model. |
+| Qwen-Image (+ `Comfy-Org` fp8 repack, `city96` Q4_K_M GGUF) | Apache-2.0 | |
+| InstantX Qwen-Image ControlNet-Union | Apache-2.0 | The pose ControlNet the reference door will use; trained on the model it conditions. |
+| FLUX.1-schnell + `flux_text_encoders` + its VAE | Apache-2.0 | The VAE repo is gated `auto`: an `hf auth login --token` is needed even so. |
+| `Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0` | **FLUX.1-dev Non-Commercial License** | On disk only because the Phase 0 spike had to condition both candidates on a pose. Trained on FLUX.1-dev, applied off-base to schnell. The spike chose Qwen-Image, so **no shipped record may name it**; `install.sh` asks before fetching it and `--no-flux-controlnet` declines. |
+
 A licence fact in a record is not a detail. Keep `texture_baker` in every
 lift record, and keep the Llama 3 notice in `ardy/backend.toml`.
 
 ## VRAM and co-residency
 
 One 24 GB card with a desktop resident (~0.8 GB). Approximate peaks; two
-rows never share the card. `just gpu` before any generate, and stop the
-ACE-Step server before a lift. Doctor says who is holding the card
-(`GPU busy: pid … 8.1 GB`); believe it.
+rows never share the card. `just gpu` before any generate, stop the
+ACE-Step server before a lift, and stop or `POST /free` the ComfyUI unit
+before either. Doctor says who is holding the card
+(`GPU busy: pid … 8.1 GB`); believe it. The measured figures and how they
+were sampled are in `designs/hosting.md` § GPU co-residency.
 
 | backend | VRAM | resident after the call? |
 |---|---|---|
-| `trellis2` at 1024³ | ~22 GB — **alone** | no |
-| `trellis2` at 512³ | completes beside the desktop; peak not measured | no |
-| `ardy` sweep | ~16 GB (one model load covers a batch) | no |
-| `acestep` server | ~8 GB | **yes**, until `forge gen music --stop-server` |
-| `moss_tts` (Local-Transformer 4B) | ~12 GB | no |
+| `trellis2` at 1024³ | **4.7 GB measured** (2026-08-30) — the ~22 GB this row carried for a week was a budget nobody had sampled | no |
+| `trellis2` at 512³ | **3.1 GB measured** (2026-08-30) | no |
+| `ardy` sweep | **15.4 GB measured** (2026-08-30; one model load covers a batch) | no |
+| `acestep` server | ~8 GB (budget, unmeasured) | **yes**, until `forge gen music --stop-server` |
+| `moss_tts` (Local-Transformer 4B) | ~12 GB (budget, unmeasured) | no |
 | `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | ~12 GB measured at the peak of a 7 s audition — the generation loop, not the weights | no |
-| `moss_sfx` | ~6–8 GB | no |
+| `moss_sfx` | ~6–8 GB (budget, unmeasured) | no |
+| `skintokens` skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
+| Qwen-Image fp8 + ControlNet at 1024², in `comfy` | **23.3 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
+| Qwen-Image Q4_K_M GGUF + ControlNet, the lean form | **16.2 GB measured** (2026-08-30) — **alone** | no, `POST /free` returns it |
+| the `comfy` unit idle, nothing loaded | ~0.4 GB, creeping to ~0.7 GB after several model swaps | **yes**, until the unit stops |
 | studio viewer on the real adapter | small; not measured | while open |
+
+The rows marked *measured* are `nvidia-smi` at 10 Hz on one 24 GB card;
+the rows marked *budget* are estimates, and so is every `backend.toml`'s
+`vram_gb` — `just gpu` sizes the card against those, which is why they stay
+conservative. **Never re-quote a `vram_gb` as a measurement.** The
+image model, not the lift, is the thing that wants the whole card.
 
 Never 1536³ on 24 GB. The 8B MOSS-TTS Delay model OOMs with the audio
 tokenizer loaded; the 4B fits.
@@ -151,6 +186,14 @@ Each installer is idempotent (`set -euo pipefail`, sources
    and **nvdiffrast after the licence prompt**. DINOv3 is gated: accept on
    the model page and `hf auth login --token <tok>` first, or doctor will
    tell you to.
+5. `bash backends/skintokens/install.sh` — venv (python 3.11, torch
+   cu128), the two patches under `patches/` applied to the clone, ~1.6 GB
+   of weights under `$PREFIX/weights`.
+6. `bash backends/comfy/install.sh` — venv (python 3.12, torch cu130), the
+   pinned ComfyUI clone, the ComfyUI-GGUF node pack, a systemd `--user`
+   unit on `127.0.0.1:8188`, and ~74 GB of image weights. It asks before
+   fetching the FLUX pose ControlNet, which is **non-commercial**;
+   `--no-flux-controlnet` declines, `--no-service` skips systemd.
 
 Then `forge doctor` (or `python3 python/forge_gen doctor`): every backend
 should read `ok`; `partial` names the weight, import or CUDA that is

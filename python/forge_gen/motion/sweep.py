@@ -349,6 +349,15 @@ def main_inner(argv: list[str]) -> dict:
     """Inner: load once, run the grid, write takes + records + sweep.json."""
     import numpy as np  # noqa: F401 - asserts the env before the model load
     import torch
+
+    # Opt-in and normally off: $FORGE_VRAM_CAP_GB holds this process below a
+    # ceiling so the lean tier's numbers can be measured on the 24 GB card.
+    # Applied before ARDY and its Llama-3 text encoder move, and approximate
+    # — see forge_gen/vram_cap.py.
+    from forge_gen import vram_cap
+
+    vram_cap.apply()
+
     from ardy.motion_rep.tools import length_to_mask
     from ardy.postprocess import post_process_motion
     from ardy.tools import seed_everything, to_numpy

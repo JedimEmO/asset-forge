@@ -50,7 +50,9 @@ Disconnected shells are concatenated and weighted from local geometry.
 No seed: a rig is `recorded` with its output hashed, never reproduced.
 Code and weights MIT; the Michelangelo encoder files carry an open GPL
 question (issue #9); a bone-tail export bug (issue #8, one line). Env:
-torch 2.7/cu128, pip `bpy ≥ 4.2`, flash-attn (patchable to SDPA), ~14 GB.
+torch 2.7/cu128, pip `bpy ≥ 4.2`, flash-attn (patchable to SDPA), and
+"at least 14 GB" by upstream's own claim — measured here at 3.3–4.4 GB
+(`hosting.md`, 2026-08-30), which is the number the tier table uses.
 The authors call skin-only-on-a-given-skeleton a demo feature with no
 numbers, so the spike is the evidence.
 
@@ -156,7 +158,7 @@ name = "qwen_image"
 role = "reference"
 executor = "comfy"
 license = "Apache-2.0 (Qwen-Image); ControlNet-Union: Apache-2.0"
-vram_gb = 18                           # fp8 on the full tier; GGUF Q4 on lean
+vram_gb = 24                           # a budget: fp8 measured at 23.3 GB, Q4 GGUF at 16.2 on lean
 [comfy]
 packs = []                             # native; a pack entry is { repo, commit }
 workflows = ["reference.api.json"]     # inputs patched: prompt, style_prefix, seed, pose_image
@@ -208,25 +210,40 @@ tier = "full"         # full (24 GB) | lean (16 GB) | fake (no card): detected, 
 comfy_url = "http://127.0.0.1:8188"   # or another machine's; env backends and Blender stay local
 ```
 
-Tiers change registers and variants, not features: lean lifts at 512³,
-runs the image model quantised and MOSS-TTS 1.7B. Fake is `FORGE_FAKE=1`
-made a first-class answer. The lean numbers are unmeasured (512³ has no
-pinned peak; SkinTokens says "at least 14 GB") — the Phase 0 spike replaces
-them, run under a memory cap on the 24 GB card and marked approximate.
+Tiers change registers and variants, not features: lean runs the image
+model quantised (Qwen-Image Q4_K_M GGUF) and MOSS-TTS 1.7B. Fake is
+`FORGE_FAKE=1` made a first-class answer. **Lean lifts at 1024³ like the
+full tier** — the Phase 0 spike measured a 1024³ lift at 4.7 GB, so a
+16 GB card has three quarters of itself spare during one, and 512³ turned
+out to be a speed knob (16 s saved, the face and the fingers lost), not a
+memory one. The lean tier's real constraint is motion and the reference
+image, and it always was.
 
 `forge setup` prints, before a byte downloads, every licence fact the
 chosen kinds carry — nvdiffrast (non-commercial), the DINOv3 gated login,
 the SkinTokens encoder note — and the disk each kind costs, then asks
 once; resumable; never asks twice.
 
+Both VRAM columns are **approximate peaks measured on one 24 GB card on
+2026-08-30** (`nvidia-smi` at 10 Hz; the lean column under a 16 GB cap —
+`designs/hosting.md` § Lean tier says exactly what the cap bounds and what
+it does not). Rows still marked *budget* are estimates nobody has sampled;
+they are conservative and they are not measurements. No number here is a
+certificate that a real 16 GB part is enough — such a part has roughly
+15.0–15.5 GB usable once its own context and a desktop are resident.
+
 | you make | backends | full (24 GB) | lean (16 GB) | weights on disk | needs your yes |
 |---|---|---|---|---|---|
-| props | trellis2, qwen_image | 1024³ ~22 GB; image fp8 ~18 GB | 512³ (unmeasured); image GGUF | TRELLIS.2-4B + DINOv3 (measure); Qwen-Image ~20 GB fp8 | nvdiffrast NC; DINOv3 login |
-| characters | + skintokens | + ~14 GB | + ~14 GB (tight) | + 1.6 GB | as props; skinner note is a warning |
-| clips | ardy | ~16 GB | ~16 GB (unmeasured on 16) | core + Llama-3/LLM2Vec encoder | Llama 3 notice |
-| sfx | moss_sfx | ~6–8 GB | same | ~11 GB | none |
-| music | acestep | ~8 GB | same | ~7.5 GB | none |
-| voice | moss_tts | 4B ~12 GB | 1.7B ~5 GB | ~8 GB + 4 GB | none |
+| props | trellis2, qwen_image | 1024³ **4.7 GB**; image fp8 **23.3 GB** — alone | 1024³ **4.7 GB**; image Q4 GGUF **16.2 GB** — alone | TRELLIS.2-4B + DINOv3 (measure); Qwen-Image 20.4 GB fp8 or 13.1 GB Q4 GGUF | nvdiffrast NC; DINOv3 login |
+| characters | + skintokens | + **3.3–4.4 GB** | + **3.3–4.4 GB** | + 1.6 GB | as props; skinner note is a warning |
+| clips | ardy | **15.4 GB** | **15.4 GB** — marginal on a real 16 GB part | core + Llama-3/LLM2Vec encoder | Llama 3 notice |
+| sfx | moss_sfx | ~6–8 GB (budget) | same | ~11 GB | none |
+| music | acestep | ~8 GB (budget) | same | ~7.5 GB | none |
+| voice | moss_tts | 4B ~12 GB (budget) | 1.7B ~5 GB (budget, not run) | ~8 GB + 4 GB | none |
+
+The image model is the only thing here that wants the whole card, on
+either tier; the lift, which every table in this repo had at ~22 GB for a
+week, is the cheapest GPU step of the three.
 
 ### The reference door
 
@@ -285,15 +302,25 @@ Each ends green — `just ci` and a commit — with its reason in
 `decisions.md`. Rigging is what the user cares about, so it is first
 after the daemon it needs.
 
-**Phase 0 — spike (days, on the real card).** Three time-boxed spikes,
-each a dated entry in `hosting.md`: SkinTokens skin-only on
-`vex_runner`'s raw lift with the humanoid armature inserted — do 55 bone
-names come back with weights, how do the detached pauldrons bind, does
-the walk drive 27 of 27 on the result; Qwen-Image vs FLUX.1-schnell under
-pose conditioning — which lands a strict T-pose that passes the fit gate
-more often in four seeds; the lean tier under a 16 GB memory cap (512³,
-SkinTokens, the image model quantised). Output: the skinner is go or
-no-go, the image model is chosen, the lean column has numbers.
+**Phase 0 — spike. Done 2026-08-30, all three answers yes.** Three
+time-boxed spikes ran on the real card, each a dated entry in `hosting.md`
+and a lesson in `decisions.md`. **The skinner is go:** SkinTokens skinned
+`vex_runner`'s raw lift with the profile's armature inserted, and while the
+skeleton it hands back is ours in count, order and parents but not in name
+or position, the per-vertex indices read as skin-order and re-attached to the
+untouched `rig.blend` pass `forge rig check` 10 of 10 — the walk driving 27
+of 27, 0 unweighted vertices — and the detached pauldrons bind rigidly to one
+bone each where the bone-heat ladder smeared them across three. **The
+reference model is Qwen-Image:** given the style guide's line and pose
+conditioning on the profile's rest pose, it held the arms within 1.6° of
+horizontal in 4 of 4 and drew the project's flat, posterized look in 4 of 4,
+while FLUX.1-schnell drooped to 6.4° and drew a photograph every time; the
+fit gate passed both, so the eye chose, not the gate. **The lean column is
+measured:** props, characters and clips carry sampled peaks, 1024³ lifts on
+both tiers, and Q4_K_M GGUF is lean's one substitution. Two things the spikes
+also bought: the keyer, not the prompt, decides whether a drawn reference is
+liftable, and half the repository's `vram_gb` figures were budgets reading as
+facts. Phases 1–4 stand as written.
 
 **Phase 1 — the daemon (2 weeks).** `forge serve`: the queue, the card
 lock, the job table, two executors. `env` is today's launcher driven
