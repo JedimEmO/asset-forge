@@ -99,6 +99,36 @@ not.
   resident (~0.8 GB); the full-run peak at 1024³ was not pinned down.
   Measure one before being tempted. 2026-08-18.
 
+**A lift can die in the glb export with a JSON TypeError, and re-running
+the same seed fixes it.** Seen 2026-08-28 lifting a character at the 1024
+cascade: the pipeline finished (`Get 2085 clusters after fast clustering`,
+`Done`), then `forge_gen.mesh` exited 5 with `TypeError: keys must be str,
+int, float, bool or None, not str`, raised from `json.dumps` deep inside
+trimesh 5.0.0's glTF exporter (`trimesh/exchange/gltf/__init__.py`, the
+material/accessor dedup hash). Re-running the identical command with the
+identical default seed 42 succeeded and produced a *different* mesh (1845
+clusters, not 2085). Two things follow, and the second is the important
+one: the immediate fix is to run it again, and the reason it works is that
+TRELLIS.2 is not bit-reproducible for a fixed seed — CUDA nondeterminism
+reaches all the way to the topology. That is exactly why a body's record
+claims integrity (sha256 of what shipped) and never regeneration, and
+anyone tempted to add a `reproduces` claim for bodies should read this
+entry first. If it ever stops being transient, the suspect is a key in the
+exporter's blob dict whose class is named `str` but is not `str`.
+
+**Prop lifts fail intermittently, in three different ways, and the fix is
+to run them again.** Seen 2026-08-29 across seven prop references on an
+idle card: one `RuntimeError: super(): bad __class__ cell` raised inside
+the prop path, three `exited -11` (SIGSEGV during model load), two silent
+failures — and one that simply worked. Retried, they succeed. This is the
+same flakiness the character lift shows (see the trimesh TypeError above):
+TRELLIS.2 on this machine fails a minority of runs for reasons that do not
+reproduce, and a lift script should therefore carry a retry loop of two or
+three attempts rather than treat a first failure as a defect. Do not
+conclude from a batch of failures that the preset is broken until a retry
+has failed too — the first read of this on 2026-08-29 wrongly recorded the
+prop path as systematically broken, on evidence that included a success.
+
 ## ARDY (`backends/ardy`, venv 3.12, commit `693f74d`)
 
 - **`transformers==5.8.1` exactly, `numpy<2`.** Neither floats; the text
