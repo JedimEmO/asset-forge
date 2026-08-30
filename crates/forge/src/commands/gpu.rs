@@ -42,6 +42,9 @@ struct App {
 /// Print the lines (or the object) and exit 1 when the largest backend
 /// would not fit.
 pub(crate) fn run(project: &Project, args: &GpuArgs) -> Outcome {
+    if args.free {
+        free(project);
+    }
     let binary = which("nvidia-smi").ok_or_else(|| {
         Failure::refused(
             "nvidia-smi is not on PATH — no NVIDIA driver, or it is installed somewhere \
@@ -148,6 +151,67 @@ pub(crate) fn run(project: &Project, args: &GpuArgs) -> Outcome {
             }
         )))
     }
+}
+
+/// `forge gpu --free`: ask the `ComfyUI` host to unload, and clear a
+/// withheld lease once the card is back.
+///
+/// This is what replaced `forge gen music --stop-server`, which went with
+/// the resident ACE-Step server. Two endpoints and no graph: `POST /free`
+/// then `GET /system_stats`, the same pair the daemon's release ladder
+/// uses, because the card must answer with no Python alive.
+fn free(project: &Project) {
+    let Some(url) = comfy_url(project) else {
+        println!("free      no ComfyUI host is configured, so there is nothing to unload");
+        return;
+    };
+    let before = forge_serve::comfy_free_gb(&url);
+    let release =
+        forge_serve::release_comfy(&url, None, before, |line| println!("free      {line}"));
+    match (before, release.after_gb) {
+        (Some(before), Some(after)) => {
+            println!("free      {before:.1} GB free before, {after:.1} GB after");
+        }
+        (_, Some(after)) => println!("free      {after:.1} GB free"),
+        _ => println!("free      {url} did not answer /system_stats"),
+    }
+    let state = forge_serve::state_dir(&project.root);
+    if release.returned {
+        // A card that is provably back clears a withholding: this is the
+        // one door that can say so, because it just measured it.
+        forge_serve::release_withhold(&state);
+        println!("free      the card is back; any withheld lease is cleared");
+    } else if let Some(note) = release.note {
+        let _ = forge_serve::withhold(&state, &note);
+        println!("free      {note}");
+    }
+}
+
+/// Where the `ComfyUI` host is: the environment first, then the host
+/// backend's own `[server]` block.
+fn comfy_url(project: &Project) -> Option<String> {
+    if let Ok(url) = std::env::var("FORGE_COMFY_URL")
+        && !url.trim().is_empty()
+    {
+        return Some(url);
+    }
+    let backends = Backends::discover(project);
+    let comfy = backends.get("comfy")?;
+    let text = std::fs::read_to_string(comfy.dir.join("backend.toml")).ok()?;
+    let host = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("host = "))?
+        .trim()
+        .trim_matches('"')
+        .to_owned();
+    let port: u16 = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("port = "))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(format!("http://{host}:{port}"))
 }
 
 /// `nvidia-smi <query> --format=csv,noheader,nounits`, its stdout.

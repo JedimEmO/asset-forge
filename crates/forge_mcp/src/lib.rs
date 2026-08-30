@@ -43,7 +43,9 @@
 //! ```
 
 use std::fmt;
+use std::sync::Arc;
 
+use forge_serve::Queue;
 use rmcp::ServiceExt;
 use rmcp::transport::stdio;
 
@@ -105,10 +107,10 @@ impl std::error::Error for ServeError {
 /// [`ServeError::Handshake`] when the client never initialises,
 /// [`ServeError::Session`] when the session task ends abnormally. A client
 /// that simply hangs up is not an error.
-pub async fn serve(config: Config) -> Result<(), ServeError> {
+pub async fn serve(config: Config, queue: Arc<dyn Queue>) -> Result<(), ServeError> {
     install_panic_hook();
     eprintln!("{}", config.banner());
-    let service = server::ForgeServer::new(config)
+    let service = server::ForgeServer::new(config, queue)
         .serve(stdio())
         .await
         .map_err(|e| ServeError::Handshake(e.to_string()))?;
@@ -124,12 +126,42 @@ pub async fn serve(config: Config) -> Result<(), ServeError> {
 /// # Errors
 ///
 /// [`ServeError::Runtime`] when tokio will not start, else as [`serve`].
-pub fn run(config: Config) -> Result<(), ServeError> {
+pub fn run(config: Config, queue: Arc<dyn Queue>) -> Result<(), ServeError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(ServeError::Runtime)?;
-    runtime.block_on(serve(config))
+    runtime.block_on(serve(config, queue))
+}
+
+/// One server, ready to answer — what a transport wraps.
+///
+/// The `forge` binary never names an rmcp type: it hands over a [`Config`]
+/// and an `Arc<dyn Queue>` and gets back something that serves, whichever
+/// door it came through.
+#[must_use]
+pub fn handler(config: Config, queue: Arc<dyn Queue>) -> impl rmcp::ServerHandler + 'static {
+    server::ForgeServer::new(config, queue)
+}
+
+/// The same tools over streamable HTTP, as a router the daemon nests at
+/// `/mcp`.
+///
+/// **The router does not move and is not duplicated.** This is the same
+/// `ForgeServer`, the same tool sum and the same instructions text `forge
+/// mcp` serves over stdio, holding the same queue the daemon's worker is
+/// draining. Same tools, same frames, whichever door the client came
+/// through.
+pub fn http_service(config: Config, queue: Arc<dyn Queue>) -> axum::Router {
+    use rmcp::transport::streamable_http_server::StreamableHttpService;
+    use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+
+    let service = StreamableHttpService::new(
+        move || Ok(server::ForgeServer::new(config.clone(), Arc::clone(&queue))),
+        LocalSessionManager::default().into(),
+        rmcp::transport::streamable_http_server::StreamableHttpServerConfig::default(),
+    );
+    axum::Router::new().fallback_service(service)
 }
 
 /// Report panics on stderr. A panic message on stdout would be
@@ -222,12 +254,26 @@ pub(crate) mod testing {
 
     /// A server over a project, with a renderer that does not exist — so a
     /// test that reaches the renderer gets an unlaunchable refusal rather
-    /// than a Bevy window.
+    /// than a Bevy window — and a queue of its own that spawns nothing.
+    ///
+    /// The queue is real: it writes rows under the project's `out/serve/`
+    /// the way every other door does. What it is not given is a launcher
+    /// that exists, so a job admitted in a test stays a row.
     pub(crate) fn server(project: Project) -> ForgeServer {
-        ForgeServer::new(Config::with_renderer(
-            project,
-            PathBuf::from("/nonexistent/forge-for-tests"),
-        ))
+        let queue = forge_serve::LocalQueue::open(
+            &project,
+            forge_serve::LocalQueueOptions {
+                forge: PathBuf::from("/nonexistent/forge-for-tests"),
+                launcher: Some(vec![String::from("/nonexistent/forge-gen-for-tests")]),
+                run_worker: false,
+                ..forge_serve::LocalQueueOptions::default()
+            },
+        )
+        .expect("a queue over the test project");
+        ForgeServer::new(
+            Config::with_renderer(project, PathBuf::from("/nonexistent/forge-for-tests")),
+            queue,
+        )
     }
 }
 
@@ -236,36 +282,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tool_surface_is_exactly_the_read_only_set_plus_the_stubs() {
+    fn the_tool_surface_is_the_eighteen_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
-        let mut expected = vec![
+        // Fifteen of the eighteen are produced here; `init_project`,
+        // `licences` and `setup` arrive with tools/setup.rs. The list is
+        // asserted rather than counted so a rename shows up as a diff of
+        // names, which is what `just mcp-check` compares against.
+        let mine = [
+            "cancel",
             "doctor",
+            "generate_audio",
+            "generate_clips",
             "inspect_audio",
             "list_audio",
             "list_clips",
             "list_models",
+            "list_runs",
+            "promote_audio",
+            "promote_clip",
             "render_clip_strip",
             "render_model",
+            "status",
+            "wait",
         ];
-        // The other agent's files contribute whatever they export; the
-        // read-only set is pinned and the rest is reported, not refused.
-        let mut names = server.tool_names();
-        let extra: Vec<String> = names
+        let names = server.tool_names();
+        for name in mine {
+            assert!(names.contains(&String::from(name)), "{name} is missing");
+        }
+        let extra: Vec<&String> = names
             .iter()
-            .filter(|n| !expected.contains(&n.as_str()))
-            .cloned()
+            .filter(|name| !mine.contains(&name.as_str()))
             .collect();
         for name in &extra {
             assert!(
-                name.starts_with("generate_") || name.starts_with("promote_"),
-                "{name} is neither read-only nor a generate/promote tool"
+                matches!(name.as_str(), "init_project" | "licences" | "setup"),
+                "{name} is not one of the eighteen"
             );
         }
-        expected.extend(extra.iter().map(String::as_str));
-        expected.sort_unstable();
-        names.sort();
-        assert_eq!(names, expected);
         assert!(
             !names
                 .iter()

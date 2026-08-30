@@ -245,22 +245,44 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    assert_eq!(
-        listed,
-        [
-            "doctor",
-            "generate_audio",
-            "generate_clips",
-            "inspect_audio",
-            "list_audio",
-            "list_clips",
-            "list_models",
-            "promote_audio",
-            "promote_clip",
-            "render_clip_strip",
-            "render_model",
-        ],
-        "--- stdout\n{out}\n--- stderr\n{err}"
+    // Fifteen of the eighteen `mcp-check` pins: `init_project`, `licences`
+    // and `setup` land with tools/setup.rs. Anything else appearing here is
+    // a surface change the skills are not written against.
+    let mine = [
+        "cancel",
+        "doctor",
+        "generate_audio",
+        "generate_clips",
+        "inspect_audio",
+        "list_audio",
+        "list_clips",
+        "list_models",
+        "list_runs",
+        "promote_audio",
+        "promote_clip",
+        "render_clip_strip",
+        "render_model",
+        "status",
+        "wait",
+    ];
+    for name in mine {
+        assert!(
+            listed.iter().any(|listed| listed == name),
+            "{name} is missing --- stdout\n{out}\n--- stderr\n{err}"
+        );
+    }
+    for name in &listed {
+        assert!(
+            mine.contains(&name.as_str())
+                || matches!(name.as_str(), "init_project" | "licences" | "setup"),
+            "{name} is not one of the eighteen --- stdout\n{out}"
+        );
+    }
+    assert!(
+        !listed
+            .iter()
+            .any(|name| name == "promote_mesh" || name == "promote_body"),
+        "a mesh has no promote door here: {listed:?}"
     );
 
     // No project is the same refusal every other verb gives, before any
@@ -810,4 +832,88 @@ fn export_contract_reproduces_the_shipped_profile_byte_for_byte() {
         2,
     );
     assert!(text.contains("motion_skeleton.json"), "{text}");
+}
+
+/// A `daemon.json` naming a process that is not there — or one that is
+/// alive and was born at another moment — is a stale file, not a daemon:
+/// it is removed and the run proceeds in this process.
+///
+/// The failure this retires is a queue that hangs waiting on a port
+/// nothing is listening to, with a file on disk insisting otherwise.
+#[test]
+fn a_stale_daemon_json_falls_back_in_process() {
+    let (dir, project) = init_project();
+    let serve = project.join("out/serve");
+    std::fs::create_dir_all(&serve).expect("mkdir");
+    let write_daemon = |pid: u32, start_ticks: u64| {
+        std::fs::write(
+            serve.join("daemon.json"),
+            format!(
+                "{{\"forge_serve\":1,\"pid\":{pid},\"start_ticks\":{start_ticks},\"port\":41773,\
+                 \"token\":\"t0ken\",\"url\":\"http://127.0.0.1:41773\",\"version\":\"0.1.0\",\
+                 \"project\":\"{}\",\"started\":\"2026-08-30T14:20:02Z\"}}",
+                project.display()
+            ),
+        )
+        .expect("write daemon.json");
+    };
+
+    // A pid nothing owns.
+    write_daemon(0x00ff_ffff, 918_273);
+    let out = ok(&project, &["jobs"]);
+    assert!(out.contains("no jobs yet"), "{out}");
+    assert!(
+        !serve.join("daemon.json").exists(),
+        "a daemon.json naming a dead pid is removed rather than left to mislead the next call"
+    );
+
+    // A pid that is alive — this test process — but born at another tick:
+    // a stranger who inherited the number, which is exactly what a pidfile
+    // with no start time cannot tell.
+    write_daemon(std::process::id(), 1);
+    let out = ok(&project, &["jobs"]);
+    assert!(out.contains("no jobs yet"), "{out}");
+    assert!(!serve.join("daemon.json").exists());
+
+    // And with no daemon at all, a generate still runs in this process and
+    // still leaves a row, so `forge jobs` and `list_runs` see it later.
+    let out = exits(
+        &project,
+        &[
+            "gen",
+            "sfx",
+            "--prompt",
+            "a door",
+            "--out",
+            "out/audio/sfx/door.wav",
+        ],
+        3,
+    );
+    assert!(
+        out.contains("moss_sfx")
+            || out.contains("missing_backend")
+            || out.contains("not installed"),
+        "with no backend the refusal is the Python table's exit 3: {out}"
+    );
+    let rows = ok(&project, &["jobs", "--json"]);
+    assert!(
+        rows.contains("generate_audio.sfx"),
+        "an in-process run writes a row anyway: {rows}"
+    );
+    drop(dir);
+}
+
+/// `forge job` refuses an id nobody has by naming the ids that do exist,
+/// and `forge serve --status` says plainly when nothing is up.
+#[test]
+fn a_job_id_nobody_has_is_refused_with_the_ids_that_do() {
+    let (_dir, project) = init_project();
+    let text = exits(&project, &["job", "show", "j-nope"], 2);
+    assert!(text.contains("no job j-nope"), "{text}");
+    let out = ok(&project, &["serve", "--status"]);
+    assert!(out.contains("daemon    down"), "{out}");
+    assert!(
+        out.contains("every forge gen still runs"),
+        "the answer says what still works without one: {out}"
+    );
 }

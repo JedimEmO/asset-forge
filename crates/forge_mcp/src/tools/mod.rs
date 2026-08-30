@@ -6,16 +6,18 @@
 //! than by asset type, because `render_model` and `render_clip_strip` share
 //! the renderer and the refusal shapes, not the catalog kind.
 //!
-//! `generate` and `promote` are the other half of the P4 work and land in
-//! their own files; an empty router from either is a valid summand.
+//! `jobs` is the queue an agent lives with — `wait`, `cancel`, `status`,
+//! `list_runs` — and it is in its own file for the same reason: what an
+//! agent is doing when it calls those is waiting, not generating.
 
 use rmcp::handler::server::router::tool::ToolRouter;
 
 use crate::server::ForgeServer;
 
-mod audio;
+pub(crate) mod audio;
 mod doctor;
 mod generate;
+mod jobs;
 mod list;
 mod promote;
 mod render;
@@ -27,5 +29,6 @@ pub(crate) fn router() -> ToolRouter<ForgeServer> {
         + audio::router()
         + doctor::router()
         + generate::router()
+        + jobs::router()
         + promote::router()
 }

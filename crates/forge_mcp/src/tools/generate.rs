@@ -34,7 +34,8 @@ use std::time::Duration;
 use forge_library::backends::{Backends, GenExit};
 use forge_library::project::OutKind;
 use forge_library::promote::validate_name;
-use forge_library::{GeneratorRecord, Project, hash};
+use forge_library::{Project, hash};
+use forge_serve::{JobSpec, JobState, spec};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content};
@@ -49,9 +50,6 @@ use crate::util::{self, Captured, Ran};
 
 /// The review sheet is a plotting pass over takes already on disk.
 const REVIEW_TIMEOUT: Duration = Duration::from_mins(5);
-/// A music track renders on a resident server, minutes for a minute of
-/// audio; the server itself may also be starting up.
-const MUSIC_TIMEOUT: Duration = Duration::from_mins(30);
 /// How many characters of a prompt's hash name a sweep directory.
 const PROMPT_HASH_CHARS: usize = 8;
 /// How many characters of a prompt's slug name a sound.
@@ -110,6 +108,10 @@ pub(crate) struct GenerateAudioArgs {
     /// Music only: `ogg` (default; needs ffmpeg) or `wav`. Sfx and speech
     /// are always wav.
     pub(crate) format: Option<String>,
+    /// Seconds to wait inline before answering. Omitted, the tool returns a
+    /// job id at once and `wait` is the next call; a short fake-tier run is
+    /// worth waiting out in one turn.
+    pub(crate) wait_s: Option<f64>,
 }
 
 /// One audio generator as the tool exposes it.
@@ -146,14 +148,6 @@ impl AudioKind {
             Self::Sfx => "sfx",
             Self::Music => "music",
             Self::Speech => "voice",
-        }
-    }
-
-    /// The generator's ceiling.
-    const fn timeout(self) -> Duration {
-        match self {
-            Self::Music => MUSIC_TIMEOUT,
-            Self::Sfx | Self::Speech => util::GENERATE_TIMEOUT,
         }
     }
 
@@ -346,16 +340,18 @@ impl ForgeServer {
 
     /// Draw one sound, track or spoken line into `out/audio/`.
     #[tool(
-        description = "Generate one sound with the local audio backends: kind sfx (MOSS sound \
-                       effect from a prompt), music (ACE-Step track from a description) or \
-                       speech (MOSS-TTS from text, cloning a voice designed by `forge gen \
-                       voice` when one is named). The \
-                       file, its record and a plot land under out/audio/<kind>/ — never in the \
-                       library; the response carries the measurements and the plot, so check \
-                       it for clipping, dead air and truncation, then pass the file to \
-                       promote_audio. Music leaves the ACE-Step server resident on the GPU \
-                       (~8 GB) until `forge gen music --stop-server`. Refuses with the install \
-                       line when the backend is not set up (doctor has the full table)."
+        description = "Start a sound: kind sfx (MOSS sound effect from a prompt), music \
+                       (ACE-Step track from a description) or speech (MOSS-TTS from text, \
+                       cloning a voice designed by `forge gen voice` when one is named). This \
+                       returns a JOB, not a file — a generate takes minutes and the card is \
+                       shared, so the frame carries the job id and the literal `wait` call to \
+                       make next; pass wait_s to wait inline instead when you expect it to be \
+                       quick. `wait` hands back the measurements and the plot, so check them \
+                       for clipping, dead air and truncation before promote_audio. The file, \
+                       its record and its plot land under out/audio/<kind>/ — never in the \
+                       library. Refuses with the install line when the backend is not set up \
+                       (doctor has the full table); a path another job already claims is \
+                       refused naming that job."
     )]
     pub(crate) async fn generate_audio(
         &self,
@@ -447,155 +443,119 @@ impl ForgeServer {
         let record = dir.join(format!("{name}.json"));
         let plot = dir.join(format!("{name}.png"));
 
-        let mut command = self.gen_command();
-        command.arg(kind.as_str());
-        match kind {
-            AudioKind::Sfx => {
-                command.arg("--prompt").arg(&line);
-                if let Some(seconds) = args.seconds {
-                    command.arg("--seconds").arg(seconds.to_string());
+        // The command line, as a list rather than a spawn: the queue is
+        // what spawns now, and it takes an argv the way `forge gen` does.
+        let mut argv: Vec<String> = vec![String::from(kind.as_str())];
+        {
+            let mut push = |flag: &str, value: String| {
+                argv.push(String::from(flag));
+                argv.push(value);
+            };
+            match kind {
+                AudioKind::Sfx => {
+                    push("--prompt", line.clone());
+                    if let Some(seconds) = args.seconds {
+                        push("--seconds", seconds.to_string());
+                    }
+                }
+                AudioKind::Music => {
+                    push("--prompt", line.clone());
+                    if let Some(seconds) = args.seconds {
+                        push("--duration", seconds.to_string());
+                    }
+                    push("--format", String::from(format));
+                }
+                AudioKind::Speech => {
+                    push("--text", line.clone());
+                    if let Some(voice) = stated(args.voice.as_deref()) {
+                        let voice = match resolve_voice(project, &voice) {
+                            Ok(path) => path,
+                            Err(refusal) => return util::refuse(refusal),
+                        };
+                        push("--voice", voice.display().to_string());
+                    }
                 }
             }
-            AudioKind::Music => {
-                command.arg("--prompt").arg(&line);
-                if let Some(seconds) = args.seconds {
-                    command.arg("--duration").arg(seconds.to_string());
-                }
-                command.arg("--format").arg(format);
+            if let Some(seed) = args.seed {
+                push("--seed", seed.to_string());
             }
-            AudioKind::Speech => {
-                command.arg("--text").arg(&line);
-                if let Some(voice) = stated(args.voice.as_deref()) {
-                    let voice = match resolve_voice(project, &voice) {
-                        Ok(path) => path,
-                        Err(refusal) => return util::refuse(refusal),
-                    };
-                    command.arg("--voice").arg(voice);
-                }
-            }
+            push("--out", out.display().to_string());
+            push("--record", record.display().to_string());
+            push("--created-by", String::from(ACTOR));
         }
-        if let Some(seed) = args.seed {
-            command.arg("--seed").arg(seed.to_string());
-        }
-        command
-            .arg("--out")
-            .arg(&out)
-            .arg("--record")
-            .arg(&record)
-            .arg("--created-by")
-            .arg(ACTOR)
-            .arg("--json");
 
-        let what = format!("the {} generate", kind.as_str());
-        let captured = match util::run(&mut command, kind.timeout()).await {
-            Ran::Ok(captured) => captured,
-            Ran::Failed(captured) => return gen_refusal(&what, kind.backend(), &captured),
-            Ran::Unlaunchable(err) => {
-                return util::refuse(format!(
-                    "could not run {} for {what}: {err}",
-                    self.config.renderer.display()
-                ));
-            }
-            Ran::TimedOut => {
-                return util::refuse(format!(
-                    "{what} timed out after {} minutes — the GPU may be held by another \
-                     process; doctor says who holds it",
-                    util::minutes(kind.timeout())
-                ));
-            }
+        let spec = JobSpec {
+            backend: Some(String::from(kind.backend())),
+            ..spec::spec_for(&argv, &project.root, ACTOR)
         };
-        // The generator says where it wrote; the paths asked for are the
-        // fallback, since a wav asked for as ogg without ffmpeg would have
-        // been refused rather than renamed.
-        let payload = captured.last_stdout_line().and_then(parse_object);
-        let written = payload
-            .as_ref()
-            .and_then(|p| p.get("outputs"))
-            .and_then(Value::as_array)
-            .and_then(|o| o.first())
-            .and_then(Value::as_str)
-            .map_or(out.clone(), PathBuf::from);
-        let record = payload
-            .as_ref()
-            .and_then(|p| p.get("record"))
-            .and_then(Value::as_str)
-            .map_or(record, PathBuf::from);
-        if !written.is_file() {
+        let job = match self.queue.submit(spec) {
+            Ok(job) => job,
+            Err(err) => return self.queue_refusal(&err),
+        };
+        if job.state == JobState::Refused {
+            // Admission refused it before it could cost a GPU minute — a
+            // backend that is not installed, in the backend table's own
+            // words, with the hint that fixes it.
             return util::refuse(format!(
-                "{what} reported success but {} is not there.\n{}",
-                written.display(),
-                captured.stdout.trim()
+                "{} refused: {}{}\n\nnothing was written.",
+                kind.as_str(),
+                job.message.as_deref().unwrap_or("(no message)"),
+                job.hint
+                    .as_deref()
+                    .map_or_else(String::new, |hint| format!("\nhint: {hint}"))
             ));
         }
 
-        // Decode, measure and plot in this process: the file is on disk and
-        // the numbers are what promote will measure again.
-        let (inspect_out, inspect_plot) = (written.clone(), plot.clone());
-        let inspected = tokio::task::spawn_blocking(move || {
-            forge_audio::cli::inspect(&inspect_out, Some(&inspect_plot)).map_err(|e| e.to_string())
-        })
-        .await
-        .unwrap_or_else(|err| Err(format!("the inspection task failed: {err}")));
+        // With wait_s set the tool waits that long inline and returns the
+        // finished shape if it lands, so a short fake-tier job is still one
+        // turn; without it the frame is the job and `next` is the call.
+        if let Some(seconds) = args.wait_s
+            && seconds > 0.0
+        {
+            let mut frame = self
+                .wait(Parameters(crate::tools::jobs::WaitArgs {
+                    job: job.id.to_string(),
+                    max_s: Some(seconds as u64),
+                }))
+                .await;
+            frame.content.insert(
+                0,
+                Content::text(format!(
+                    "{} is job {} — out {}, record {}{}",
+                    kind.as_str(),
+                    job.id,
+                    out.display(),
+                    record.display(),
+                    notes_line(&notes)
+                )),
+            );
+            return frame;
+        }
 
-        // Whether the run was a --fake one is the record's word, not the
-        // summary object's: not every command repeats it there, and the
-        // record is what the promote will read. The seed is there too.
-        let run = GeneratorRecord::load(&record).ok();
-        let fake = run.as_ref().is_some_and(|r| r.fake);
-        let mut text = format!(
-            "{} wrote {}\nrecord {}{}\n{notes}",
-            kind.as_str(),
-            written.display(),
-            record.display(),
-            run.as_ref()
-                .and_then(|r| r.param_seed_text("seed"))
-                .map_or_else(String::new, |seed| format!(" (seed {seed})"))
-        );
-        if fake {
-            text.push_str(
-                "FAKE: this is a --fake placeholder; nothing about it is a measurement.\n",
-            );
+        let position = self.position_of(&job.id);
+        let mut frame = ForgeServer::job_frame(&job, position, None);
+        frame["plot"] = Value::from(plot.display().to_string());
+        if !notes.is_empty() {
+            frame["notes"] = Value::from(notes.trim_end());
         }
-        let mut plot_block = None;
-        match inspected {
-            Ok(report) => {
-                let _ = write!(text, "\n{}", report.summary);
-                if report.is_defective() {
-                    text.push_str(
-                        "\n\nDEFECT: silent or clipped — do not promote this one; reroll the \
-                         seed or change the prompt.",
-                    );
-                }
-                if let Some(plot_path) = report.plot {
-                    plot_block =
-                        Some(util::inline_image(&plot_path).into_content(&plot_path, "the plot"));
-                }
-            }
-            Err(err) => {
-                let _ = write!(
-                    text,
-                    "\nthe file was written but could not be inspected: {err}"
-                );
-            }
-        }
-        let _ = write!(
-            text,
-            "\n\nnot in the library. when it reads clean, promote_audio {{\"kind\": {:?}, \
-             \"name\": {name:?}, \"file\": {:?}}} ships it (the record beside it is read \
-             automatically).",
+        frame["then"] = Value::from(format!(
+            "when it is done, wait, look at the plot, and promote_audio {{\"kind\": {:?}, \
+             \"name\": {name:?}, \"file\": {:?}}} ships it",
             kind.library_kind(),
-            written.display().to_string()
-        );
-        if kind == AudioKind::Music && !fake {
-            text.push_str(
-                "\n\nthe ACE-Step server is still resident on the GPU (~8 GB) so the next \
-                 track starts faster; it does not co-reside with a lift or a sweep. \
-                 `forge gen music --stop-server` frees the card.",
-            );
-        }
-        let mut blocks = vec![Content::text(text)];
-        blocks.extend(plot_block);
-        CallToolResult::success(blocks)
+            out.display().to_string()
+        ));
+        CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&frame).unwrap_or_else(|_| frame.to_string()),
+        )])
+    }
+}
+
+/// The notes a caller should see beside a job frame, on one line.
+fn notes_line(notes: &str) -> String {
+    if notes.trim().is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", notes.trim_end())
     }
 }
 
