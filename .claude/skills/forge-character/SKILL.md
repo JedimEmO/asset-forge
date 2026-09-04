@@ -37,6 +37,29 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 <recipe>` with `FORGE_HOME=<toolkit>` exported so `forge gen` finds
 `python/forge_gen`; `forge` itself walks up to the project's `forge.toml`.
 
+## The same doors over MCP (no shell)
+
+Every step below is a `just` recipe with a terminal in front of a door the
+MCP server also opens. An agent working through `forge mcp` (the `forge`
+server in `.mcp.json`) walks the identical chain — same launcher line, same
+records, same gates — as tool calls. Verified end to end on 2026-09-04.
+
+| Step | `just` | MCP tool | Notes |
+|---|---|---|---|
+| 0 look at the PNG | `Read` the file | `Read` the file | the eye, before a GPU minute |
+| 1 import | `ref-import` | `import_reference` | a job; `wait_s` a few seconds is right |
+| 2 lift | `character` | `generate_mesh` `{kind: character}` | a job, ~2 min; the door states `--preset character` itself |
+| 3 look | `views` + `Read` | `render_model` on the `out/lifts/` path | culling off under out/, so a missing back shows |
+| 4 prepare | `prepare` | `prepare_body` | a job, seconds; the one refusing gate is the arm line |
+| 5 skin | `skin` | `skin_body` | a job, ~1 min on a free card; the fit table is in the frame |
+| 5½ export | (inside `promote-body`) | `export_body` | the step between skin and promote; no way round it |
+| 6 promote | `promote-body` | `promote_body` with `rig_record` + `export_record` | export gate + rig check + taken name; writes the library and refreshes the manifest |
+| 6½ judge | `sheet <clip> --body <name>` | `render_clip_strip` `{clip: walk, body: <name>}` | **do this before 6**: `render_clip_strip` takes a path under `out/export/`, so the strip is judged before anything is filed |
+| 7 verify | `verify`, `check-bodies` | — (shell only) | not on the surface yet: Phase 4 owes `verify`, `audit`, `manifest_check` |
+
+The card: `status` says who holds it. Never start a generate while another
+runs; the queue serialises jobs, but a studio window is not a job.
+
 ## Prerequisites (check, don't assume)
 
 | Check | Command | Healthy |

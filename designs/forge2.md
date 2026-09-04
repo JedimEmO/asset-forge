@@ -565,7 +565,9 @@ carries the scale and `forge bundle` reads it off the body. `blender/rig.py`
 went away with bone heat and both rescue functions; `just rig-mesh` is gone
 and `just promote-mesh` dies by name. The MCP surface opened the mesh doors —
 `generate_mesh`, `prepare_body`, `skin_body`, `export_body`, `promote_body`,
-`promote_model` — and stands at **twenty-six**, with `mcp-session`'s
+`promote_model` — and stood at **twenty-six** (twenty-seven since
+2026-09-04, when the review found the prop path had no middle and
+`prepare_prop` was built; see `decisions.md`), with `mcp-session`'s
 character loop a tool call at every step. `ember_knight`, a Grok reference
 through the whole chain, is the first library body carrying its own bone
 lengths, rig check 12 of 12.
@@ -651,7 +653,8 @@ the pre-check refusing a deliberately bad picture on the way.
 remaining tools (`design_voice`, `list_backends`, `inspect_record`,
 `audit`, `manifest_check`, `generate_clips` as a job with keyframes);
 `mcp-check` re-pinned — **not to thirty-one**: the table above predates
-`export_bundle` and `export_body`, the surface stands at twenty-six, and what
+`export_bundle`, `export_body` and `prepare_prop`, the surface stands at
+twenty-seven, and what
 it still owes the table is `list_backends`, `inspect_record`, `design_voice`,
 `import_rig`, `audit`, `manifest_check` and `verify`, so the number is one
 Phase 4 states after it counts; the six skills rewritten with log

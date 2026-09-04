@@ -67,8 +67,10 @@ pub(crate) struct GenerateMeshArgs {
     /// `character` (a body, to be prepared and skinned) or `prop` (a static
     /// mesh, to be normalised and promoted as a model). Default `character`.
     pub(crate) kind: Option<String>,
-    /// The register: `character`, `prop` or `detail`. Omitted, the
-    /// generator's own default for the kind.
+    /// The register: `character` (25k vertices) or `prop` (6k). Omitted,
+    /// the kind's own — a character lifts at `character`, a prop at `prop`.
+    /// The launcher's bare default is the prop's, so this door states one
+    /// every time rather than letting a body lift at a prop's budget.
     pub(crate) preset: Option<String>,
     /// Sampler seed. One front view underdetermines a shape, so the seed is
     /// the knob to turn when the back of a head comes back hollow.
@@ -100,6 +102,49 @@ pub(crate) struct PrepareBodyArgs {
     /// the second pass of a fit uses. Omitted, the profile's.
     pub(crate) skeleton: Option<String>,
     /// Seconds to wait inline before answering.
+    pub(crate) wait_s: Option<f64>,
+}
+
+/// Arguments for `prepare_prop`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct PreparePropArgs {
+    /// The raw lift, as `generate_mesh` reported it — `out/lifts/<name>.glb`.
+    pub(crate) glb: String,
+    /// `snake_case` stem for the normalised prop under out/props/. Default:
+    /// the input's stem.
+    pub(crate) name: Option<String>,
+    /// Scale until the prop stands this tall, metres. Exactly one of
+    /// `height_m` and `length_m` is required: a lift is unitless.
+    pub(crate) height_m: Option<f64>,
+    /// Scale until the prop's longest extent is this, metres — for a thing
+    /// that lies down or is held, where "tall" is not the dimension you
+    /// know.
+    pub(crate) length_m: Option<f64>,
+    /// Degrees to turn it about the up axis so its front faces the front.
+    pub(crate) yaw_deg: Option<f64>,
+    /// Where the origin goes: `floor` (default — the lowest vertex at the
+    /// origin, for a thing a level drops), `hang` (the highest vertex at the
+    /// origin, for a thing hung from a ceiling), `held` (the bounding box
+    /// centred, for a socketed prop with no grip), or `grip` (a weapon: the
+    /// point `grip_m` along the long axis lands at the origin, and
+    /// `long_axis` is required).
+    pub(crate) placement: Option<String>,
+    /// `grip` only: metres from the hilt end to the hand, along the long
+    /// axis.
+    pub(crate) grip_m: Option<f64>,
+    /// `grip` only: which axis of the lift runs hilt to tip, sign included —
+    /// `+x`, `-x`, `+y`, `-y`, `+z` or `-z`. Read it off `render_model`.
+    pub(crate) long_axis: Option<String>,
+    /// `grip` only: degrees to spin about the long axis until the front (a
+    /// blade's edge, a pistol's sights) faces the authoring front.
+    pub(crate) roll_deg: Option<f64>,
+    /// The socket it is meant for, checked against the profile's table and
+    /// written into the record, e.g. `hand_r`.
+    pub(crate) socket: Option<String>,
+    /// Triangle budget. Omitted, the profile's own prop budget.
+    pub(crate) budget: Option<u32>,
+    /// Seconds to wait inline before answering. A normalise is Blender and
+    /// no card — seconds, not minutes.
     pub(crate) wait_s: Option<f64>,
 }
 
@@ -197,7 +242,11 @@ impl ForgeServer {
             String::from("--record"),
             record.display().to_string(),
         ];
-        push_stated(&mut argv, "--preset", args.preset.as_deref());
+        push_stated(
+            &mut argv,
+            "--preset",
+            Some(&preset_for(kind, args.preset.as_deref())),
+        );
         push_stated(&mut argv, "--source", args.source.as_deref());
         push_stated(&mut argv, "--prompt", args.prompt.as_deref());
         if let Some(seed) = args.seed {
@@ -210,7 +259,9 @@ impl ForgeServer {
         let then = if kind == "prop" {
             format!(
                 "when it is done, render_model {{\"name_or_path\": {:?}}} to look at it from \
-                 every side, then normalise it and promote_model",
+                 every side, then prepare_prop {{\"glb\": {:?}, \"height_m\": …}} normalises \
+                 it and promote_model files it",
+                out.display().to_string(),
                 out.display().to_string()
             )
         } else {
@@ -298,6 +349,157 @@ impl ForgeServer {
             out.display().to_string()
         );
         self.queue_gen("prepare_body", argv, args.wait_s, &then)
+            .await
+    }
+
+    /// Normalise a lifted prop: metres, the origin where its kind rests,
+    /// matte.
+    #[tool(
+        description = "Normalise a raw prop lift in headless Blender, so promote_model can \
+                       file it: join the shells and drop loose debris, turn it to face the \
+                       front, scale it to real metres (exactly one of height_m and length_m, \
+                       because a lift is unitless), put the origin where a thing of its kind \
+                       rests — the floor under a crate, the ceiling over a cobweb, the centre \
+                       of a held thing, the hand on a weapon's grip — apply the profile's \
+                       matte painted material, and hold the triangle budget. This returns a \
+                       JOB; the prop and its record land under out/props/. It is the step \
+                       between generate_mesh (kind prop) and promote_model, and promote_model \
+                       only files — a lift handed to it straight is refused on the export \
+                       gate. A weapon wants placement grip with grip_m and long_axis, which \
+                       you read off render_model; the report says where the extents landed, \
+                       so a grip that missed is a number. The fix for a wrong shape is \
+                       upstream — another seed, or the picture — never a patch in Blender."
+    )]
+    pub(crate) async fn prepare_prop(
+        &self,
+        Parameters(args): Parameters<PreparePropArgs>,
+    ) -> CallToolResult {
+        let project = &self.config.project;
+        let glb = resolve_path(project, &args.glb);
+        if !glb.is_file() {
+            return util::refuse(format!(
+                "no mesh at {} — pass the path generate_mesh reported, under out/lifts/. \
+                 nothing was written.",
+                glb.display()
+            ));
+        }
+        let size = match (args.height_m, args.length_m) {
+            (Some(height), None) => ("--height", height),
+            (None, Some(length)) => ("--length", length),
+            (None, None) => {
+                return util::refuse(String::from(
+                    "a lift is unitless: state height_m (how tall it stands) or length_m \
+                     (its longest extent), in metres. nothing was written.",
+                ));
+            }
+            (Some(_), Some(_)) => {
+                return util::refuse(String::from(
+                    "height_m and length_m are two answers to one question — state the one \
+                     dimension you know. nothing was written.",
+                ));
+            }
+        };
+        if !(size.1.is_finite() && size.1 > 0.0) {
+            return util::refuse(format!(
+                "{} {} is not a size in metres. nothing was written.",
+                size.0.trim_start_matches("--"),
+                size.1
+            ));
+        }
+        let placement = stated(args.placement.as_deref()).unwrap_or_else(|| String::from("floor"));
+        let mut placing: Vec<String> = Vec::new();
+        match placement.as_str() {
+            "floor" => {}
+            "hang" => placing.push(String::from("--hang")),
+            "held" => placing.push(String::from("--held")),
+            "grip" => {
+                let (Some(grip), Some(axis)) = (args.grip_m, stated(args.long_axis.as_deref()))
+                else {
+                    return util::refuse(String::from(
+                        "placement grip needs grip_m (metres from the hilt end to the hand) \
+                         and long_axis (which axis of the lift runs hilt to tip: +x, -x, +y, \
+                         -y, +z or -z — read it off render_model). nothing was written.",
+                    ));
+                };
+                if !matches!(axis.as_str(), "+x" | "-x" | "+y" | "-y" | "+z" | "-z") {
+                    return util::refuse(format!(
+                        "long_axis {axis:?} is not an axis — one of +x, -x, +y, -y, +z, -z. \
+                         nothing was written."
+                    ));
+                }
+                placing.push(String::from("--grip"));
+                placing.push(grip.to_string());
+                placing.push(String::from("--long-axis"));
+                placing.push(axis);
+                if let Some(roll) = args.roll_deg {
+                    placing.push(String::from("--roll-deg"));
+                    placing.push(roll.to_string());
+                }
+            }
+            other => {
+                return util::refuse(format!(
+                    "{other:?} is not a placement — floor, hang, held or grip. nothing was \
+                     written."
+                ));
+            }
+        }
+        if let Some(refusal) = self.backend_refusal("blender", "prepare_prop") {
+            return refusal;
+        }
+        let name = match named(args.name.as_deref(), &glb) {
+            Ok(name) => name,
+            Err(refusal) => return util::refuse(refusal),
+        };
+
+        let dir = project.out_dir(OutKind::Props);
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            return util::refuse(format!("cannot create {}: {err}", dir.display()));
+        }
+        let out = dir.join(format!("{name}.glb"));
+        let record = dir.join(format!("{name}.prop.json"));
+
+        let mut argv = vec![
+            String::from("prop"),
+            glb.display().to_string(),
+            String::from("--out"),
+            out.display().to_string(),
+            String::from("--record"),
+            record.display().to_string(),
+            String::from(size.0),
+            size.1.to_string(),
+        ];
+        if let Some(yaw) = args.yaw_deg {
+            argv.push(String::from("--yaw-deg"));
+            argv.push(yaw.to_string());
+        }
+        argv.extend(placing);
+        push_stated(&mut argv, "--socket", args.socket.as_deref());
+        if let Some(budget) = args.budget {
+            argv.push(String::from("--budget"));
+            argv.push(budget.to_string());
+        }
+        argv.push(String::from("--created-by"));
+        argv.push(String::from(ACTOR));
+
+        // The lift record beside the lift, when generate_mesh wrote one:
+        // named in the next step so the model's provenance is recorded
+        // rather than reconstructed.
+        let lift_record = glb.with_extension("lift.json");
+        let lift_hint = if lift_record.is_file() {
+            format!(", \"lift_record\": {:?}", lift_record.display().to_string())
+        } else {
+            String::new()
+        };
+        let then = format!(
+            "when it is done, render_model {{\"name_or_path\": {:?}, \"head_row\": false}} \
+             to check where it sits, then promote_model {{\"name\": {:?}, \"glb\": {:?}, \
+             \"prop_record\": {:?}{lift_hint}}} files it",
+            out.display().to_string(),
+            name,
+            out.display().to_string(),
+            record.display().to_string()
+        );
+        self.queue_gen("prepare_prop", argv, args.wait_s, &then)
             .await
     }
 
@@ -452,6 +654,15 @@ impl ForgeServer {
 
 /// A stated flag, or nothing at all — never an empty string, which a
 /// generator would read as a value somebody meant.
+/// The register a lift runs at: what the caller stated, else the kind's
+/// own name, which is the preset of the same name. `forge gen mesh`'s bare
+/// default is `prop` (the old tool's), so an omitted preset must not reach
+/// it — measured 2026-09-04: a character lifted over MCP with no preset
+/// came back at 5855 triangles against the shipped body's 24438.
+fn preset_for(kind: &str, stated_preset: Option<&str>) -> String {
+    stated(stated_preset).unwrap_or_else(|| String::from(kind))
+}
+
 fn push_stated(argv: &mut Vec<String>, flag: &str, value: Option<&str>) {
     if let Some(value) = stated(value) {
         argv.push(String::from(flag));
@@ -604,6 +815,68 @@ mod tests {
         assert!(!first_line(&text, 200).is_empty());
     }
 
+    /// A prop is unitless until somebody says how big it is, and the door
+    /// asks before Blender does — and a grip without its axis is refused
+    /// with the two arguments it needs.
+    #[tokio::test]
+    async fn prepare_prop_refuses_a_size_it_was_not_given_and_a_grip_with_no_axis() {
+        let (dir, project) = empty_project();
+        let lift = dir.path().join("out/lifts/crate.glb");
+        std::fs::create_dir_all(lift.parent().expect("a parent")).expect("mkdir");
+        std::fs::write(&lift, b"not really a glb").expect("write");
+        let server = server(project);
+
+        let no_size = server
+            .prepare_prop(Parameters(PreparePropArgs {
+                glb: lift.display().to_string(),
+                ..PreparePropArgs::default()
+            }))
+            .await;
+        let text = frame_text(&no_size);
+        assert!(text.contains("height_m"), "{text}");
+        assert!(text.contains("length_m"), "{text}");
+        assert!(text.contains("nothing was written"), "{text}");
+
+        let both = server
+            .prepare_prop(Parameters(PreparePropArgs {
+                glb: lift.display().to_string(),
+                height_m: Some(1.0),
+                length_m: Some(2.0),
+                ..PreparePropArgs::default()
+            }))
+            .await;
+        assert!(
+            frame_text(&both).contains("one dimension"),
+            "{}",
+            frame_text(&both)
+        );
+
+        let gripless = server
+            .prepare_prop(Parameters(PreparePropArgs {
+                glb: lift.display().to_string(),
+                length_m: Some(1.0),
+                placement: Some(String::from("grip")),
+                ..PreparePropArgs::default()
+            }))
+            .await;
+        let text = frame_text(&gripless);
+        assert!(text.contains("grip_m"), "{text}");
+        assert!(text.contains("long_axis"), "{text}");
+
+        let missing = server
+            .prepare_prop(Parameters(PreparePropArgs {
+                glb: String::from("out/lifts/nobody.glb"),
+                height_m: Some(1.0),
+                ..PreparePropArgs::default()
+            }))
+            .await;
+        assert!(
+            frame_text(&missing).contains("generate_mesh reported"),
+            "{}",
+            frame_text(&missing)
+        );
+    }
+
     /// A kind the door does not have is refused by name with the two it
     /// does, rather than being taken as the default.
     #[tokio::test]
@@ -622,6 +895,17 @@ mod tests {
         let text = frame_text(&refused);
         assert!(text.contains("character"), "{text}");
         assert!(text.contains("prop"), "{text}");
+    }
+
+    /// An omitted preset follows the kind, never the launcher's bare
+    /// default: a character asked for with no register lifts at the
+    /// character's 25k vertices, not the prop's 6k.
+    #[test]
+    fn an_omitted_preset_is_the_kinds_own_and_a_stated_one_stands() {
+        assert_eq!(preset_for("character", None), "character");
+        assert_eq!(preset_for("prop", None), "prop");
+        assert_eq!(preset_for("character", Some("  ")), "character");
+        assert_eq!(preset_for("character", Some("prop")), "prop");
     }
 
     #[test]

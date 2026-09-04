@@ -16,6 +16,17 @@ recipes run as `just --justfile <toolkit>/justfile --working-directory .
 <recipe>` with `FORGE_HOME=<toolkit>` exported so `forge gen` finds
 `python/forge_gen`; `forge` itself walks up to the project's `forge.toml`.
 
+## The same doors over MCP (no shell)
+
+| Step | `just` | MCP tool | Notes |
+|---|---|---|---|
+| 0 import | `ref-import … prop` | `import_reference` `{kind: prop}` | a job, seconds |
+| 1 lift | `prop` | `generate_mesh` `{kind: prop}` | a job, ~2 min; the door states `--preset prop` itself |
+| 2 look | `views --no-head` | `render_model` `{head_row: false}` on the `out/lifts/` path | read the long axis and the front off it for a weapon |
+| 3 normalise | `prop-import` (first half) | `prepare_prop` | **new 2026-09-04** — exactly one of `height_m`/`length_m`; `placement` `floor | hang | held | grip`, and `grip` wants `grip_m` + `long_axis` (`+x`…`-z`), `roll_deg`, `socket` |
+| 3 file | `prop-import` (second half) | `promote_model` with `prop_record` + `lift_record` | the export gate and the taken name; refreshes the manifest |
+| 4 verify | `verify`, `manifest-check` | — (shell only) | Phase 4 owes these tools |
+
 ## Prerequisites (check, don't assume)
 
 | Check | Command | Healthy |

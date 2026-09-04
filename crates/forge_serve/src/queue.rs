@@ -611,6 +611,13 @@ impl LocalQueue {
     /// This is the second of the two observations that may set `cached`,
     /// and the one that fills `same_as`. It compares hashes the generator
     /// wrote; nothing here hashes a file to make a claim about a run.
+    ///
+    /// An earlier job whose record sits at the **same path** as this one's
+    /// is never a match: that file on disk is now this job's record, so
+    /// reading it back would make the earlier run "claim" bytes it never
+    /// wrote. Measured 2026-09-04 — a character re-lifted at another
+    /// register over the same name came back `same_as` the prop-register
+    /// lift it had just overwritten.
     fn same_as(&self, job: &Job) -> Option<JobId> {
         let mine = self.record_hashes(job)?;
         if mine.is_empty() {
@@ -619,7 +626,12 @@ impl LocalQueue {
         let earlier = self.store.all().ok()?;
         earlier
             .into_iter()
-            .filter(|other| other.id != job.id && other.state == JobState::Done)
+            .filter(|other| {
+                other.id != job.id
+                    && other.state == JobState::Done
+                    && other.record.is_some()
+                    && other.record != job.record
+            })
             .find(|other| {
                 self.record_hashes(other)
                     .is_some_and(|theirs| !theirs.is_empty() && theirs == mine)

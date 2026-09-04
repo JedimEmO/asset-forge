@@ -120,8 +120,9 @@ impl ForgeServer {
              \n\
              MAKING — writes only under out/ and assets-src/, never the library: \
              import_reference brings a PNG you drew into assets-src/refs/, checked and \
-             recorded (no image model runs here); generate_mesh lifts that PNG; prepare_body \
-             normalises the lift and puts a skeleton in it; skin_body weights it and fits \
+             recorded (no image model runs here); generate_mesh lifts that PNG; prepare_prop \
+             normalises a prop lift to metres and its resting origin; prepare_body \
+             normalises a character lift and puts a skeleton in it; skin_body weights it and fits \
              that skeleton to this body's own proportions, which is what lets a short \
              character and a giant play the same clips; generate_clips draws motion takes \
              from a prompt and hands back a review sheet of every take; generate_audio starts \

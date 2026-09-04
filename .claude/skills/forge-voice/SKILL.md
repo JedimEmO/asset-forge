@@ -19,6 +19,15 @@ designed once; two lines a month apart are the same person.
 Every command and log line below was captured on a real run (2026-08-23,
 `crypt_warden`, three seeds, one line shipped into the sample library).
 
+## Over MCP
+
+There is **no `design_voice` tool yet** (Phase 4 in `designs/forge2.md`):
+designing a voice is `just voice` / `forge gen voice` at a terminal. Once a
+voice exists under `assets-src/voices/<name>/`, `generate_audio {kind:
+speech, voice: <name>}` clones it over MCP — but read `forge-audio`'s
+speech step first: MOSS-TTS makes no line at the current TTS-Audio-Suite
+pin, and the door refuses the silence rather than filing it.
+
 ## Prerequisites (check, don't assume)
 
 - `just doctor` — `moss_tts` reads `ok`. `partial` with

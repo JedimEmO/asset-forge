@@ -41,7 +41,7 @@ use serde_json::{Value, json};
 /// The whole tool surface, sorted. `mcp-check` pins the same list against a
 /// raw handshake; this pins it against a real client, so the two cannot
 /// drift apart without one of them saying so.
-const TOOLS: [&str; 26] = [
+const TOOLS: [&str; 27] = [
     "cancel",
     "doctor",
     "export_body",
@@ -58,6 +58,7 @@ const TOOLS: [&str; 26] = [
     "list_models",
     "list_runs",
     "prepare_body",
+    "prepare_prop",
     "promote_audio",
     "promote_body",
     "promote_clip",
@@ -441,6 +442,10 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
             json!({"image": "out/refs/hero.png", "name": "hero"}),
         ),
         ("prepare_body", json!({"glb": "out/lifts/hero.glb"})),
+        (
+            "prepare_prop",
+            json!({"glb": "out/lifts/hero.glb", "height_m": 1.0}),
+        ),
         ("skin_body", json!({"glb": "out/prepare/hero.glb"})),
         (
             "export_body",
@@ -783,6 +788,62 @@ async fn the_whole_character_loop_on_the_fake_tier() {
     )
     .await;
     assert!(looked.contains("knight"), "{looked}");
+
+    // -- the prop leg -----------------------------------------------------
+    // The same picture, brought as a prop: lift at the prop register,
+    // normalise through the door that was missing until 2026-09-04 (an
+    // agent with no shell could lift a prop and never file it, because
+    // promote_model only files and `forge gen prop` had no tool), then
+    // promote_model with both records.
+    let drawn = project.join("out/refs/crate.png");
+    draw_a_reference(&drawn);
+    let imported = ok(
+        client_ref(&client),
+        "import_reference",
+        json!({"png": "out/refs/crate.png", "name": "crate", "kind": "prop",
+               "source": "drawn by hand for this test", "wait_s": 120}),
+    )
+    .await;
+    assert!(
+        imported.contains("assets-src/refs/props/crate.png"),
+        "{imported}"
+    );
+    for (tool, arguments, wrote) in [
+        (
+            "generate_mesh",
+            json!({"image": "assets-src/refs/props/crate.png", "name": "crate",
+                   "kind": "prop", "wait_s": 300}),
+            "out/lifts/crate.glb",
+        ),
+        (
+            "prepare_prop",
+            json!({"glb": "out/lifts/crate.glb", "height_m": 0.9, "wait_s": 300}),
+            "out/props/crate.glb",
+        ),
+    ] {
+        let frame = ok(client_ref(&client), tool, arguments).await;
+        assert!(frame.contains("done"), "{tool} did not finish:\n{frame}");
+        assert!(
+            project.join(wrote).exists(),
+            "{tool} said it was done and {wrote} is not there:\n{frame}"
+        );
+    }
+    let filed = ok(
+        client_ref(&client),
+        "promote_model",
+        json!({"name": "crate", "glb": "out/props/crate.glb",
+               "prop_record": "out/props/crate.prop.json",
+               "lift_record": "out/lifts/crate.lift.json"}),
+    )
+    .await;
+    assert!(filed.contains("models/crate.glb"), "{filed}");
+    let looked = ok(
+        client_ref(&client),
+        "render_model",
+        json!({"name_or_path": "crate", "head_row": false}),
+    )
+    .await;
+    assert!(looked.contains("crate"), "{looked}");
 
     let verify = Command::new(forge())
         .arg("verify")

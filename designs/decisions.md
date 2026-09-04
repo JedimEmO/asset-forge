@@ -1373,3 +1373,51 @@ proved by a case that needs it, and the fixture that needs this one — a record
 with no row — is exactly the case the door cannot produce. When a door writes
 every input to a check, the check has to be tested against a state the door
 never makes, or the suite is agreeing with itself. 2026-08-31.
+
+**A door that forwards "omitted" to a launcher inherits the launcher's
+default, and the two doors had different ones.** `generate_mesh` took
+`kind: character` and passed no `--preset` when none was stated; `forge gen
+mesh`'s own default is `prop`, kept from the old tool. So the terminal door
+(`just character`, which types `--preset character`) and the MCP door ran
+the same launcher at two registers, and a body lifted over MCP arrived at
+5 855 triangles against the shipped knight's 24 438 — a picture, not a gate,
+is what said so. The rule: a door that has a kind states every knob the kind
+implies; "omitted" reaches a launcher only when the launcher's default is
+the one the door means. 2026-09-04.
+
+**`same_as` read the earlier job's record through the path it no longer
+owned.** The queue compares the hashes a generator wrote to decide whether a
+finished job is the same run as an earlier one, and it read those hashes off
+disk at comparison time. A re-lift over the same name overwrites the earlier
+job's record at the same path, so the earlier job "claimed" the new bytes
+and the new job came back `same_as` it — with `cached: false` and 95 s of
+card behind it, which is the record that lies this field exists to prevent.
+An earlier job whose record path is this job's is no longer a candidate.
+**Why it survived:** the cache test ran the two names apart, so the paths
+never coincided; the state a door makes by itself (a re-roll under one name)
+was the one the test did not make. 2026-09-04.
+
+**The prop path had a middle at the terminal and none over MCP.**
+`generate_mesh` (kind prop) told the agent "then normalise it and
+promote_model", and `promote_model` only files; `forge gen prop` had no
+tool, so an agent with no shell could lift a crate and never ship it — the
+same shape `export_body` had on 2026-08-31, in the other kind. `prepare_prop`
+is the door now, holding the same rule as the launcher (exactly one of
+height or length, because a lift is unitless) before Blender starts, and the
+fake-tier session runs a prop through it. **The lesson twice over:** a tool
+surface is proved by a loop that ends in the library, per kind, and a "then"
+line in a frame that names a step no tool performs is a promise the gate has
+to be made to keep. 2026-09-04.
+
+**Rig check 12 of 12 and the strip said no — again, and the toolkit was
+right both times.** The knight re-lifted at seed 42, prepared, skinned and
+exported clean: every gate passed, the planted foot inside a centimetre. On
+the walk strip a grey sheet flares over the head — the pauldrons, which
+SkinTokens weighted to `Neck` (10 018 vertices) and `LeftHandThumb3` (7 262,
+a leaf finger bone that owns a tenth of the body). No gate refuses that and
+none should yet: the shipped `ember_knight` (seed 7) has 6 402 vertices on
+the same thumb bone and walks correctly, so no number measured on this disk
+separates the two. What separates them is the picture, which is why every
+skill puts a render between skin and promote and why `CLAUDE.md` says the
+eye outranks the sheet. Recorded so the next reader does not propose a
+"vertices per finger bone" gate from one body. 2026-09-04.

@@ -317,7 +317,7 @@ forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three ques
       doctor | gpu | sheet | views | turntable | bones | bundle | studio | mcp
 ```
 
-`forge mcp` serves twenty-six tools over stdio, registered in
+`forge mcp` serves twenty-seven tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -339,6 +339,7 @@ exist, so a wrong name costs one turn, not a guess.
 | `skin_body` | the whole skin → fit → re-prepare → re-skin → re-attach loop; the done frame carries the fit table and `motion_scale` |
 | `export_body` | `forge gen export` — the rigged `.blend` to the `.glb` a body is filed as, through the export gate. The step between `skin_body` and `promote_body`, and there is no way round it |
 | `promote_body` | the export gate + `forge rig check` + the taken-name refusal, then `promote body` |
+| `prepare_prop` | `forge gen prop` — a prop lift to metres, the origin where its kind rests (floor, ceiling, centre or grip), matte, inside the budget; the step between `generate_mesh` (kind prop) and `promote_model` |
 | `promote_model` | the doors `just prop-import`'s promote runs |
 | `generate_clips` | `forge gen motion sweep` + `review`; refuses with the doctor line when ARDY is absent |
 | `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
@@ -358,11 +359,13 @@ library is the export gate, the rig check and the refused taken name — all of
 which `promote_body` runs. The thing that must not be automatable is
 accepting a licence, which is why `accept` is an explicit argument.
 `just mcp-check` handshakes the server and holds the tool list to exactly
-these twenty-six, and `just mcp-session` runs the whole path — the audio leg
+these twenty-seven, and `just mcp-session` runs the whole path — the audio leg
 (`init_project → licences → setup → doctor → generate_audio → wait →
 inspect_audio → promote_audio → verify`) and the character leg
 (`import_reference → generate_mesh → wait → prepare_body → wait → skin_body →
-wait → export_body → wait → promote_body → render_model → verify`), plus the
+wait → export_body → wait → promote_body → render_model → verify`) and the
+prop leg (`import_reference → generate_mesh → prepare_prop → promote_model →
+render_model`), plus the
 refusals — over **both** transports, stdio and the daemon's streamable HTTP
 at `/mcp`. Every step of that leg is a tool call, which is the point of it:
 `export_body` was missing until 2026-08-31 and the gate was shelling the

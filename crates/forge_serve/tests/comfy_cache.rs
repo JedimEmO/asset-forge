@@ -117,3 +117,43 @@ fn a_cached_result_says_so() {
     );
     queue.stop();
 }
+
+/// The same name run twice overwrites the record on disk. The second run
+/// must not come back `same_as` the first: that file is now the second
+/// run's record, and an earlier job read through it would claim bytes it
+/// never wrote. (The stub claims one fixed hash, so only the path rule can
+/// keep these two apart.)
+#[test]
+fn a_rerun_over_the_same_name_is_not_the_same_as_the_run_it_overwrote() {
+    let (dir, project) = common::project();
+    let script = script(dir.path(), false);
+    let queue = common::queue(&project, Some(&script));
+    let spec = || JobSpec {
+        kind: String::from("generate_audio.sfx"),
+        backend: Some(String::from("moss_sfx")),
+        argv: vec![
+            String::from("sfx"),
+            String::from("--name"),
+            String::from("door"),
+        ],
+        outputs_claimed: vec![String::from("out/audio/sfx/door.wav")],
+        record: None,
+        created_by: String::from("agent:test"),
+        fake: None,
+    };
+    let first = queue.submit(spec()).expect("admitted");
+    let first = common::finished(queue.as_ref(), &first.id, 30);
+    assert_eq!(first.state, JobState::Done, "{:?}", first.message);
+    let second = queue.submit(spec()).expect("admitted");
+    let second = common::finished(queue.as_ref(), &second.id, 30);
+    assert_eq!(second.state, JobState::Done, "{:?}", second.message);
+    assert_eq!(
+        second.record, first.record,
+        "both runs wrote the record at the same path"
+    );
+    assert_eq!(
+        second.same_as, None,
+        "a record overwritten in place is this run's, not the earlier run's claim"
+    );
+    queue.stop();
+}

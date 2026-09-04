@@ -685,7 +685,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="cancel doctor export_body export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs prepare_body promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status wait"
+    expected="cancel doctor export_body export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs prepare_body prepare_prop promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \

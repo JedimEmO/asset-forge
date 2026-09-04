@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+**2026-09-04 — the toolchain reviewed as an agent's workbench.** Every
+door run for real from the MCP surface with the card: a sweep, a bake, a
+sound, a lift, a prepare, a skin, an export, a rig check, three renders.
+Three things were wrong and are fixed here; what is still owed is in
+`designs/forge2.md` under Phase 4.
+
+### Fixed
+
+- **A character lifted over MCP came back at the prop register.**
+  `generate_mesh` forwarded no `--preset` unless one was stated and
+  `forge gen mesh`'s bare default is `prop`, so `kind: character` with no
+  preset lifted at 6 000 vertices (5 855 triangles against the shipped
+  knight's 24 438). The door now states the kind's own preset every time,
+  and its description stops naming a `detail` register that never existed.
+- **`same_as` claimed a run for a file it had overwritten.** The queue
+  re-read every earlier job's record from disk to compare hashes, so a
+  re-run over the same name — whose record now sits at the earlier job's
+  path — came back `same_as` the run it had just replaced, with
+  `cached: false` and 95 s of card behind it. An earlier job whose record
+  path is this job's is never a match now.
+- **The prop path had no middle over MCP.** `generate_mesh` (kind prop)
+  told the agent to "normalise it and promote_model", and there was no
+  tool that normalised: `forge gen prop` had no door. **`prepare_prop`**
+  is that door — metres from exactly one of `height_m`/`length_m`,
+  placement `floor | hang | held | grip` with `grip_m` and `long_axis` for
+  a weapon, the socket, the budget — and `mcp-session` grows a prop leg on
+  the fake tier. The surface is **twenty-seven**; `mcp-check` and both
+  session pins say so.
+
 **Forge 2, Phase 1 — the daemon.** One queue owns the card, both doors are
 its clients, and the audio models move off their own environments onto a
 ComfyUI host the toolkit drives but does not schedule. The plan is

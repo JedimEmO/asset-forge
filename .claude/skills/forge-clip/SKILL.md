@@ -16,6 +16,17 @@ From a project made by `forge init` the recipes run as `just --justfile
 <toolkit>/justfile --working-directory . <recipe>` with
 `FORGE_HOME=<toolkit>` exported — with one catch in step 1.
 
+## The same doors over MCP (no shell)
+
+| Step | `just` | MCP tool | Notes |
+|---|---|---|---|
+| 1 sweep + 2 review | `sweep`, `review` | `generate_clips` | one call: the takes, the review table and the sheet inline. It is **not** a job — it blocks 1–3 min (ARDY at ~15 GB); `samples` and `seed` are the knobs, one duration per call |
+| 3 promote | `promote-clip` | `promote_clip` | every knob stated; `events` in raw-take seconds; refreshes the manifest |
+| 4 judge the strip | `sheet` | `render_clip_strip` | the clip on the real body; 0 driven is the wiring verdict |
+| 5 verify | `audit`, `verify` | — (shell only) | Phase 4 owes these tools |
+
+Verified end to end on 2026-09-04 (`sword_chop`, seed 3, take 0).
+
 ## Prerequisites (check, don't assume)
 
 - `just doctor` — the `ardy` row reads `ok`. `partial` names the weight or
