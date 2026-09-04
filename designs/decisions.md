@@ -1421,3 +1421,31 @@ separates the two. What separates them is the picture, which is why every
 skill puts a render between skin and promote and why `CLAUDE.md` says the
 eye outranks the sheet. Recorded so the next reader does not propose a
 "vertices per finger bone" gate from one body. 2026-09-04.
+
+**The skinner fails silently one run in four, and the same mesh is the
+proof.** The seed-42 knight whose pauldrons flared over its head on the walk
+strip (the entry above) was re-lifted, prepared and skinned three more times
+from the **same prepared mesh**, and all three walked cleanly; only the first
+skin broke. SkinTokens samples with no seed — a rig claims integrity, never
+reproduction (`CLAUDE.md`) — so the same input gives a different rig each
+time, and one of them put the left pauldron on `Neck` and `LeftHandThumb3`.
+The rig record already carries the numbers that separate the runs:
+`weighted_vertices_by_bone` read `Neck` 10 018 and `LeftHandThumb3` 7 262 on
+the bad skin against `Neck` 1 867–2 156 and `LeftHandThumb3` 38–2 287 on the
+three good ones (and 3 950 / 6 402 on the shipped seed-7 body, which walks).
+By *dominant* weight — the bone a vertex mostly follows — the good bodies show
+only small flyers, 67–81 vertices on `LeftHandThumb3` sitting 0.46 m from the
+bone and ~550 on `RightForeArm` at 0.35 m, which is the 3.4 m posed bounds
+`render_clip_strip` prints for the shipped knight on `sword_chop` against
+2.0 m for `vex_runner`. **What this is not yet:** a gate. Four skins of one
+mesh and two shipped bodies are not a threshold, and the thumb-tip bone on
+the shipped body is a fifth of the bad run's by one count and outside every
+good run's by the other. **What it is:** a rule for the skill — the strip on
+the real body is judged *before* `promote_body`, on the export under `out/`,
+and a skin whose per-bone counts sit far from its own siblings' (a leaf finger
+bone owning thousands of vertices, `Neck` owning a twentieth of the body) is
+re-skinned, not filed, because a re-skin is a minute and the same mesh
+usually comes back right. The measured candidate, for whoever writes the
+gate after more bodies: dominated-vertex centroid distance from the bone head,
+which reads 0.35–0.46 m on the flyers here and under 0.27 m on every limb
+bone of every body that walks. 2026-09-04.
