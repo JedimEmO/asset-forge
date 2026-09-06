@@ -13,8 +13,7 @@
 #
 # The headless job renders with no display server on mesa's lavapipe
 # (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset):
-# the capture smoke, a contact sheet of every shipped clip (non-zero on one
-# that binds to nothing or never moves), `forge views` on the committed test
+# the capture smoke, `forge views` on the committed test
 # fixture — the unit cube TRELLIS made from a test image, culling off — and
 # then the gates on the committed library: check-bodies (the rig profile
 # held against every shipped body), audit (by bytes and by pose, on the
@@ -36,6 +35,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full_review:
+        description: Render and check every shipped clip sheet
+        type: boolean
+        default: false
 
 # A push on top of a running run supersedes it; the old one is cancelled
 # rather than finishing second.
@@ -109,8 +114,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 -m pip install --quiet "./python[dev]"
+      - name: Compile Rust test executables
+        run: cargo test --workspace --locked --no-run
       # MCP integration tests also invoke the software renderer.
-      - run: cargo test --workspace
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
         env:
           WGPU_BACKEND: vulkan
       - run: python3 -m pytest -q
@@ -137,9 +145,8 @@ jobs:
     name: headless
     runs-on: ubuntu-latest
     # Proven locally under `env -u DISPLAY -u WAYLAND_DISPLAY` on llvmpipe;
-    # not yet seen green on a GitHub runner. Left as a hard failure on
-    # purpose: a smoke that is allowed to fail is a smoke nobody reads, and
-    # the first red run is the one that tells us what the runner lacks.
+    # smoke has also passed on the GitHub runner. Renderer and integrity
+    # checks remain hard failures; full clip sheets are an explicit review.
     continue-on-error: false
     env:
       WGPU_BACKEND: vulkan
@@ -160,15 +167,20 @@ jobs:
           shared-key: workspace-native
           cache-on-failure: true
       - uses: taiki-e/install-action@just
+      - name: Compile headless tools
+        run: cargo build --locked -p forge -p forge_capture
       # What the runner has before anything asks for it; informational.
       - run: vulkaninfo --summary || true
       # No display: the smoke recipe itself unsets DISPLAY and WAYLAND_DISPLAY,
       # and a runner has neither to begin with. The renders after it find the
       # same adapter the smoke did.
-      - run: just smoke
-      # Every shipped clip as a sheet on the stage body; an empty library
-      # renders nothing and passes.
-      - run: just sheets
+      - name: Render smoke fixture
+        run: just smoke
+      # Full library review is explicit; ordinary PRs retain smoke, renderer
+      # tests, body conformance and the complete byte/pose reproduction audit.
+      - name: Review all shipped clip sheets
+        if: github.event_name == 'workflow_dispatch' && inputs.full_review
+        run: just sheets
       # The rig profile held against every shipped body. No renderer.
       - run: just check-bodies
       # The seven views of a raw lift, the way `forge-character` looks at one

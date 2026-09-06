@@ -1803,3 +1803,10 @@ check could save first, leaving later jobs to recompile native dependencies.
 Separate check/package caches from the native cache, and retain completed
 dependency builds after a test failure. This needs an initial cache fill; it
 is not a measured warm-run speedup yet. No CI workflow installs model weights.
+
+The earlier GitHub run spent 35m 39s compiling test executables; its first
+test groups then ran in 0.02s, 2.69s and 5.78s. Full library sheets added
+about 19 minutes of software rendering. CI now shows compilation separately
+from test execution and offers full sheets through manual `full_review`.
+Ordinary PRs retain every `just ci` gate, renderer tests and the fixture view
+check. Full sheets remain a hard failure whenever explicitly requested.

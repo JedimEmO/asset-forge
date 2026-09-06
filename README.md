@@ -178,8 +178,10 @@ just publish-check
 
 `just ci` checks formatting, Clippy, rustdoc, Rust and Python tests, headless
 smoke, asset integrity, clip reproduction, manifests, MCP sessions and fake
-production pipelines. Real generation, Blender authoring and human review
-are separate checks. `just publish-check` packages seven library crates and
+production pipelines. Compilation and execution have separate CI steps.
+Full library contact sheets run with `just sheets`, or the CI workflow's manual
+`full_review` option; ordinary PRs keep the rendering smoke, renderer tests and
+byte/pose audit. Real generation, Blender authoring and human review are separate checks. `just publish-check` packages seven library crates and
 builds them in isolation; it does not publish them. Crates are currently used
 through Git or path dependencies.
 
