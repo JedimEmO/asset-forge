@@ -1,23 +1,27 @@
 mod art;
 mod audio;
+mod combat_feedback;
 mod lighting;
+mod metadata;
 mod post;
+mod scenery;
 mod sim;
+mod telegraph;
 mod ui;
 mod vfx;
 mod voice_fx;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::window::{CursorGrabMode, CursorOptions};
+use bevy::{input::mouse::AccumulatedMouseMotion, prelude::*, window::PresentMode};
+#[cfg(not(target_arch = "wasm32"))]
 use bevy::{
-    input::mouse::AccumulatedMouseMotion,
-    prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     time::TimeUpdateStrategy,
-    window::{CursorGrabMode, CursorOptions, PresentMode},
 };
 use sim::{Game, Input, Phase};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
 
 #[derive(Resource)]
 pub struct Options {
@@ -37,12 +41,17 @@ struct Runtime {
     yaw: f32,
     pitch: f32,
     warm: u32,
+    #[cfg(not(target_arch = "wasm32"))]
     frames: u32,
+    #[cfg(not(target_arch = "wasm32"))]
     captured: bool,
+    #[cfg(not(target_arch = "wasm32"))]
     requested: bool,
     focus_seen: bool,
     save_done: bool,
+    #[cfg(not(target_arch = "wasm32"))]
     last_frame: Option<Instant>,
+    #[cfg(not(target_arch = "wasm32"))]
     frame_ms: Vec<f64>,
 }
 #[derive(Resource, Default)]
@@ -54,6 +63,7 @@ pub enum Set {
     Present,
     Ui,
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn saved_path() -> PathBuf {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
@@ -62,14 +72,15 @@ fn saved_path() -> PathBuf {
         })
         .join("relay-runner/best.json")
 }
-fn main() {
+#[cfg(not(target_arch = "wasm32"))]
+fn options() -> Options {
     let args: Vec<String> = std::env::args().collect();
     let value = |name: &str| args.windows(2).find(|p| p[0] == name).map(|p| p[1].clone());
     if args.iter().any(|a| a == "--help") {
         println!(
-            "Relay Run\nA/D strafe | mouse aim | LMB fire | RMB focus | Space jump | Shift dodge | Q shockwave | E / MMB plasma blast | R reload | Esc pause | M mute\n--assets DIR --autoplay --frames N --screenshot FILE --report FILE --scenario title|combat|paused|dead|crowded|assets|pickup|burst|reload|blast --quiet --benchmark --no-post | F6 toggle post effects"
+            "Relay Run\nA/D strafe | mouse aim | LMB fire | RMB focus | Space jump | Shift dodge | Q shockwave | E / MMB plasma blast | R reload | Esc pause | M mute\n--assets DIR --autoplay --frames N --screenshot FILE --report FILE --scenario title|combat|paused|dead|crowded|assets|pickup|burst|reload|blast|focus|threats|feedback --quiet --benchmark --no-post | F6 toggle post effects"
         );
-        return;
+        std::process::exit(0);
     }
     let root = value("--assets")
         .map(PathBuf::from)
@@ -86,7 +97,7 @@ fn main() {
         root.join("scavenger.glb").exists() && root.join("rusher.glb").exists(),
         "Expected stage-1 delivered character bundles"
     );
-    let options = Options {
+    Options {
         root: root.clone(),
         autoplay: args.iter().any(|a| a == "--autoplay"),
         frames: value("--frames").and_then(|v| v.parse().ok()).unwrap_or(0),
@@ -97,7 +108,28 @@ fn main() {
         benchmark: args.iter().any(|a| a == "--benchmark"),
         post: !args.iter().any(|a| a == "--no-post"),
         flat_light: args.iter().any(|a| a == "--flat-light"),
-    };
+    }
+}
+#[cfg(target_arch = "wasm32")]
+fn options() -> Options {
+    Options {
+        root: PathBuf::from("assets"),
+        autoplay: false,
+        frames: 0,
+        capture: None,
+        report: None,
+        scenario: "combat".into(),
+        quiet: false,
+        benchmark: false,
+        post: true,
+        flat_light: false,
+    }
+}
+fn main() {
+    #[cfg(target_arch = "wasm32")]
+    browser::install();
+    let options = options();
+    let root = options.root.clone();
     let capture_run = options.frames > 0;
     assert!(
         !options.benchmark || capture_run,
@@ -105,11 +137,7 @@ fn main() {
     );
     let benchmark = options.benchmark;
     let mut game = Game::new();
-    if let Ok(bytes) = std::fs::read(saved_path())
-        && let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes)
-    {
-        game.best = v["best"].as_u64().unwrap_or(0) as u32;
-    }
+    game.best = load_best();
     game.sound = !options.quiet;
     let mut app = App::new();
     app.add_plugins(
@@ -121,6 +149,12 @@ fn main() {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "RELAY RUN".into(),
+                    #[cfg(target_arch = "wasm32")]
+                    canvas: Some("#relay-canvas".into()),
+                    #[cfg(target_arch = "wasm32")]
+                    fit_canvas_to_parent: true,
+                    #[cfg(target_arch = "wasm32")]
+                    prevent_default_event_handling: true,
                     resolution: (1440, 900).into(),
                     present_mode: if benchmark {
                         PresentMode::AutoNoVsync
@@ -136,6 +170,7 @@ fn main() {
                 ..default()
             }),
     );
+    #[cfg(not(target_arch = "wasm32"))]
     if capture_run {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
             1. / 60.,
@@ -152,22 +187,28 @@ fn main() {
         )
         .add_plugins((
             art::ArtPlugin,
+            scenery::SceneryPlugin,
+            telegraph::TelegraphPlugin,
             post::PostPlugin,
             lighting::LightingPlugin,
             ui::UiPlugin,
+            combat_feedback::CombatFeedbackPlugin,
             audio::AudioPlugin,
             vfx::VfxPlugin,
         ))
         .add_systems(Update, inputs.in_set(Set::Input))
-        .add_systems(Update, simulate.in_set(Set::Sim))
-        .add_systems(Last, harness)
-        .run();
+        .add_systems(Update, simulate.in_set(Set::Sim));
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_systems(Last, harness);
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(Last, browser::sync);
+    app.run();
 }
 fn inputs(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
-    mut cursors: Query<&mut CursorOptions>,
+    #[cfg(not(target_arch = "wasm32"))] mut cursors: Query<&mut CursorOptions>,
     windows: Query<&Window>,
     mut game: ResMut<Game>,
     mut controls: ResMut<Controls>,
@@ -206,14 +247,24 @@ fn inputs(
     if keys.just_pressed(KeyCode::KeyM) {
         game.sound = !game.sound;
     }
+    #[cfg(target_arch = "wasm32")]
+    let browser_input = browser::take_input();
+    #[cfg(target_arch = "wasm32")]
+    if browser_input & 2 != 0 && game.phase == Phase::Playing {
+        game.phase = Phase::Paused;
+    }
     if keys.just_pressed(KeyCode::Escape) {
         game.phase = match game.phase {
             Phase::Playing => Phase::Paused,
+            #[cfg(not(target_arch = "wasm32"))]
             Phase::Paused => Phase::Playing,
             p => p,
         };
     }
-    if keys.just_pressed(KeyCode::Enter) && ready.0 {
+    let start = keys.just_pressed(KeyCode::Enter);
+    #[cfg(target_arch = "wasm32")]
+    let start = start || browser_input & 1 != 0;
+    if start && ready.0 {
         match game.phase {
             Phase::Title | Phase::Dead => {
                 game.start();
@@ -233,6 +284,7 @@ fn inputs(
         }
         runtime.focus_seen = window.focused;
     }
+    #[cfg(not(target_arch = "wasm32"))]
     for mut cursor in &mut cursors {
         let grab = game.phase == Phase::Playing && !options.autoplay && options.frames == 0;
         cursor.visible = !grab;
@@ -312,6 +364,37 @@ fn simulate(
     if options.frames > 0 && runtime.warm == 45 {
         match options.scenario.as_str() {
             "title" => {}
+            "threats" => {
+                game.start();
+                game.enemies = [
+                    sim::EnemyKind::Weaver,
+                    sim::EnemyKind::Sniper,
+                    sim::EnemyKind::Heavy,
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(i, kind)| sim::Enemy {
+                    id: 60000 + i as u64,
+                    kind,
+                    pos: Vec3::new((i as f32 - 1.) * 3., 0., -16. - i as f32 * 3.),
+                    hp: if kind == sim::EnemyKind::Heavy {
+                        220.
+                    } else {
+                        90.
+                    },
+                    max_hp: if kind == sim::EnemyKind::Heavy {
+                        220.
+                    } else {
+                        90.
+                    },
+                    fire_in: 0.55,
+                    flash: 0.,
+                    burst_left: 0,
+                    aim_lock: Vec3::new(-2., 0.85, 1.),
+                })
+                .collect();
+            }
+            "feedback" => game.feedback_fixture(),
             "burst" => game.burst_fixture(),
             "blast" => game.blast_fixture(),
             "reload" => {
@@ -357,17 +440,14 @@ fn simulate(
     }
     game.tick(time.delta_secs().min(1. / 30.), controls.0);
     if game.phase == Phase::Dead && !runtime.save_done && options.frames == 0 {
-        let path = saved_path();
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(path, format!("{{\"best\":{}}}", game.best));
+        save_best(game.best);
         runtime.save_done = true;
     }
     if game.phase == Phase::Playing {
         runtime.save_done = false;
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn harness(
     mut commands: Commands,
     options: Res<Options>,
@@ -420,7 +500,15 @@ fn harness(
     if runtime.requested && runtime.captured {
         let timing = frame_summary(&runtime.frame_ms);
         let lens = lenses.iter().next().map(|(d,m)|serde_json::json!({"focal_distance":d.focal_distance,"aperture":d.aperture_f_stops,"blur_cap_px":d.max_circle_of_confusion_diameter,"shutter":m.shutter_angle,"motion_samples":m.samples}));
-        let report = serde_json::json!({"scenario":options.scenario,"dramatic_lighting":light_state.0,"lens":lens,"barrier_widths":game.barrier_widths,"barrier_depths":game.barrier_depths,"benchmark_uncapped":options.benchmark,"post_processing":options.post,"frame_timing":timing,"resolution":[1440,900],"phase":format!("{:?}",game.phase),"distance_m":game.distance,"kills":game.kills,"wave":game.wave,"combo":game.combo,"overdrive_seconds":game.overdrive,"overdrive_activations":game.overdrive_activations,"announcer_starts":announcer.starts,"particle_emitters":particles.emitters,"peak_particle_emitters":particles.peak_emitters,"particle_bursts":particles.bursts,"dropped_particle_emitters":particles.dropped,"energy":game.energy,"energy_collected":game.energy_collected,"blasts_fired":game.blasts_fired,"detonations":game.detonations,"multikills":game.multikills,"multikill_size":game.multikill_size,"multikill_announcer_starts":announcer.multikills,"reload_audio_starts":announcer.reloads,"shots":game.shots,"hits":game.hits,"supplies_collected":game.supplies_collected,"ammo":game.ammo,"reload_seconds":game.reload,"score":game.score,"shield":game.shield,"health":game.health,"enemies":game.enemies.len(),"animation_players":players.iter().count(),"frames":runtime.frames,"assets_ready":ready.0});
+        let mut report = serde_json::json!({"scenario":options.scenario,"dramatic_lighting":light_state.0,"lens":lens,"barrier_widths":game.barrier_widths,"barrier_depths":game.barrier_depths,"benchmark_uncapped":options.benchmark,"post_processing":options.post,"frame_timing":timing,"resolution":[1440,900],"phase":format!("{:?}",game.phase),"distance_m":game.distance,"kills":game.kills,"wave":game.wave,"combo":game.combo,"overdrive_seconds":game.overdrive,"overdrive_activations":game.overdrive_activations,"announcer_starts":announcer.starts,"particle_emitters":particles.emitters,"peak_particle_emitters":particles.peak_emitters,"particle_bursts":particles.bursts,"dropped_particle_emitters":particles.dropped,"energy":game.energy,"energy_collected":game.energy_collected,"blasts_fired":game.blasts_fired,"detonations":game.detonations,"multikills":game.multikills,"multikill_size":game.multikill_size,"multikill_announcer_starts":announcer.multikills,"reload_audio_starts":announcer.reloads,"shots":game.shots,"hits":game.hits,"supplies_collected":game.supplies_collected,"ammo":game.ammo,"reload_seconds":game.reload,"score":game.score,"shield":game.shield,"health":game.health,"enemies":game.enemies.len(),"animation_players":players.iter().count(),"frames":runtime.frames,"assets_ready":ready.0});
+        report["intensity"] = game.intensity().into();
+        report["elapsed_s"] = game.time.into();
+        report["enemy_roles"] = serde_json::json!(
+            game.enemies
+                .iter()
+                .map(|e| format!("{:?}", e.kind))
+                .collect::<Vec<_>>()
+        );
         if let Some(path) = &options.report {
             std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
         }
@@ -429,6 +517,7 @@ fn harness(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn frame_summary(samples: &[f64]) -> serde_json::Value {
     if samples.is_empty() {
         return serde_json::Value::Null;
@@ -437,4 +526,116 @@ fn frame_summary(samples: &[f64]) -> serde_json::Value {
     sorted.sort_by(f64::total_cmp);
     let percentile = |p: f64| sorted[((sorted.len() - 1) as f64 * p).round() as usize];
     serde_json::json!({"measurement":"wall-clock frame intervals; excludes first 180 simulation frames and screenshot readback; not GPU timestamp timing", "samples":samples.len(),"mean_ms":samples.iter().sum::<f64>() / samples.len() as f64,"p50_ms":percentile(0.5),"p95_ms":percentile(0.95),"p99_ms":percentile(0.99),"max_ms":sorted.last()})
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_best() -> u32 {
+    std::fs::read(saved_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|v| v["best"].as_u64())
+        .unwrap_or(0)
+        .min(u32::MAX as u64) as u32
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn save_best(best: u32) {
+    let path = saved_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, format!("{{\"best\":{best}}}"));
+}
+#[cfg(target_arch = "wasm32")]
+fn load_best() -> u32 {
+    browser::load_best()
+}
+#[cfg(target_arch = "wasm32")]
+fn save_best(best: u32) {
+    browser::save_best(best);
+}
+
+// Pointer lock and audio resume must run in a DOM gesture, not a later ECS
+// frame. Only the input flags cross into the game; simulation remains shared.
+#[cfg(target_arch = "wasm32")]
+mod browser {
+    use super::*;
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(inline_js = r#"
+let pending = 0;
+let phase = 'Title';
+let ready = false;
+const contexts = new Set();
+export function install() {
+    for (const name of ['AudioContext', 'webkitAudioContext']) {
+        const Native = window[name];
+        if (!Native) continue;
+        window[name] = class extends Native {
+            constructor(...args) { super(...args); contexts.add(this); }
+        };
+    }
+    const canvas = document.querySelector('#relay-canvas');
+    canvas.tabIndex = 0;
+    const resumeAudio = () => {
+        for (const context of contexts) {
+            if (context.state === 'suspended') context.resume().catch(console.warn);
+        }
+    };
+    const start = () => {
+        if (!ready) return;
+        if (phase !== 'Playing') pending |= 1;
+        canvas.focus();
+        if (document.pointerLockElement !== canvas) {
+            try {
+                const result = canvas.requestPointerLock();
+                if (result) result.catch(console.warn);
+            } catch (error) { console.warn(error); }
+        }
+    };
+    document.addEventListener('pointerdown', resumeAudio, true);
+    document.addEventListener('keydown', resumeAudio, true);
+    canvas.addEventListener('pointerdown', event => { if (event.button === 0) start(); });
+    canvas.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('keydown', event => {
+        if (event.code === 'Enter' && !event.repeat) start();
+    });
+    document.addEventListener('pointerlockchange', () => {
+        if (!document.pointerLockElement && phase === 'Playing') pending |= 2;
+    });
+}
+export function take_input() { const value = pending; pending = 0; return value; }
+export function set_state(next, loaded) {
+    phase = next;
+    ready = loaded;
+    const canvas = document.querySelector('#relay-canvas');
+    canvas.dataset.phase = phase;
+    canvas.dataset.ready = String(ready);
+    canvas.style.cursor = phase === 'Playing' ? 'none' : 'auto';
+    if (phase !== 'Playing' && document.pointerLockElement === canvas) document.exitPointerLock();
+}
+export function load_best() {
+    try {
+        const best = Number(localStorage.getItem('relay-runner.best.v1'));
+        return Number.isSafeInteger(best) && best >= 0 ? Math.min(best, 4294967295) : 0;
+    } catch (_) { return 0; }
+}
+export function save_best(best) {
+    try { localStorage.setItem('relay-runner.best.v1', String(best)); } catch (_) {}
+}
+"#)]
+    extern "C" {
+        pub fn install();
+        pub fn take_input() -> u32;
+        fn set_state(phase: &str, ready: bool);
+        pub fn load_best() -> u32;
+        pub fn save_best(best: u32);
+    }
+    pub fn sync(game: Res<Game>, ready: Res<art::Ready>) {
+        let phase = match game.phase {
+            Phase::Title => "Title",
+            Phase::Playing => "Playing",
+            Phase::Paused => "Paused",
+            Phase::Dead => "Dead",
+        };
+        set_state(phase, ready.0);
+    }
 }

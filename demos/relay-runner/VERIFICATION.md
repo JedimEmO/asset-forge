@@ -346,3 +346,65 @@ The staged diff passed whitespace checks and was reviewed for source/provenance
 scope and accidental secrets or build outputs. The finish workflow's requested
 `/simplify` invocation was unavailable in this environment; it was not run.
 See `HANDOFF.md` for the next gameplay pass and the local evidence locations.
+
+## v15 — faster encounters, new models and orbital traffic — 2026-09-06
+
+Package: `/home/mmy/forge-demos/relay-runner-v15`. Evidence:
+`out/relay-runner-20260906/v15/`. The user-accepted fallback remains v14.
+
+The director now introduces Trooper, Rusher, Weaver, Sniper and Heavy in the
+opening 15 seconds. Pressure increases every 12 seconds, with speed capped at 13 m/s
+after one minute, wave gaps of 5.8 to 4 seconds and a 7.5-second recovery every fifth wave.
+Flying rifle/plasma hit volumes use mounted model bounds and the same bank as
+rendering. Sniper fire commits before its burst and accounts for world scrolling;
+a violet line and ground marker expose the dodge window. Heavy 220 HP survives
+one 160-damage plasma blast. Existing reload, resource and voice effects remain.
+
+Six new references were imported through Forge and lifted with guarded Pixal3D:
+interceptor 56,219 tris, freighter 58,693, cruiser 56,575, heavy 59,554,
+radar 58,385 and reactor 58,538. Raw culling-on/off and normalized library sheets
+were reviewed. Exact orientations, hashes, recipes, adapter and interrupted
+heavy1/reactor1 attempts are preserved in the showcase's `out/v15-provenance`,
+which is copied into package provenance. Reactor2 used a stricter 30 GiB hard/
+28 GiB soft memory cap; no source GLBs or sidecars were hand repaired.
+
+Sparse asymmetric bays replace repeated station decorations and distant towers.
+The machinery stands on attached decks; early radar/reactor bays establish the
+new silhouettes. Eight background ships represent three classes, including two
+interceptor formations; the freighter crosses center around 9.6 seconds. Ships
+receive separate cached material instances with fog disabled and textured fill;
+shared combat materials remain unchanged. This fixed the far freighter's red fog
+smear and revealed dark hull details. Front fill increased from 650 to 2,200 lux while
+retaining the grazing key, rim, restrained ambient and accepted lens effects.
+
+Final `cargo test`: 36 passed. `cargo clippy --all-targets -- -D warnings`, build,
+format and diff whitespace checks pass. Showcase manifest and audit pass;
+verify checks 44 entries with nine expected experimental generator warnings.
+The package's 539 payload hashes and v14's 370 hashes verify; all 16 previous showcase
+payload files match v14 (the manifest gains new rows). No baseline file changed.
+
+Rendered threats, opening, minute, crowded and title fixtures exit 0. The minute
+run reaches intensity 6 / wave 11, with 27 kills, with no dropped emitters. Final package
+opening, crowded and isolated blast runs exit 0. The isolated blast produces one
+multikill and starts both MULTIKILL and FREE FIRE once; PLAY.sh selects the desktop
+default USB audio sink. Do not add autoplay to this blast fixture when testing its
+announcements: the defensive shockwave can clear the cluster first.
+
+Whole-frame measurements varied with desktop presentation: the package opening
+averaged 3.60 ms / p95 4.46 ms; longer and focused runs showed a 60 Hz plateau around
+16.67 ms / p95 17.1 ms despite requesting uncapped presentation. Keep those reports;
+this is not an isolated GPU-cost comparison. The initial preview crowded run was
+4.32 ms / p95 5.37 ms. No particle requests were dropped in any of these runs.
+
+## v16 combat feedback — 2026-09-06
+
+38 tests pass, including actual rifle body/critical damage values and bounded
+number lifetime, pause, scrolling and restart behavior. Clippy with warnings
+as errors, formatting and diff whitespace checks pass. No toolkit or generated
+asset changes. Screenshots and logs are in `out/relay-runner-20260906/v16/`.
+The `feedback` fixture fires two real shots and visibly shows white 30 and gold
+75 CRIT; enemy textures remain readable with warm material fill. The initial
+`threats` screenshot exposed an unsupported locator glyph, corrected to the
+font's ASCII v and reviewed in `feedback.png`. The earlier image is retained.
+The autoplay capture at four seconds has no active numbers because hits have
+already expired; the bounded feedback fixture provides the visual evidence.

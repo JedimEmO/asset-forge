@@ -42,3 +42,25 @@ The game applies a visually tuned -25 degree local X rotation at the drone's
 visual mount to level the source model's nose-down pose. This is consumer
 placement in `art.rs`, not a measured source orientation or a mesh repair.
 Drone hit feedback uses a small roll; the rusher retains its separate lean.
+
+## v15 asset/gameplay pass
+
+Six new references were created with the built-in OpenAI image generator and
+imported, unchanged, through Forge's reference door into the external showcase:
+`relay_interceptor`, `relay_freighter`, `relay_cruiser`, `relay_radar`,
+`relay_reactor`, and `relay_heavy`. Their original PNGs, integrity records and
+source ledger accompany delivery. The cruiser reference was reframed after the
+first image failed the two-percent margin gate; the refused image remains in
+local image-generation history.
+
+The same isolated Pixal3D adapter and guarded serial workflow are used. Each
+candidate is judged from four raw views with culling off and on, then normalized
+through Forge and reviewed again. Runtime ships point +Z with Y up; landscape
+machinery sits on a floor origin. No derived mesh is hand repaired. The existing
+experimental provenance and nvdiffrast non-commercial scope continue to apply.
+
+The package retains `provenance/performance-assets/v15-assets/`: experimental
+receipts, adapter hashes/source, memory and exit logs, raw exports, normalization
+records and review sheets. The full pre-export tensors remain in the local trial
+for future upstream export diagnostics. The scenery and sniper telegraph modules
+are retained alongside the earlier runtime effect sources.

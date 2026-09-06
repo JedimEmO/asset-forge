@@ -24,7 +24,7 @@ Run `./PLAY.sh`, then click **Start run** or press Enter.
 Shields regenerate after 3.5 seconds without damage. Health does not.
 Cyan-marked supply crates refill the magazine, restore shields and ability charge.
 Tall station units block gunfire; move around them. Headshots deal extra damage.
-Every 300 metres raises the threat level. Run again to beat your score.
+Intensity rises every 12 seconds and reaches its cap after one minute. Run again to beat your score.
 Best score is stored in `~/.local/share/relay-runner/best.json`
 (or under `XDG_DATA_HOME`). Automated runs never change the saved score.
 
@@ -78,8 +78,13 @@ firing drones in place and restores health so the workload lasts the entire run.
 
 Use `--scenario assets --frames 240 --screenshot /absolute/assets.png` for a bounded view of the supply pickup and tall cover at gameplay distance.
 
-Combat alternates firing lines, rusher pursuit and mixed crossfire, with a
-recovery interval after each cycle. Drones glow before firing. Precision hits
+Combat introduces weaving interceptors, committed sniper bursts and heavy
+gunships alongside the original drones and rushers in the opening 15 seconds.
+Snipers show a violet targeting line: strafe after it locks to evade the burst.
+Heavies fire a three-lane spread and survive one plasma blast, leaving a rifle
+finish. Waves arrive every 5.8 seconds initially, tightening to four seconds;
+every fifth wave gives a 7.5-second supply recovery. Run speed rises from
+8.8 to 13 metres per second over the first minute. Drones glow before firing. Precision hits
 interrupt rusher acceleration; kills return 12 shockwave charge. Chain four
 kills within six seconds of each other to trigger six seconds of Overdrive:
 a refilled magazine, faster fire and no ammo consumption. Taking damage
@@ -150,3 +155,20 @@ Use `--scenario focus` for the repeatable aimed-focus fixture.
 
 For the accepted v14 checkpoint, asset locations and next gameplay pass, see
 [HANDOFF.md](HANDOFF.md).
+
+The v15 scenery pass uses generated radar and reactor installations on attached
+service decks, asymmetric arrangements and open bays. Interceptor formations,
+industrial freighters and capital cruisers cross overhead on separate flight
+paths. Background traffic is ambience; it does not block gunfire or damage the
+player. The small weaving enemy shares the interceptor hull; heavies use their
+own generated gunship model. Original v14 assets and package remain intact.
+
+Sky traffic uses separate material instances with local texture fill and no
+causeway fog, so hull detail stays readable against space. Combat models keep
+the original material response. Radar and reactor bays appear early in each
+stretch, with varied empty bays and supporting machinery between them.
+
+Combat feedback: floating damage numbers show rifle, plasma and shockwave damage.
+Gold CRIT labels distinguish critical rifle hits. Numbers drift and fade over
+0.85 seconds, freeze on pause and clear on restart. Enemy surfaces receive a
+small texture-preserving warm fill, with compact amber locators above targets.

@@ -4512,6 +4512,7 @@ dependencies = [
  "bevy",
  "bevy_hanabi",
  "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5559,6 +5560,7 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "wgpu-core",
  "wgpu-hal",

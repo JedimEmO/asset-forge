@@ -10,6 +10,10 @@ ROOT=Path(__file__).resolve().parent
 def package(delivery,binary,output,showcase,pixal_trial):
     delivery=delivery.resolve();binary=binary.resolve(strict=True);output=output.resolve()
     if output.exists():raise FileExistsError(output)
+    showcase=showcase.resolve(strict=True)
+    for name in ('interceptor','freighter','cruiser','radar','reactor','heavy'):
+        model=showcase/f'assets/models/relay_{name}.glb'
+        if not model.is_file():raise FileNotFoundError(f'Reviewed v15 model required: {model}')
     output.mkdir(parents=True)
     shutil.copytree(delivery/'assets',output/'assets')
     shutil.copytree(delivery/'provenance',output/'provenance')
@@ -54,6 +58,11 @@ def package(delivery,binary,output,showcase,pixal_trial):
     shutil.copy2(ROOT/'src/vfx.rs',performance/'vfx.rs')
     shutil.copy2(ROOT/'src/lighting.rs',performance/'lighting.rs')
     shutil.copy2(ROOT/'src/post.rs',performance/'post.rs')
+    shutil.copy2(ROOT/'src/scenery.rs',performance/'scenery.rs')
+    shutil.copy2(ROOT/'src/telegraph.rs',performance/'telegraph.rs')
+    shutil.copy2(ROOT/'src/combat_feedback.rs',performance/'combat_feedback.rs')
+    shutil.copy2(ROOT/'src/sim.rs',performance/'sim.rs')
+    shutil.copytree(showcase/'out/v15-provenance',performance/'v15-assets')
     shutil.copy2(showcase/'out/relay-v13-review.json',performance/'v13-review.json')
     hanabi=next((Path.home()/'.cargo/registry/src').glob('*/bevy_hanabi-0.19.0'))
     shutil.copy2(hanabi/'LICENSE-MIT',performance/'HANABI-LICENSE-MIT')

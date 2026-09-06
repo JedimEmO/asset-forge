@@ -50,8 +50,8 @@ fn setup(mut c: Commands, options: Res<crate::Options>, mut state: ResMut<Lighti
     c.spawn((
         LightRole::Fill,
         DirectionalLight {
-            illuminance: 650.,
-            color: Color::srgb(0.4, 0.64, 1.),
+            illuminance: 2200.,
+            color: Color::srgb(0.65, 0.78, 1.),
             ..default()
         },
         Transform::from_xyz(8., 12., 18.).looking_at(Vec3::ZERO, Vec3::Y),
@@ -113,9 +113,9 @@ fn update(
             })
             .looking_at(Vec3::ZERO, Vec3::Y);
         } else if matches!(role, LightRole::Fill) {
-            l.illuminance = if state.0 { 650. } else { 3500. };
+            l.illuminance = if state.0 { 2200. } else { 3500. };
             l.color = if state.0 {
-                Color::srgb(0.4, 0.64, 1.)
+                Color::srgb(0.65, 0.78, 1.)
             } else {
                 Color::srgb(0.84, 0.91, 1.)
             };

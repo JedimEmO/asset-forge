@@ -1,0 +1,13 @@
+{
+  "source_package": "relay-runner-v16",
+  "source_assets_directory": "/home/mmy/forge-demos/relay-runner-v16/assets",
+  "captured_date": "2026-09-06",
+  "method": "Byte-for-byte copies of accepted runtime JSON, with SHA256 inventory of accepted package assets. No sidecars or measurements edited.",
+  "embedded_metadata": [
+    "grounding.json",
+    "attachment.json",
+    "scavenger/library.json",
+    "showcase/library.json"
+  ],
+  "inventory": "asset-sha256.json"
+}

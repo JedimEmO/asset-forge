@@ -1,0 +1,50 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "relay_freighter",
+  "prompt": null,
+  "tags": [
+    "experimental",
+    "ship"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "reconstructed",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 56050,
+      "triangles": 58693,
+      "bones_skinned": 0,
+      "lowest_y": -0.11273563,
+      "bounds": [
+        [
+          -0.20069498,
+          -0.11273563,
+          -0.50000006
+        ],
+        [
+          0.20069498,
+          0.11273563,
+          0.50000006
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:7d703ab3960c18f7d6f46a557dd5d77e0c3aa6302e2de0149900405869bd7990",
+  "note": "Experimental Pixal3D single-view seed 42, manual FOV 0.2 radians (assumption); 60000 target, 2048 texture; nvdiffrast non-commercial. Reconstructed provenance; trial pixal-freighter1. Raw culling on/off reviewed; centered 1m longest extent, Y up, +Z bow."
+}

@@ -381,7 +381,7 @@ fn refresh(
     for (label, mut content) in &mut labels {
         content.0 = match label {
             Label::Distance => format!("{:04} m", game.distance as u32),
-            Label::Sector => format!("Causeway {:02} / Wave {:02}", game.sector(), game.wave),
+            Label::Sector => format!("INTENSITY {} / Wave {:02}", game.intensity(), game.wave),
             Label::Shield => format!(
                 "Shield {}{}",
                 game.shield as u32,
@@ -484,7 +484,7 @@ fn refresh(
             Bar::Health => game.health,
             Bar::Charge => game.charge,
             Bar::Energy => game.energy,
-            Bar::Progress => (game.distance % 300.) / 3.,
+            Bar::Progress => ((game.time / 60.).clamp(0., 1.)) * 100.,
             Bar::Magazine => {
                 if game.reload > 0. {
                     (1. - game.reload / 1.3) * 100.

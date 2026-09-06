@@ -1,0 +1,49 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "relay_station",
+  "prompt": null,
+  "tags": [
+    "experimental"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "reconstructed",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 54735,
+      "triangles": 56362,
+      "bones_skinned": 0,
+      "lowest_y": 0.0,
+      "bounds": [
+        [
+          -0.8499137,
+          0.0,
+          -0.8527509
+        ],
+        [
+          0.8499137,
+          3.1999998,
+          0.8527509
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:b310888cfd005586455e2adb21398be9136f333da143f96043b7a51c4ac1071d",
+  "note": "Experimental Pixal3D selected export; reconstructed provenance, integrity only. Texture baker nvdiffrast 0.4.0 is non-commercial. Recorded normalization yaw180, pitch-20, final heading-27 degrees; heading is a visually selected alignment parameter. Original trials and earlier normalization retained."
+}

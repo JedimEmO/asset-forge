@@ -1524,3 +1524,22 @@ Pixal3D run to complete under the same GPU cap, 36 GiB cgroup RAM limit and zero
 swap allowance. The alternative fused adapter failed comparison and was rejected.
 This is not a supported backend replacement. Pin, guard, adaptation, measurement
 and visual rejection details are in `designs/pixal3d-evaluation.md`.
+
+### Pixal3D demo asset pass — 2026-09-06
+
+The v15 heavy1 attempt was stopped by the existing available-host-RAM guard at
+111 seconds during texture generation. Its monitor receipt says exit_code 0 but
+stop_reason `host RAM headroom`; the log shows TERM and no completed GLB. A
+successful systemd-run exit after an intentional unit stop is not generation
+success. Read stop_reason and the experiment's completed status/output together.
+Preserve the interrupted attempt and use a new run name for retry. Keep consumer
+compilation/linking idle during inference as well as serializing GPU work; the
+36 GiB cgroup cap does not reserve RAM against other host processes.
+
+The reactor1 attempt also hit the 10 GiB available-host-RAM guard while this
+task's builds were idle; unrelated rustdoc builds were observed afterward.
+No external process was stopped. Reactor2 completed in 196 seconds with an
+archived stricter wrapper (`MemoryMax=30G`, `MemoryHigh=28G`), retaining the
+same host/GPU stop thresholds and zero swap allowance. Its service peak was
+28 GiB and its stop_reason was null. This is one completed constrained retry,
+not proof of the earlier reboot's cause or a universal safe memory budget.

@@ -1,0 +1,50 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "relay_radar",
+  "prompt": null,
+  "tags": [
+    "experimental",
+    "landmark"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "reconstructed",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 54617,
+      "triangles": 58385,
+      "bones_skinned": 0,
+      "lowest_y": 0.0,
+      "bounds": [
+        [
+          -0.39799798,
+          0.0,
+          -0.34572175
+        ],
+        [
+          0.39799798,
+          1.0,
+          0.34572175
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:a8d2d7564f9ae36b713b51236f50b159bd87ccaee4a4879f843dad404db05f67",
+  "note": "Experimental Pixal3D single-view seed 42, manual FOV 0.2 radians (assumption); 60000 target, 2048 texture; nvdiffrast non-commercial. Reconstructed provenance; trial pixal-radar1. Raw culling on/off reviewed; floor origin, height1m, upright pedestal; radar panel retains designed upward tilt."
+}

@@ -23,10 +23,24 @@ pub struct Input {
     pub focus: bool,
     pub aim: Vec3,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum EnemyKind {
     Trooper,
     Rusher,
+    Weaver,
+    Sniper,
+    Heavy,
+}
+impl EnemyKind {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Trooper => 0,
+            Self::Rusher => 1,
+            Self::Weaver => 2,
+            Self::Sniper => 3,
+            Self::Heavy => 4,
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Enemy {
@@ -37,6 +51,58 @@ pub struct Enemy {
     pub kind: EnemyKind,
     pub fire_in: f32,
     pub flash: f32,
+    /// Snipers commit to this world-space target before their burst.
+    pub aim_lock: Vec3,
+    pub burst_left: u8,
+}
+impl Enemy {
+    /// Shared with art: the collider follows the same banking visual root.
+    pub fn flying_rotation(&self, time: f32) -> Quat {
+        let bank = if self.kind == EnemyKind::Weaver {
+            (time * 2.4 + self.id as f32).cos() * 0.2
+        } else {
+            self.flash * 0.25
+        };
+        Quat::from_rotation_z(bank)
+    }
+    fn flying_ray(&self, origin: Vec3, direction: Vec3, time: f32) -> (Vec3, Vec3) {
+        let inverse = self.flying_rotation(time).inverse();
+        (
+            inverse * (origin - self.pos) - Vec3::Y * 1.25,
+            inverse * direction,
+        )
+    }
+    fn rifle_hit(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        half: Vec3,
+        time: f32,
+    ) -> Option<(f32, bool)> {
+        if self.kind == EnemyKind::Rusher {
+            let head = ray_sphere(origin, direction, self.pos + Vec3::Y * 1.6, 0.29);
+            let torso = ray_sphere(origin, direction, self.pos + Vec3::Y * 0.95, 0.62);
+            return head.or(torso).map(|t| (t, head.is_some()));
+        }
+        let (origin, direction) = self.flying_ray(origin, direction, time);
+        let body = ray_ellipsoid(origin, direction, half)?;
+        let sensor = ray_sphere(
+            origin,
+            direction,
+            Vec3::ZERO,
+            (half.min_element() * 0.55).clamp(0.12, 0.22),
+        );
+        Some((body, sensor.is_some()))
+    }
+    fn projectile_hit(&self, origin: Vec3, direction: Vec3, half: Vec3, time: f32) -> Option<f32> {
+        if self.kind == EnemyKind::Rusher {
+            return ray_sphere(origin, direction, self.pos + Vec3::Y, 0.85);
+        }
+        let (origin, direction) = self.flying_ray(origin, direction, time);
+        // Expand for the plasma orb's visible radius, shared by target selection
+        // and the actual swept collision; wings must not let an orb pass through.
+        ray_ellipsoid(origin, direction, half + Vec3::splat(0.18))
+    }
 }
 #[derive(Clone)]
 pub struct Barrier {
@@ -91,11 +157,21 @@ pub struct Fx {
     pub age: f32,
     pub life: f32,
 }
+#[derive(Clone)]
+pub struct DamageNumber {
+    pub id: u64,
+    pub pos: Vec3,
+    pub amount: u32,
+    pub critical: bool,
+    pub age: f32,
+}
 #[derive(Resource)]
 pub struct Game {
     pub phase: Phase,
     pub barrier_widths: [f32; 2],
     pub barrier_depths: [f32; 2],
+    /// Measured post-mount bounds, indexed by EnemyKind::index().
+    pub enemy_half_extents: [Vec3; 5],
     pub time: f32,
     pub distance: f32,
     pub x: f32,
@@ -142,6 +218,7 @@ pub struct Game {
     pub plasma: Vec<Plasma>,
     pub energy_drops: Vec<Energy>,
     pub effects: Vec<Fx>,
+    pub damage_numbers: Vec<DamageNumber>,
     pub best: u32,
     pub sound: bool,
     next_id: u64,
@@ -160,6 +237,13 @@ impl Game {
             phase: Phase::Title,
             barrier_widths: [3., 2.4],
             barrier_depths: [1.2, 1.2],
+            enemy_half_extents: [
+                Vec3::new(0.75, 0.738, 0.863),  // legacy drone, pitch -25 degrees
+                Vec3::new(0.62, 0.95, 0.62),    // humanoid uses its original spheres
+                Vec3::new(0.87, 0.25, 1.0),     // reviewed two-metre interceptor
+                Vec3::new(0.525, 0.671, 0.936), // scaled legacy sniper
+                Vec3::new(1.0, 0.6, 1.0),       // replaced by mounted heavy bounds in art
+            ],
             time: 0.,
             distance: 0.,
             x: 0.,
@@ -206,6 +290,7 @@ impl Game {
             plasma: vec![],
             energy_drops: vec![],
             effects: vec![],
+            damage_numbers: vec![],
             best: 0,
             sound: true,
             next_id: 1,
@@ -215,15 +300,17 @@ impl Game {
         }
     }
     pub fn start(&mut self) {
-        let (best, sound, widths, depths) = (
+        let (best, sound, widths, depths, enemy_extents) = (
             self.best,
             self.sound,
             self.barrier_widths,
             self.barrier_depths,
+            self.enemy_half_extents,
         );
         *self = Self::new();
         self.barrier_widths = widths;
         self.barrier_depths = depths;
+        self.enemy_half_extents = enemy_extents;
         self.best = best;
         self.sound = sound;
         self.phase = Phase::Playing;
@@ -284,6 +371,18 @@ impl Game {
         self.nova_flash = 0.7;
         self.effect(FxKind::Nova, Vec3::new(0., 0.2, -5.), Vec3::ZERO, 0.7);
     }
+    pub fn feedback_fixture(&mut self) {
+        self.start();
+        self.enemies.clear();
+        self.barriers.clear();
+        self.add_enemy(-2., -12., EnemyKind::Trooper);
+        self.add_enemy(2., -12., EnemyKind::Heavy);
+        for (x, y) in [(-2., 0.8), (2., 1.25)] {
+            self.fire_cd = 0.;
+            self.aim = (Vec3::new(x, y, -12.) - self.camera()).normalize();
+            self.shoot();
+        }
+    }
     pub fn blast_fixture(&mut self) {
         self.start();
         self.enemies.clear();
@@ -305,7 +404,12 @@ impl Game {
         let direction = self.aim.normalize_or(Vec3::NEG_Z);
         let mut range: f32 = 34.;
         for e in &self.enemies {
-            if let Some(t) = ray_sphere(origin, direction, e.pos + Vec3::Y, 0.85) {
+            if let Some(t) = e.projectile_hit(
+                origin,
+                direction,
+                self.enemy_half_extents[e.kind.index()],
+                self.time,
+            ) {
                 range = range.min(t);
             }
         }
@@ -331,16 +435,34 @@ impl Game {
         self.impact = 0.17;
         self.effect(FxKind::Launch, from, from, 0.25);
     }
+    fn damage_number(&mut self, pos: Vec3, amount: u32, critical: bool) {
+        let id = self.id();
+        if self.damage_numbers.len() >= 48 {
+            self.damage_numbers.remove(0);
+        }
+        self.damage_numbers.push(DamageNumber {
+            id,
+            pos,
+            amount,
+            critical,
+            age: 0.,
+        });
+    }
     fn detonate(&mut self, pos: Vec3) {
+        let mut hit_positions = Vec::new();
         let mut kills = 0;
         for e in &mut self.enemies {
             if e.hp > 0. && (e.pos + Vec3::Y).distance(pos) <= BLAST_RADIUS {
                 e.hp -= 160.;
+                hit_positions.push(e.pos + Vec3::Y * 1.5);
                 e.flash = 0.4;
                 if e.hp <= 0. {
                     kills += 1;
                 }
             }
+        }
+        for pos in hit_positions {
+            self.damage_number(pos, 160, false);
         }
         if kills >= 2 {
             self.multikills += 1;
@@ -356,17 +478,20 @@ impl Game {
         self.effect(FxKind::Detonate, pos, pos, 0.8);
     }
     pub fn encounter_name(&self) -> &'static str {
-        match self.wave.saturating_sub(1) % 3 {
-            0 => "INTERCEPT / break the firing line",
-            1 => "PURSUIT / rushers incoming",
-            _ => "CROSSFIRE / hold your escape route",
+        match self.wave.saturating_sub(1) % 5 {
+            0 => "INTERCEPT / weaving drones",
+            1 => "TARGET LOCK / dodge the sniper burst",
+            2 => "HEAVY CONTACT / crack the gunship",
+            3 => "PURSUIT / rushers and crossfire",
+            _ => "BREATHER / collect supplies",
         }
     }
-    pub fn sector(&self) -> u32 {
-        1 + (self.distance / 300.) as u32
+    /// Escalates on play time, so focus movement cannot hold back the director.
+    pub fn intensity(&self) -> u32 {
+        1 + (self.time / 12.).min(5.) as u32
     }
     pub fn speed(&self) -> f32 {
-        (8.0 + (self.sector() - 1) as f32 * 0.65).min(13.) * if self.focus { 0.78 } else { 1. }
+        (8.8 + (self.time / 60.).clamp(0., 1.) * 4.2) * if self.focus { 0.78 } else { 1. }
     }
     pub fn camera(&self) -> Vec3 {
         Vec3::new(
@@ -388,7 +513,13 @@ impl Game {
     }
     fn add_enemy(&mut self, x: f32, z: f32, kind: EnemyKind) {
         let id = self.id();
-        let hp = if kind == EnemyKind::Rusher { 65. } else { 95. };
+        let hp = match kind {
+            EnemyKind::Trooper => 95.,
+            EnemyKind::Rusher => 65.,
+            EnemyKind::Weaver => 75.,
+            EnemyKind::Sniper => 90.,
+            EnemyKind::Heavy => 220.,
+        };
         self.enemies.push(Enemy {
             id,
             pos: Vec3::new(x, 0., z),
@@ -397,6 +528,8 @@ impl Game {
             kind,
             fire_in: 1.0 + (id % 3) as f32 * 0.4,
             flash: 0.,
+            aim_lock: Vec3::new(self.x, self.y + 0.85, 1.),
+            burst_left: 0,
         });
     }
     fn effect(&mut self, kind: FxKind, from: Vec3, to: Vec3, life: f32) {
@@ -456,14 +589,16 @@ impl Game {
             }
         }
         for (i, e) in self.enemies.iter().enumerate() {
-            let head = ray_sphere(origin, direction, e.pos + Vec3::Y * 1.6, 0.29);
-            let torso = ray_sphere(origin, direction, e.pos + Vec3::Y * 0.95, 0.62);
-            if let Some(t) = head.or(torso)
-                && t < closest
+            if let Some((t, critical)) = e.rifle_hit(
+                origin,
+                direction,
+                self.enemy_half_extents[e.kind.index()],
+                self.time,
+            ) && t < closest
             {
                 closest = t;
                 victim = Some(i);
-                headshot = head.is_some();
+                headshot = critical;
             }
         }
         let end = origin + direction * closest;
@@ -475,6 +610,7 @@ impl Game {
         );
         if let Some(i) = victim {
             self.enemies[i].hp -= if headshot { 75. } else { 30. };
+            self.damage_number(end, if headshot { 75 } else { 30 }, headshot);
             self.enemies[i].flash = if headshot { 0.32 } else { 0.12 };
             self.impact = if headshot { 0.13 } else { 0.055 };
             self.hits += 1;
@@ -555,10 +691,15 @@ impl Game {
             self.nova_flash = 0.7;
             self.impact = 0.6;
             self.effect(FxKind::Nova, Vec3::new(self.x, 0.2, 0.), Vec3::ZERO, 0.7);
+            let mut hit_positions = Vec::new();
             for e in &mut self.enemies {
-                if e.pos.distance(Vec3::new(self.x, 0., -7.)) < 19. {
+                if e.hp > 0. && e.pos.distance(Vec3::new(self.x, 0., -7.)) < 19. {
                     e.hp -= 130.;
+                    hit_positions.push(e.pos + Vec3::Y * 1.5);
                 }
+            }
+            for pos in hit_positions {
+                self.damage_number(pos, 130, false);
             }
             self.bolts.retain(|b| b.pos.z < -26.);
         }
@@ -573,45 +714,52 @@ impl Game {
             self.wave += 1;
             self.wave_banner = 2.6;
             let mirror = if self.wave.is_multiple_of(2) { -1. } else { 1. };
-            match (self.wave - 1) % 3 {
+            let pressure = self.intensity();
+            match (self.wave - 1) % 5 {
                 0 => {
-                    // A firing line: shift laterally and prioritize its nearest gun.
-                    for i in 0..3 {
-                        self.add_enemy(
-                            (i as f32 - 1.) * 3.,
-                            -48. - i as f32 * 3.,
-                            EnemyKind::Trooper,
-                        );
+                    self.add_enemy(-mirror * 2.8, -44., EnemyKind::Weaver);
+                    self.add_enemy(mirror * 2.8, -49., EnemyKind::Trooper);
+                    if pressure >= 2 {
+                        self.add_enemy(0., -55., EnemyKind::Weaver);
                     }
                 }
                 1 => {
-                    // Rushers force a dodge or a well-timed shockwave.
-                    for i in 0..3 {
-                        self.add_enemy(
-                            mirror * (i as f32 - 1.) * 2.6,
-                            -45. - i as f32 * 5.,
-                            EnemyKind::Rusher,
-                        );
+                    self.add_enemy(mirror * 3., -47., EnemyKind::Sniper);
+                    self.add_enemy(-mirror * 2.4, -40., EnemyKind::Rusher);
+                    if pressure >= 3 {
+                        self.add_enemy(-mirror * 3., -56., EnemyKind::Weaver);
                     }
-                    self.add_enemy(-mirror * 3.5, -63., EnemyKind::Trooper);
+                }
+                2 => {
+                    self.add_enemy(mirror * 1.8, -46., EnemyKind::Heavy);
+                    self.add_enemy(-mirror * 3., -51., EnemyKind::Weaver);
+                    if pressure >= 4 {
+                        self.add_enemy(mirror * 3., -57., EnemyKind::Sniper);
+                    }
+                }
+                3 => {
+                    for side in [-1., 1.] {
+                        self.add_enemy(side * 3.2, -42., EnemyKind::Rusher);
+                    }
+                    self.add_enemy(0., -51., EnemyKind::Trooper);
+                    if pressure >= 3 {
+                        self.add_enemy(mirror * 3., -57., EnemyKind::Sniper);
+                    }
                 }
                 _ => {
-                    // Mixed crossfire, followed by a supply/recovery interval.
-                    for side in [-1., 1.] {
-                        self.add_enemy(side * 3.5, -50., EnemyKind::Trooper);
-                    }
-                    self.add_enemy(0., -58., EnemyKind::Rusher);
+                    // No fresh attack during the recovery beat. Supplies arrive
+                    // while the player finishes the previous encounter.
                     let id = self.id();
                     self.pickups.push(Pickup {
                         id,
-                        pos: Vec3::new(mirror * 2.5, 0.8, -78.),
+                        pos: Vec3::new(mirror * 2.5, 0.8, -24.),
                     });
                 }
             }
-            self.spawn_in = if self.wave.is_multiple_of(3) {
-                12.
+            self.spawn_in = if self.wave.is_multiple_of(5) {
+                7.5
             } else {
-                (9. - self.sector() as f32 * 0.25).max(6.5)
+                (5.8 - (pressure - 1) as f32 * 0.4).max(4.)
             };
         }
         self.obstacle_in -= dt;
@@ -641,21 +789,60 @@ impl Game {
                 continue;
             }
             e.flash = (e.flash - dt).max(0.);
-            e.pos.z += (speed
-                + if e.kind == EnemyKind::Rusher && e.flash == 0. {
-                    3.5
-                } else {
-                    0.
-                })
-                * dt;
+            let advance = match e.kind {
+                EnemyKind::Rusher if e.flash == 0. => speed + 3.5,
+                // A heavy stays ahead just long enough for its fan and a
+                // follow-up rifle burst after a plasma hit; it never hovers forever.
+                EnemyKind::Heavy => speed * 0.65,
+                EnemyKind::Sniper => speed * 0.82,
+                _ => speed,
+            };
+            e.pos.z += advance * dt;
             if e.kind == EnemyKind::Rusher && e.pos.z > -18. {
                 e.pos.x += (self.x - e.pos.x).clamp(-2.5, 2.5) * dt;
             }
-            if e.kind == EnemyKind::Trooper && e.pos.z > -46. && e.pos.z < -4. {
+            if e.kind == EnemyKind::Weaver {
+                // Integrate a sinusoid rather than snapping onto a path on spawn.
+                let phase = e.id as f32 * 1.7;
+                e.pos.x += ((self.time * 1.7 + phase).sin()
+                    - ((self.time - dt) * 1.7 + phase).sin())
+                    * 1.4;
+                e.pos.x = e.pos.x.clamp(-4.1, 4.1);
+            }
+            if e.kind != EnemyKind::Rusher && e.pos.z > -46. && e.pos.z < -4. {
+                let target = Vec3::new(self.x, self.y + 0.85, 1.);
+                // During the last 650 ms of the warning the target freezes;
+                // strafing then beats all three shots instead of a tracking beam.
+                if e.kind == EnemyKind::Sniper && e.burst_left == 0 && e.fire_in > 0.65 {
+                    e.aim_lock = target;
+                }
                 e.fire_in -= dt;
                 if e.fire_in <= 0. {
-                    fire.push(e.pos + Vec3::Y * 1.25);
-                    e.fire_in = 2.0;
+                    let pos = e.pos + Vec3::Y * 1.25;
+                    match e.kind {
+                        EnemyKind::Sniper => {
+                            if e.burst_left == 0 {
+                                e.burst_left = 3;
+                            }
+                            fire.push((pos, e.aim_lock, 24.));
+                            e.burst_left -= 1;
+                            e.fire_in = if e.burst_left > 0 { 0.14 } else { 2.8 };
+                        }
+                        EnemyKind::Heavy => {
+                            for offset in [-2.4, 0., 2.4] {
+                                fire.push((pos, target + Vec3::X * offset, 13.));
+                            }
+                            e.fire_in = 2.3;
+                        }
+                        EnemyKind::Weaver => {
+                            fire.push((pos, target, 17.));
+                            e.fire_in = 1.8;
+                        }
+                        _ => {
+                            fire.push((pos, target, 15.));
+                            e.fire_in = 2.;
+                        }
+                    }
                 }
             }
             if e.pos.z >= -0.6 && e.pos.z < 1.0 && (e.pos.x - self.x).abs() < 0.8 && self.y < 1.2 {
@@ -671,7 +858,12 @@ impl Game {
             let mut hit = false;
             for e in &self.enemies {
                 if e.hp > 0.
-                    && let Some(t) = ray_sphere(p.pos, direction, e.pos + Vec3::Y, 0.85)
+                    && let Some(t) = e.projectile_hit(
+                        p.pos,
+                        direction,
+                        self.enemy_half_extents[e.kind.index()],
+                        self.time,
+                    )
                     && t <= impact
                 {
                     impact = t;
@@ -708,9 +900,9 @@ impl Game {
         for pos in detonations {
             self.detonate(pos);
         }
-        for pos in fire {
+        for (pos, target, bolt_speed) in fire {
             let id = self.id();
-            let velocity = (Vec3::new(self.x, self.y + 0.85, 1.) - pos).normalize() * 15.;
+            let velocity = bolt_velocity(pos, target, bolt_speed, speed);
             self.bolts.push(Bolt { id, pos, velocity });
         }
         for bolt in &mut self.bolts {
@@ -825,7 +1017,45 @@ impl Game {
             fx.age += dt;
         }
         self.effects.retain(|fx| fx.age < fx.life);
+        for number in &mut self.damage_numbers {
+            number.age += dt;
+            number.pos.z += speed * dt;
+        }
+        self.damage_numbers.retain(|n| n.age < 0.85);
     }
+}
+/// Aim in the moving runner frame. Projectiles receive the road's velocity
+/// during integration, so subtract that contribution when choosing their aim.
+fn bolt_velocity(pos: Vec3, target: Vec3, bolt_speed: f32, scroll_speed: f32) -> Vec3 {
+    let delta = target - pos;
+    let scroll = Vec3::Z * scroll_speed;
+    let dot = delta.dot(scroll);
+    let discriminant =
+        dot * dot + (bolt_speed * bolt_speed - scroll.length_squared()) * delta.length_squared();
+    let divisor = dot + discriminant.max(0.).sqrt();
+    if divisor <= 1e-6 {
+        return delta.normalize_or(Vec3::Z) * bolt_speed;
+    }
+    let flight_time = delta.length_squared() / divisor;
+    if flight_time <= 1e-6 {
+        return Vec3::Z * bolt_speed;
+    }
+    delta / flight_time - scroll
+}
+fn ray_ellipsoid(origin: Vec3, direction: Vec3, half: Vec3) -> Option<f32> {
+    let half = half.max(Vec3::splat(0.01));
+    let o = origin / half;
+    let d = direction / half;
+    let a = d.length_squared();
+    let b = o.dot(d);
+    let c = o.length_squared() - 1.;
+    let discriminant = b * b - a * c;
+    if a < 1e-9 || discriminant < 0. {
+        return None;
+    }
+    let near = (-b - discriminant.sqrt()) / a;
+    let far = (-b + discriminant.sqrt()) / a;
+    (far >= 0.).then_some(near.max(0.))
 }
 pub fn ray_sphere(origin: Vec3, direction: Vec3, center: Vec3, radius: f32) -> Option<f32> {
     let delta = origin - center;
@@ -864,6 +1094,99 @@ fn segment_distance(a: Vec3, b: Vec3, p: Vec3) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn damage_feedback_is_bounded_expires_and_resets() {
+        let mut g = Game::new();
+        g.phase = Phase::Playing;
+        for _ in 0..60 {
+            g.damage_number(Vec3::ZERO, 75, true);
+        }
+        assert_eq!(g.damage_numbers.len(), 48);
+        assert!(
+            g.damage_numbers
+                .iter()
+                .all(|n| n.amount == 75 && n.critical)
+        );
+        g.phase = Phase::Paused;
+        g.tick(0.5, Input::default());
+        assert_eq!(g.damage_numbers[0].age, 0.);
+        g.phase = Phase::Playing;
+        g.tick(0.5, Input::default());
+        assert!(g.damage_numbers[0].pos.z > 0.);
+        g.tick(0.4, Input::default());
+        assert!(g.damage_numbers.is_empty());
+        g.damage_number(Vec3::ZERO, 30, false);
+        g.start();
+        assert!(g.damage_numbers.is_empty());
+    }
+    #[test]
+    fn rifle_feedback_reports_real_body_and_critical_damage() {
+        let mut g = Game::new();
+        g.feedback_fixture();
+        assert_eq!(g.damage_numbers.len(), 2);
+        assert_eq!(g.damage_numbers[0].amount, 30);
+        assert!(!g.damage_numbers[0].critical);
+        assert_eq!(g.damage_numbers[1].amount, 75);
+        assert!(g.damage_numbers[1].critical);
+        assert_eq!(g.enemies[0].hp, 65.);
+        assert_eq!(g.enemies[1].hp, 145.);
+    }
+    #[test]
+    fn mounted_flying_body_hits_wings_but_not_empty_air_and_bank_matches_art() {
+        let mut g = Game::new();
+        g.start();
+        g.enemies.clear();
+        for kind in [EnemyKind::Weaver, EnemyKind::Heavy] {
+            g.add_enemy(0., -25., kind);
+            let e = g.enemies.last().unwrap();
+            let half = g.enemy_half_extents[kind.index()];
+            let roll = e.flying_rotation(0.7);
+            let world_ray = |x: f32, y: f32| {
+                (
+                    e.pos + roll * Vec3::new(x, 1.25 + y, 8.),
+                    roll * Vec3::NEG_Z,
+                )
+            };
+            let (origin, direction) = world_ray(half.x * 0.8, 0.);
+            let (_, critical) = e
+                .rifle_hit(origin, direction, half, 0.7)
+                .expect("visible wing hit");
+            assert!(!critical);
+            assert!(e.projectile_hit(origin, direction, half, 0.7).is_some());
+            let (origin, direction) = world_ray(0., 0.);
+            assert!(e.rifle_hit(origin, direction, half, 0.7).unwrap().1);
+            let (origin, direction) = world_ray(0., half.y + 0.25);
+            assert!(e.rifle_hit(origin, direction, half, 0.7).is_none());
+            assert!(e.projectile_hit(origin, direction, half, 0.7).is_none());
+        }
+    }
+    #[test]
+    fn measured_enemy_extents_survive_restart() {
+        let mut g = Game::new();
+        g.enemy_half_extents[EnemyKind::Heavy.index()] = Vec3::new(0.9, 0.45, 1.2);
+        g.start();
+        assert_eq!(
+            g.enemy_half_extents[EnemyKind::Heavy.index()],
+            Vec3::new(0.9, 0.45, 1.2)
+        );
+    }
+    #[test]
+    fn aimed_bolts_reach_the_committed_lane_in_the_scrolling_frame() {
+        for scroll in [8.8, 10.9, 13.] {
+            for bolt_speed in [13., 15., 17., 24.] {
+                for side in [-3., 3.] {
+                    let pos = Vec3::new(side, 1.25, -25.);
+                    let target = Vec3::new(-side * 0.5, 0.85, 1.);
+                    let velocity = bolt_velocity(pos, target, bolt_speed, scroll);
+                    assert!((velocity.length() - bolt_speed).abs() < 0.001);
+                    let world_velocity = velocity + Vec3::Z * scroll;
+                    let flight_time = (target.z - pos.z) / world_velocity.z;
+                    assert!(flight_time > 0.);
+                    assert!((pos + world_velocity * flight_time).distance(target) < 0.001);
+                }
+            }
+        }
+    }
     #[test]
     fn plasma_spends_once_travels_then_kills_cluster_and_drops_energy() {
         let mut g = Game::new();
@@ -991,23 +1314,138 @@ mod tests {
         assert_eq!(g.overdrive_activations, 0);
     }
     #[test]
-    fn encounter_cycle_changes_composition_and_grants_recovery() {
+    fn first_thirty_five_seconds_introduce_all_roles_and_a_recovery_beat() {
         let mut g = Game::new();
         g.start();
-        for wave in 1..=3 {
-            g.enemies.clear();
-            g.spawn_in = 0.;
-            g.tick(0.01, Input::default());
-            assert_eq!(g.wave, wave);
-            let rushers = g
-                .enemies
-                .iter()
-                .filter(|e| e.kind == EnemyKind::Rusher)
-                .count();
-            assert_eq!(rushers, [0, 3, 1][(wave - 1) as usize]);
+        let mut seen = Vec::new();
+        let mut recovery = false;
+        for _ in 0..2100 {
+            g.health = 100.;
+            g.shield = 100.;
+            g.tick(1. / 60., Input::default());
+            for e in &g.enemies {
+                if !seen.contains(&e.kind) {
+                    seen.push(e.kind);
+                }
+            }
+            if g.wave == 5 {
+                recovery = true;
+                assert!(g.spawn_in <= 7.5);
+            }
         }
-        assert_eq!(g.spawn_in, 12.);
+        assert_eq!(seen.len(), 5, "all enemy roles must appear in the opening");
+        assert!(recovery);
+        assert!(g.wave >= 6);
+        assert!(g.speed() > 10.8);
+    }
+    #[test]
+    fn recovery_spawns_supplies_without_a_new_attack_and_late_pressure_is_capped() {
+        let mut g = Game::new();
+        g.start();
+        g.enemies.clear();
+        g.wave = 4;
+        g.spawn_in = 0.;
+        g.tick(0.01, Input::default());
+        assert!(g.enemies.is_empty());
         assert_eq!(g.pickups.len(), 1);
+        assert_eq!(g.spawn_in, 7.5);
+        g.time = 3600.;
+        g.wave = 2;
+        g.spawn_in = 0.;
+        g.tick(0.01, Input::default());
+        assert_eq!(g.intensity(), 6);
+        assert_eq!(g.speed(), 13.);
+        assert_eq!(g.spawn_in, 4.);
+        assert_eq!(g.enemies.len(), 3);
+        assert!(g.enemies.iter().all(|e| e.max_hp <= 220.));
+    }
+    #[test]
+    fn sniper_commits_before_three_shot_burst_and_then_rests() {
+        let mut g = Game::new();
+        g.start();
+        g.enemies.clear();
+        g.spawn_in = 3600.;
+        g.add_enemy(-3., -40., EnemyKind::Sniper);
+        g.enemies[0].fire_in = 0.7;
+        g.tick(0.1, Input::default());
+        let locked = g.enemies[0].aim_lock;
+        g.x = 4.;
+        for _ in 0..12 {
+            g.tick(0.1, Input::default());
+        }
+        assert_eq!(g.bolts.len(), 3);
+        assert_eq!(g.enemies[0].aim_lock.x, 4.); // new warning tracks again
+        assert_eq!(locked.x, 0.);
+        assert_eq!(g.enemies[0].burst_left, 0);
+        assert!(g.enemies[0].fire_in > 2.2);
+        // Every burst shot committed left of the player's new position.
+        assert!(g.bolts.iter().all(|b| {
+            let at_target = b.pos.x + b.velocity.x / b.velocity.z * (1. - b.pos.z);
+            at_target < 1.
+        }));
+    }
+    #[test]
+    fn strafing_after_sniper_lock_evades_the_full_burst_at_maximum_speed() {
+        let mut shields = Vec::new();
+        for strafe in [0., 1.] {
+            let mut g = Game::new();
+            g.start();
+            g.time = 60.;
+            g.enemies.clear();
+            g.spawn_in = 3600.;
+            g.obstacle_in = 3600.;
+            g.add_enemy(0., -25., EnemyKind::Sniper);
+            g.enemies[0].fire_in = 0.64;
+            for _ in 0..108 {
+                g.tick(
+                    1. / 60.,
+                    Input {
+                        strafe,
+                        ..default()
+                    },
+                );
+            }
+            shields.push(g.shield);
+        }
+        assert!(
+            shields[0] < 100.,
+            "standing on the lock must remain dangerous"
+        );
+        assert_eq!(shields[1], 100., "normal strafing must beat a locked burst");
+    }
+    #[test]
+    fn heavy_fan_has_gaps_and_plasma_leaves_a_rifle_finish() {
+        let mut g = Game::new();
+        g.start();
+        g.enemies.clear();
+        g.spawn_in = 3600.;
+        g.add_enemy(0., -30., EnemyKind::Heavy);
+        g.enemies[0].fire_in = 0.;
+        g.tick(0.01, Input::default());
+        assert_eq!(g.bolts.len(), 3);
+        assert!(g.bolts[0].velocity.x < -0.5);
+        assert!(g.bolts[1].velocity.x.abs() < 0.001);
+        assert!(g.bolts[2].velocity.x > 0.5);
+        g.detonate(g.enemies[0].pos + Vec3::Y);
+        assert_eq!(g.enemies[0].hp, 60.);
+        assert_eq!(g.multikills, 0);
+    }
+    #[test]
+    fn weaver_moves_smoothly_and_stays_on_the_road() {
+        let mut g = Game::new();
+        g.start();
+        g.enemies.clear();
+        g.spawn_in = 3600.;
+        g.add_enemy(3., -100., EnemyKind::Weaver);
+        let start_x = g.enemies[0].pos.x;
+        for _ in 0..240 {
+            let before = g.enemies[0].pos.x;
+            g.tick(1. / 60., Input::default());
+            let x = g.enemies[0].pos.x;
+            assert!((x - before).abs() < 0.05);
+            assert!(x.abs() <= 4.1);
+        }
+        assert!((g.enemies[0].pos.x - start_x).abs() > 0.1);
     }
     #[test]
     fn barrier_contact_uses_its_visible_depth() {

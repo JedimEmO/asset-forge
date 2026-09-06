@@ -654,7 +654,7 @@ fn update(
         }
     }
     for e in &g.enemies {
-        if e.kind == crate::sim::EnemyKind::Trooper
+        if e.kind != crate::sim::EnemyKind::Rusher
             && e.fire_in < 0.65
             && e.pos.z > -46.
             && e.pos.z < -4.

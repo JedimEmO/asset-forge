@@ -15,6 +15,8 @@ pub struct Ready(pub bool);
 #[derive(Resource)]
 struct Art {
     drone: Handle<bevy::world_serialization::WorldAsset>,
+    interceptor: Option<Handle<bevy::world_serialization::WorldAsset>>,
+    heavy: Option<Handle<bevy::world_serialization::WorldAsset>>,
     reload_clip: Handle<AnimationClip>,
     cargo: Option<Handle<bevy::world_serialization::WorldAsset>>,
     station: Option<Handle<bevy::world_serialization::WorldAsset>>,
@@ -29,6 +31,7 @@ struct Art {
     cyan: Handle<StandardMaterial>,
     orange: Handle<StandardMaterial>,
     red: Handle<StandardMaterial>,
+    violet: Handle<StandardMaterial>,
     player: Handle<Gltf>,
     enemy: Handle<Gltf>,
     ground: serde_json::Value,
@@ -67,9 +70,6 @@ pub struct GameCamera;
 struct EnemyBar(u64);
 #[derive(Component)]
 struct ReactorRing(f32);
-fn read(p: std::path::PathBuf) -> serde_json::Value {
-    serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
-}
 fn f(v: &serde_json::Value) -> f32 {
     v.as_f64().unwrap() as f32
 }
@@ -129,7 +129,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut game: ResMut<Game>,
 ) {
-    let library = read(options.root.join("showcase/library.json"));
+    let library = crate::metadata::read(&options.root, "showcase/library.json");
     let size = |name: &str, fallback: Vec3| {
         let entry = library["models"]
             .as_array()
@@ -142,23 +142,28 @@ fn setup(
     };
     let a = Art {
         drone: server.load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_drone.glb")),
+        interceptor: crate::metadata::exists(
+            &options.root,
+            "showcase/models/relay_interceptor.glb",
+        )
+        .then(|| {
+            server
+                .load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_interceptor.glb"))
+        }),
+        heavy: crate::metadata::exists(&options.root, "showcase/models/relay_heavy.glb").then(
+            || server.load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_heavy.glb")),
+        ),
         reload_clip: server
             .load(GltfAssetLabel::Animation(0).from_asset("showcase/clips/relay_reload.glb")),
-        cargo: options
-            .root
-            .join("showcase/models/relay_cargo.glb")
-            .exists()
-            .then(|| {
-                server.load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_cargo.glb"))
-            }),
-        station: options
-            .root
-            .join("showcase/models/relay_station.glb")
-            .exists()
-            .then(|| {
+        cargo: crate::metadata::exists(&options.root, "showcase/models/relay_cargo.glb").then(
+            || server.load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_cargo.glb")),
+        ),
+        station: crate::metadata::exists(&options.root, "showcase/models/relay_station.glb").then(
+            || {
                 server
                     .load(GltfAssetLabel::Scene(0).from_asset("showcase/models/relay_station.glb"))
-            }),
+            },
+        ),
         cargo_size: size("relay_cargo", Vec3::new(3., 0.76, 1.2)),
         station_size: size("relay_station", Vec3::new(2.4, 2.3, 1.2)),
         cube: meshes.add(Cuboid::default()),
@@ -170,12 +175,36 @@ fn setup(
         cyan: mat(&mut materials, Color::srgb(0.08, 0.72, 0.96), 4.),
         orange: mat(&mut materials, Color::srgb(1., 0.3, 0.065), 4.),
         red: mat(&mut materials, Color::srgb(0.9, 0.045, 0.02), 3.),
+        violet: mat(&mut materials, Color::srgb(0.6, 0.12, 1.), 4.),
         player: server.load("scavenger.glb"),
         enemy: server.load("rusher.glb"),
-        ground: read(options.root.join("grounding.json")),
-        manifest: read(options.root.join("scavenger/library.json")),
-        attachment: read(options.root.join("attachment.json")),
+        ground: crate::metadata::read(&options.root, "grounding.json"),
+        manifest: crate::metadata::read(&options.root, "scavenger/library.json"),
+        attachment: crate::metadata::read(&options.root, "attachment.json"),
     };
+    for kind in [
+        EnemyKind::Trooper,
+        EnemyKind::Weaver,
+        EnemyKind::Sniper,
+        EnemyKind::Heavy,
+    ] {
+        let (name, scale, pitch) = match kind {
+            EnemyKind::Weaver if a.interceptor.is_some() => {
+                ("relay_interceptor", Vec3::splat(2.), 0_f32)
+            }
+            EnemyKind::Heavy if a.heavy.is_some() => ("relay_heavy", Vec3::splat(1.35), 0_f32),
+            EnemyKind::Sniper => ("relay_drone", Vec3::new(0.7, 0.7, 1.2), -25_f32),
+            EnemyKind::Weaver => ("relay_drone", Vec3::splat(2.), -25_f32),
+            EnemyKind::Heavy => ("relay_drone", Vec3::splat(1.35), -25_f32),
+            _ => ("relay_drone", Vec3::ONE, -25_f32),
+        };
+        let half = size(name, Vec3::ONE) * scale * 0.5;
+        let rotation = Quat::from_rotation_x(pitch.to_radians());
+        // Absolute transformed axes yield the bounds of the actual visual mount.
+        game.enemy_half_extents[kind.index()] = (rotation * Vec3::X * half.x).abs()
+            + (rotation * Vec3::Y * half.y).abs()
+            + (rotation * Vec3::Z * half.z).abs();
+    }
     game.barrier_widths = [
         a.cargo_size.x * 0.76 / a.cargo_size.y,
         a.station_size.x * 2.3 / a.station_size.y,
@@ -254,22 +283,6 @@ fn setup(
                     }
                 }
                 for side in [-1., 1.] {
-                    if let Some(station) = &a.station {
-                        c.spawn((
-                            WorldAssetRoot(station.clone()),
-                            Transform::from_xyz(side * 6.5, 0., -5.).with_rotation(
-                                Quat::from_rotation_y(-side * std::f32::consts::FRAC_PI_2),
-                            ),
-                        ));
-                    } else {
-                        child_box(
-                            c,
-                            &a,
-                            Vec3::new(side * 6.5, 1.6, -5.),
-                            Vec3::new(0.8, 3.2, 1.2),
-                            &a.metal,
-                        );
-                    }
                     child_box(
                         c,
                         &a,
@@ -314,7 +327,7 @@ fn setup(
                             &a.orange,
                         );
                     }
-                    if i % 4 == 0 {
+                    if matches!(i, 1 | 6 | 12) {
                         child_box(
                             c,
                             &a,
@@ -338,7 +351,7 @@ fn setup(
                         ));
                     }
                 }
-                if i % 4 == 0 {
+                if matches!(i, 1 | 6 | 12) {
                     child_box(
                         c,
                         &a,
@@ -507,27 +520,6 @@ fn setup(
                 .with_scale(Vec3::splat(0.17 + (i % 3) as f32 * 0.1)),
         ));
     }
-    for i in 0..9 {
-        let side = if i % 4 == 0 { -1. } else { 1. };
-        let z = -45. - i as f32 * 24.;
-        let position = Vec3::new(side * (18. + (i % 3) as f32 * 9.), -8., z);
-        if let Some(station) = &a.station {
-            commands.spawn((
-                WorldAssetRoot(station.clone()),
-                Transform::from_translation(position).with_scale(Vec3::splat(5. + (i % 3) as f32)),
-            ));
-        } else {
-            commands.spawn((
-                Mesh3d(a.cube.clone()),
-                MeshMaterial3d(a.dark.clone()),
-                Transform::from_translation(position).with_scale(Vec3::new(
-                    7.,
-                    35. + i as f32 * 3.,
-                    9.,
-                )),
-            ));
-        }
-    }
     commands.insert_resource(a);
 }
 fn spawn_player(
@@ -537,6 +529,7 @@ fn spawn_player(
     server: Res<AssetServer>,
     mut instances: ResMut<Instances>,
     mut ready: ResMut<Ready>,
+    scenery_ready: Res<crate::scenery::SceneryReady>,
 ) {
     if instances.player.is_none()
         && server.is_loaded_with_dependencies(&a.player)
@@ -561,7 +554,14 @@ fn spawn_player(
             .id();
         instances.player = Some(root);
     }
-    ready.0 = instances.player_ready;
+    ready.0 = instances.player_ready
+        && scenery_ready.0
+        && a.interceptor
+            .as_ref()
+            .is_none_or(|h| server.is_loaded_with_dependencies(h))
+        && a.heavy
+            .as_ref()
+            .is_none_or(|h| server.is_loaded_with_dependencies(h));
 }
 fn actor_ready(
     event: On<WorldInstanceReady>,
@@ -712,6 +712,7 @@ fn sync(
                 commands
                     .spawn((
                         Actor { player: false },
+                        crate::combat_feedback::EnemySurface,
                         WorldAssetRoot(scene),
                         ActorVisual,
                         Transform::default(),
@@ -723,11 +724,28 @@ fn sync(
                     .id();
                 commands.entity(root).with_children(|c| {
                     c.spawn((
-                        WorldAssetRoot(a.drone.clone()),
-                        // The generated body is pitched nose-down in its local frame.
-                        // Level its visual mount; simulation and projectile origins stay upright.
+                        crate::combat_feedback::EnemySurface,
+                        WorldAssetRoot(match e.kind {
+                            EnemyKind::Weaver => a.interceptor.as_ref().unwrap_or(&a.drone).clone(),
+                            EnemyKind::Heavy => a.heavy.as_ref().unwrap_or(&a.drone).clone(),
+                            _ => a.drone.clone(),
+                        }),
                         Transform::from_xyz(0., 1.25, 0.)
-                            .with_rotation(Quat::from_rotation_x(-25_f32.to_radians())),
+                            .with_rotation(
+                                if matches!(e.kind, EnemyKind::Weaver) && a.interceptor.is_some()
+                                    || matches!(e.kind, EnemyKind::Heavy) && a.heavy.is_some()
+                                {
+                                    Quat::IDENTITY
+                                } else {
+                                    Quat::from_rotation_x(-25_f32.to_radians())
+                                },
+                            )
+                            .with_scale(match e.kind {
+                                EnemyKind::Weaver => Vec3::splat(2.0),
+                                EnemyKind::Heavy => Vec3::splat(1.35),
+                                EnemyKind::Sniper => Vec3::new(0.7, 0.7, 1.2),
+                                _ => Vec3::ONE,
+                            }),
                     ));
                 });
                 root
@@ -736,10 +754,11 @@ fn sync(
                 c.spawn((
                     EnemyBar(e.id),
                     Mesh3d(a.cube.clone()),
-                    MeshMaterial3d(if e.kind == EnemyKind::Rusher {
-                        a.orange.clone()
-                    } else {
-                        a.red.clone()
+                    MeshMaterial3d(match e.kind {
+                        EnemyKind::Rusher | EnemyKind::Heavy => a.orange.clone(),
+                        EnemyKind::Weaver => a.cyan.clone(),
+                        EnemyKind::Sniper => a.violet.clone(),
+                        _ => a.red.clone(),
                     }),
                     Transform::from_xyz(0., 2.15, 0.).with_scale(Vec3::new(0.65, 0.045, 0.06)),
                 ));
@@ -750,7 +769,7 @@ fn sync(
             EnemyKind::Rusher => {
                 Quat::from_rotation_y(std::f32::consts::PI) * Quat::from_rotation_x(-e.flash * 0.8)
             }
-            EnemyKind::Trooper => Quat::from_rotation_z(e.flash * 0.25),
+            _ => e.flying_rotation(g.time),
         };
         commands
             .entity(entity)
@@ -1015,6 +1034,8 @@ mod tests {
             hp: 100.,
             max_hp: 100.,
             kind: EnemyKind::Trooper,
+            aim_lock: Vec3::ZERO,
+            burst_left: 0,
             fire_in: 1.,
             flash: 0.,
         }];
@@ -1044,6 +1065,8 @@ mod tests {
         }];
         let art = Art {
             drone: default(),
+            interceptor: None,
+            heavy: None,
             reload_clip: default(),
             cargo: default(),
             station: default(),
@@ -1058,6 +1081,7 @@ mod tests {
             cyan: default(),
             orange: default(),
             red: default(),
+            violet: default(),
             player: default(),
             enemy: default(),
             ground: serde_json::Value::Null,

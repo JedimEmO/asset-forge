@@ -1,0 +1,51 @@
+{
+  "schema": 2,
+  "kind": "music",
+  "name": "release_combat_loop",
+  "prompt": "Instrumental aggressive electronic breakbeat, dark neurofunk bass music, industrial arena combat soundtrack, 160 BPM, D minor. Relentless hard chopped breakbeats, punchy kick and cracking snare, fast syncopated hi-hats, heavily distorted growling reese bass riffs, sharp abrasive synth stabs and metallic machine percussion. Urgent hostile mechanical battle energy, dense propulsive drums and bass throughout. Tight repeating four-bar riff. No vocals, no singing, no guitars, no soft pads, no intro, no breakdown, no fade out.",
+  "tags": [],
+  "created": "2026-09-05",
+  "created_by": "agent:codex",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "ace_step",
+    "lm_model": null,
+    "dit_model": "ace_step_1.5_turbo_aio.safetensors",
+    "seed": "205,205",
+    "bpm": 160,
+    "keyscale": "D minor",
+    "timesignature": "4",
+    "genres": "Instrumental aggressive electronic breakbeat, dark neurofunk bass music, industrial arena combat soundtrack, 160 BPM, D minor. Relentless hard chopped breakbeats, punchy kick and cracking snare, fast syncopated hi-hats, heavily distorted growling reese bass riffs, sharp abrasive synth stabs and metallic machine percussion. Urgent hostile mechanical battle energy, dense propulsive drums and bass throughout. Tight repeating four-bar riff. No vocals, no singing, no guitars, no soft pads, no intro, no breakdown, no fade out.",
+    "lyrics": "[instrumental]",
+    "duration_s": 60.0,
+    "gain_db": -6,
+    "thinking": false,
+    "format": "wav",
+    "loop": {
+      "start_s": 12.0,
+      "duration_s": 30.0,
+      "crossfade_s": 1.5,
+      "algorithm": "linear_wrap_pcm16_v1",
+      "applied": true
+    }
+  },
+  "source": {
+    "path": "out/audio/music/release_loop205.source.flac",
+    "sha256": "sha256:8d768a98bc02361898e97e4ff506b5461b22c9975833ad6f7f02203085876ff3",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 30.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:bc9ebf1a4ae752232a27f20f602e4e0193caaa2ddb81d4c8c38b644cb029a050",
+  "note": "User accepted aggressive electronic combat mood and clean repeated joins. 30s WAV loop from recorded source selection; numeric DC, clipping and seam limits passed. Requested160BPM follow-up, original120BPM baseline remains unchanged."
+}

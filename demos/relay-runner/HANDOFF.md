@@ -93,3 +93,51 @@ The fixture revives enemies: combining it with autoplay can create an artificial
 plasma kill/recharge loop. Its overload evidence is retained under v13; it is not
 a representative frame-time benchmark. Use `--autoplay` for normal combat.
 Verify the new package's payload hashes and play it with sound before acceptance.
+
+## v15 ready for playtest — faster combat and inhabited scenery
+
+The user selected a faster difficulty ramp, additional enemy roles, new scenery
+models and passing ships, and explicitly authorized subagents. The encounter and
+scenery code is integrated and all six new models are packaged. New generated assets live in the same external
+showcase, with evidence under `out/v15-provenance` there. The accepted fallback
+remains v14 until the user reviews the next package.
+
+New modules: `src/scenery.rs` owns supported station bays and ship formations;
+`src/telegraph.rs` shows the sniper's committed target. Flying enemy hit volumes
+come from the mounted models' measured bounds; keep these coupled to art scales.
+The guarded heavy1 generation was interrupted, and heavy2 completed; preserve
+both. Do not compile/link while a guarded inference is running.
+
+Play the candidate at `/home/mmy/forge-demos/relay-runner-v15/PLAY.sh`. The final
+package and original v14 payload hashes were checked. Runtime screenshots,
+announcer checks and performance limits are recorded in `VERIFICATION.md`;
+evidence is under `out/relay-runner-20260906/v15/`. Current demo suite: 36 tests.
+
+## v16 — combat readability
+
+The user accepted v15 and requested floating hit/critical text and more visible
+enemies. v15 is now the accepted fallback. v16 adds `combat_feedback.rs`: projected
+damage numbers from real simulation hits, gold CRIT labels, amber enemy locators,
+and cloned enemy materials with a small texture-modulated emissive fill. Shared
+scenery materials and shipped assets remain unchanged. Numbers are capped at 48,
+expire after 0.85 seconds, pause with the game and clear on restart.
+
+Candidate: `/home/mmy/forge-demos/relay-runner-v16/PLAY.sh`. The bounded `feedback`
+scenario fires real body and critical shots for visual review. Evidence lives in
+`out/relay-runner-20260906/v16/`. No commit was requested for this pass.
+
+## Browser publication and main integration
+
+The user accepted v16 and authorized committing, pushing and merging the full
+refactor to main, then requested a playable GitHub Pages build (correcting an
+earlier GitLab reference). The browser port retains the simulation and generated
+assets, uses WebGPU for Hanabi, embeds exact runtime metadata, and uses gesture
+handlers for mouse lock/audio and localStorage for best score. `web/package.py`
+checks the committed runtime subset before staging a site. v16 remains untouched.
+
+The full toolkit CI passed: 583 Rust tests, two ignored, 297 Python tests. Seven
+crates passed publish-check. Native demo tests now total 39; native Clippy and
+wasm target checking pass, and the release wasm builds. Browser render validation
+and public hosting are still in progress. GitHub refused Pages for this private
+repository's account plan (422); repository visibility has not been changed.
+This integration does not close toolkit release stages 2–6.

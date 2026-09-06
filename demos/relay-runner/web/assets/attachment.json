@@ -1,0 +1,15 @@
+{
+  "socket": "hand_l",
+  "translation": [
+    0,
+    0,
+    0
+  ],
+  "rotation_xyzw": [
+    -0.11391840024214626,
+    0.8239698969814364,
+    -0.5179699078266965,
+    0.1995078483184933
+  ],
+  "basis": "At aim frame zero, align barrel horizontally from left trigger hand toward right support hand; authoring -Z points up. Left-handed generated poses."
+}

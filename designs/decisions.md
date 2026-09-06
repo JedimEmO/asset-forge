@@ -1763,3 +1763,19 @@ Depth of field uses a broad normal focus and a smooth aimed focus, with a
 small pixel blur cap. Motion blur drops during aiming and stops in menus;
 transparent GPU particles keep their own trails. Preserve an effects-off
 comparison and benchmark the final packaged renderer, not just the simulation.
+
+## Generated dimensions also govern combat — 2026-09-06
+
+Relay's new interceptor wings exposed a consumer mismatch: a humanoid torso
+sphere let rifle shots pass through visible flying geometry. Flying enemy hit
+volumes now derive from mounted manifest bounds and share the visual banking;
+plasma uses the same volume with its radius included. A sniper's committed target
+also needs ballistic compensation for the scrolling world, or its warning line
+names a lane that its shots do not actually reach. These are consumer duties.
+
+Background ships need their own material instances when their lighting/fog
+response differs from combat models. Relay shares the interceptor mesh between
+traffic and enemies, so mutating its loaded material globally would silently
+change gameplay readability. Sky clones retain textures and PBR properties while
+removing causeway fog and adding restrained texture fill; the shipped model and
+its integrity record remain unchanged.

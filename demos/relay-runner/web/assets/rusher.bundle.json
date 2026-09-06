@@ -1,0 +1,38 @@
+{
+  "forge_bundle": 2,
+  "created": "2026-09-06",
+  "created_by": "human",
+  "body": {
+    "path": "assets/bodies/release_rusher.glb",
+    "sha256": "sha256:6d6437885263d1c8139c2eb757875637690c23fd0f00fd1221b96ab374c72f20"
+  },
+  "clips": [
+    {
+      "name": "release_idle",
+      "path": "assets/clips/release_idle.glb",
+      "sha256": "sha256:47ef8e99e992fd83332a2a01c1f5831fe22ce62ba17d571aa957e219f209be13"
+    },
+    {
+      "name": "release_run",
+      "path": "assets/clips/release_run.glb",
+      "sha256": "sha256:774ef6bda0f107cc585758b7022ddd2a1b52958b010d00182970065e8fe4068f"
+    },
+    {
+      "name": "release_swipe",
+      "path": "assets/clips/release_swipe.glb",
+      "sha256": "sha256:6a492fb395179d604d8fa6581f4632f0324a1b86c5890fbaa5dd206c2940199a"
+    }
+  ],
+  "motion_scale": 1.0,
+  "motion_scale_source": "the body's own record, assets/bodies/release_rusher.json",
+  "output": {
+    "path": "/home/mmy/forge-stage1-20260906/consumer-final/assets/rusher.glb",
+    "sha256": "sha256:eb46f14567670360e72b3790ee9438d9183d5a69480a8376038ab78f19944f83",
+    "bytes": 3253152,
+    "animations": [
+      "release_idle-loop",
+      "release_run-loop",
+      "release_swipe"
+    ]
+  }
+}
