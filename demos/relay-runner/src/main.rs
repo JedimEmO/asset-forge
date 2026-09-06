@@ -48,6 +48,7 @@ struct Runtime {
     #[cfg(not(target_arch = "wasm32"))]
     requested: bool,
     focus_seen: bool,
+    aim_active: bool,
     save_done: bool,
     #[cfg(not(target_arch = "wasm32"))]
     last_frame: Option<Instant>,
@@ -144,6 +145,8 @@ fn main() {
         DefaultPlugins
             .set(AssetPlugin {
                 file_path: root.to_string_lossy().into_owned(),
+                #[cfg(target_arch = "wasm32")]
+                meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
             })
             .set(WindowPlugin {
@@ -294,12 +297,20 @@ fn inputs(
             CursorGrabMode::None
         };
     }
+    // A click/Enter can start play in the same frame as unlocked pointer motion.
+    // Discard that accumulated motion on every transition into aiming.
+    let accept_motion = runtime.aim_active && game.phase == Phase::Playing;
+    runtime.aim_active = game.phase == Phase::Playing;
+    #[cfg(target_arch = "wasm32")]
+    let accept_motion = accept_motion && browser_input & 4 == 0;
     if game.phase != Phase::Playing {
         controls.0 = Input::default();
         return;
     }
-    runtime.yaw = (runtime.yaw + motion.delta.x * 0.0021).clamp(-0.72, 0.72);
-    runtime.pitch = (runtime.pitch - motion.delta.y * 0.0019).clamp(-0.38, 0.32);
+    if accept_motion {
+        runtime.yaw = (runtime.yaw + motion.delta.x * 0.0021).clamp(-0.72, 0.72);
+        runtime.pitch = (runtime.pitch - motion.delta.y * 0.0019).clamp(-0.38, 0.32);
+    }
     let aim = Vec3::new(
         runtime.yaw.sin() * runtime.pitch.cos(),
         runtime.pitch.sin(),
@@ -599,10 +610,16 @@ export function install() {
         if (event.code === 'Enter' && !event.repeat) start();
     });
     document.addEventListener('pointerlockchange', () => {
+        pending |= 4; // Flush the frame containing the pointer-lock transition.
         if (!document.pointerLockElement && phase === 'Playing') pending |= 2;
     });
 }
-export function take_input() { const value = pending; pending = 0; return value; }
+export function take_input() {
+    const canvas = document.querySelector('#relay-canvas');
+    const value = pending | (document.pointerLockElement === canvas ? 0 : 4);
+    pending = 0;
+    return value;
+}
 export function set_state(next, loaded) {
     phase = next;
     ready = loaded;
@@ -637,5 +654,67 @@ export function save_best(best) {
             Phase::Dead => "Dead",
         };
         set_state(phase, ready.0);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn entering_play_discards_unlocked_motion_and_resume_keeps_aim() {
+        let mut app = App::new();
+        app.insert_resource(Game::new())
+            .init_resource::<Runtime>()
+            .init_resource::<Controls>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .insert_resource(AccumulatedMouseMotion {
+                delta: Vec2::splat(500.),
+            })
+            .insert_resource(art::Ready(true))
+            .insert_resource(Options {
+                root: PathBuf::new(),
+                autoplay: false,
+                frames: 0,
+                capture: None,
+                report: None,
+                scenario: "combat".into(),
+                quiet: true,
+                benchmark: false,
+                post: true,
+                flat_light: false,
+            })
+            .add_systems(Update, inputs);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+        app.update();
+        let runtime = app.world().resource::<Runtime>();
+        assert_eq!((runtime.yaw, runtime.pitch), (0., -0.04));
+
+        // Subsequent locked motion still aims normally.
+        app.world_mut().resource_mut::<Game>().time = 1.;
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.world_mut()
+            .resource_mut::<AccumulatedMouseMotion>()
+            .delta = Vec2::new(10., 0.);
+        app.update();
+        let yaw = app.world().resource::<Runtime>().yaw;
+        assert!(yaw > 0.);
+
+        app.world_mut().resource_mut::<Game>().phase = Phase::Paused;
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+        app.world_mut()
+            .resource_mut::<AccumulatedMouseMotion>()
+            .delta = Vec2::splat(500.);
+        app.update();
+        assert_eq!(app.world().resource::<Runtime>().yaw, yaw);
+        assert_eq!(app.world().resource::<Runtime>().pitch, -0.04);
     }
 }

@@ -36,7 +36,7 @@ Before the first `just`, the build prerequisites:
   Bevy and takes minutes; after that, seconds.
 - **`just`** — `cargo install just`, or the distro package.
 - **Bevy's system headers** (Debian/Ubuntu):
-  `sudo apt install libasound2-dev libudev-dev pkg-config`.
+  `sudo apt install libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config`.
 - **python3 ≥ 3.11** on PATH, for the generator launcher (stdlib only).
 - **Disk for the backends** — how much depends on what you make, and
   `forge setup` prints the bill for *your* answer before a byte downloads.

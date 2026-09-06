@@ -40,7 +40,7 @@ jobs:
         with:
           path: out/relay-pages
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RELAY_PAGES_ENABLED == 'true'
     needs: browser-build
     runs-on: ubuntu-latest
     permissions:

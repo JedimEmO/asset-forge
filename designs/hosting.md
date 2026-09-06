@@ -1543,3 +1543,12 @@ archived stricter wrapper (`MemoryMax=30G`, `MemoryHigh=28G`), retaining the
 same host/GPU stop thresholds and zero swap allowance. Its service peak was
 28 GiB and its stop_reason was null. This is one completed constrained retry,
 not proof of the earlier reboot's cause or a universal safe memory budget.
+
+## 2026-09-06 — GitHub runner packaging prerequisites
+
+The local full CI and seven-crate publish-check passed, but the first remote
+refactor PR's publish-check failed when `wayland-sys` could not find
+`wayland-client.pc`. The standalone package verification enables Bevy window
+backend dependencies on a clean Ubuntu runner. CI and README prerequisites now
+include `libwayland-dev` and `libxkbcommon-dev` alongside ALSA and udev headers.
+The failed GitHub job is preserved in PR #2's initial CI run.

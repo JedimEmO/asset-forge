@@ -408,3 +408,27 @@ The `feedback` fixture fires two real shots and visibly shows white 30 and gold
 font's ASCII v and reviewed in `feedback.png`. The earlier image is retained.
 The autoplay capture at four seconds has no active numbers because hits have
 already expired; the bounded feedback fixture provides the visual evidence.
+
+## Browser build and merge gate — 2026-09-06
+
+The wasm32 WebGPU release compiles. Forty native demo tests and Clippy pass,
+including an input regression for start/resume mouse-delta handling. The browser
+runtime was exercised with Playwright's Chromium 145 on the NVIDIA Vulkan ICD:
+assets ready, mouse lock, rifle fire, plasma, pause and resume passed. The audio
+context entered running state after the start gesture; this is an activation
+check, not a new listening approval. Final browser console contains zero errors.
+Screenshots and test logs are under `out/relay-browser-20260906/`.
+
+The in-app browser exposed no WebGPU adapter. System Chrome 151 also refused an
+adapter under the tested headless flags, while software SwiftShader stalled
+during startup. The successful test used bundled Chromium with the NVIDIA ICD;
+these failures do not imply support for every browser or GPU. Browser WebGPU
+limits disable SSAO on the tested configuration; native lighting remains intact.
+Automated pointer injection can rotate the view, so the input transition also
+has an ECS regression independent of browser automation.
+
+Toolkit `just ci`: 583 Rust tests, two ignored, 297 Python tests, all gates pass.
+`just publish-check`: all seven crates package and build in isolation. The first
+GitHub packaging run exposed missing Wayland headers; CI prerequisites now
+include libwayland-dev and libxkbcommon-dev. The unavailable /simplify command
+could not be invoked; diff review, tests, lint and packaging were completed.

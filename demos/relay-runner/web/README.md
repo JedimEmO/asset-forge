@@ -25,6 +25,8 @@ needed to build. Generated asset bytes are preserved from accepted v16; see
 [NOTICES.md](NOTICES.md) for provenance and non-commercial texture restrictions.
 
 The `Relay Run Pages` workflow builds pull requests and deploys main through
-GitHub Pages. The repository's Pages source must be GitHub Actions. The hosted
+GitHub Pages when the repository variable `RELAY_PAGES_ENABLED` is `true`.
+The repository's Pages source must be GitHub Actions. Keep deployment disabled
+when publishing the verified artifact through a separate demo repository. The hosted
 payload contains the game, its selected assets and notices; full local audition
 and review archives remain outside it.
