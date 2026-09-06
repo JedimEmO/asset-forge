@@ -98,7 +98,7 @@ pub(crate) enum Command {
     /// audio
     Studio(StudioArgs),
     /// Serve the MCP tools over stdio for an agent: lists, contact sheets,
-    /// audio plots, doctor, the generators, and the two direct promote doors
+    /// audio plots, doctor, the generators, and the four asset promotion doors
     Mcp,
     /// Run the queue for this project: one FIFO, one worker, one card lock,
     /// and the MCP tools over HTTP at /mcp
