@@ -6,10 +6,8 @@ hardware acceleration, keyboard and mouse. Click Launch game, wait for assets to
 then click the game or press Enter. Escape releases the mouse and pauses. Best
 score uses browser localStorage; blocked storage does not stop play.
 
-Public hosting is pending. The exact GitHub Actions browser artifact passed
-local WebGPU play checks, but GitHub Pages rejected the private repository's
-account plan. A public destination still needs the user's approval; repository
-visibility has not changed.
+**[Play Relay Run](https://jedimemo.github.io/asset-forge/)** on GitHub Pages.
+The public repository deploys through GitHub Actions.
 
 From a fresh checkout, use the repository's pinned Rust toolchain and Python 3.11
 or later. Install the CLI version from the lockfile so its bindings match the game:

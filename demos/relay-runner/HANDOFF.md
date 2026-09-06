@@ -20,18 +20,19 @@ crates passed publish-check. All 40 native demo tests pass, as do native Clippy
 and wasm target checking; the release wasm builds. Browser rendering, mouse
 lock, firing, plasma, pause/resume and audio-context activation passed in
 Chromium on the NVIDIA adapter, including the exact GitHub Actions artifact.
-Public hosting is still pending the user's destination choice. GitHub refused
-Pages for this private repository's account plan (422); repository visibility
-has not been changed.
+The user made the repository public, and GitHub Pages deployment succeeded.
+[Play Relay Run](https://jedimemo.github.io/asset-forge/). The public site passed
+loading, mouse lock, rifle/plasma input, pause/resume and audio-context checks
+with zero console errors; evidence is under `out/relay-browser-20260906/pages-*`.
 This integration does not close toolkit release stages 2–6.
 
 Browser audio validation confirms a running context after a user gesture;
 it does not replace the earlier listening approval. Browser WebGPU limits disable
 SSAO on the tested configuration. Keep native v16 and earlier packages immutable.
 
-The remaining publication step is a user-approved public destination. Do not
-mark the game hosted or add a live README link until deployment succeeds.
-Keep the verified build artifact and its receipts available for that step.
+Publication completed through [Actions run 34051210780](https://github.com/JedimEmO/asset-forge/actions/runs/34051210780).
+Pages uses GitHub Actions with `RELAY_PAGES_ENABLED=true`. Preserve the earlier
+local build artifacts and receipts alongside the public-site verification evidence.
 
 ## Historical handoffs and local evidence
 

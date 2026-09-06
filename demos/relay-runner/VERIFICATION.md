@@ -14,9 +14,11 @@ The tested WebGPU limits disable SSAO. System Chrome 151 and the in-app browser
 did not provide a usable adapter in these tests; support is not claimed for
 every browser or GPU. Evidence is under `out/relay-browser-20260906/`.
 
-Public hosting remains pending a user-approved destination. GitHub refused
-Pages for this private repository's account plan with HTTP 422. The repository
-has not been made public, and there is no deployed game URL to verify yet.
+The user made the repository public, and [Pages deployment 34051210780](https://github.com/JedimEmO/asset-forge/actions/runs/34051210780) succeeded.
+The [public game](https://jedimemo.github.io/asset-forge/) passed loading, mouse
+lock, rifle/plasma input, pause/resume and running audio-context checks with
+zero console errors. Public-site screenshots and console evidence are preserved
+as `out/relay-browser-20260906/pages-*`.
 
 Toolkit verification passed `just ci` (583 Rust tests, two ignored, 297 Python
 tests and all other gates) and `just publish-check` for seven crates.

@@ -7,7 +7,7 @@ and survive increasingly dense patrols and barriers.
 Relay Run is the current Asset Forge showcase. The browser build and native
 runtime use the committed assets in `web/assets`; no generator installation is
 needed to play. See [browser build instructions](web/README.md) or build natively
-below. Public hosting is pending; there is no live Pages link yet.
+below. **[Play in your browser](https://jedimemo.github.io/asset-forge/)**.
 
 In a native package, run `./PLAY.sh`, then click **Start run** or press Enter.
 In the browser, click **Launch game**, wait for loading, then click the game

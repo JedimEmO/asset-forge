@@ -14,9 +14,9 @@ technical check does not establish artistic quality.
 **[Relay Run](demos/relay-runner/README.md)** is the current showcase: a
 third-person combat runner using generated characters, animation, audio,
 enemies, scenery and passing ships. Its native game and WebGPU browser build
-use the same game code. [Build the browser version](demos/relay-runner/web/README.md)
-from the committed assets. Public hosting is pending; there is no live play
-link yet.
+use the same game code. **[Play Relay Run](https://jedimemo.github.io/asset-forge/)**
+in a desktop WebGPU browser with keyboard and mouse, or
+[build the browser version](demos/relay-runner/web/README.md) from the committed assets.
 
 ## Install from source
 
