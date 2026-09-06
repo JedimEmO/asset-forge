@@ -6,7 +6,9 @@ The generating half is the easy half; the rules below are about the judging
 half, and about not breaking what a record claims. Lessons live in
 `designs/decisions.md` (it wins over any spec); install traps in
 `designs/hosting.md`; the step-by-step for each asset kind is a skill under
-`.Codex/skills/`.
+`.agents/skills/`. This is the canonical skill tree; `.claude/skills/`
+contains compatibility entry points that load the same procedures.
+`AGENTS.md` is the shared instruction source, and `CLAUDE.md` imports it.
 
 ## The one-way rule
 
@@ -41,9 +43,12 @@ audio path): ARDY's sweep is the expensive one at
 is a **budget** that sits above its measured peak — never quote one as a
 measurement, and never leave one under one.
 
-The audio models run inside the ComfyUI host now, so there is no resident
-ACE-Step server of its own and no `--stop-server`. **`forge gpu --free` is
-the door for the card; for the MOSS pack only `systemctl --user restart
+Sound effects, music and voice design run inside ComfyUI. Spoken lines use
+the isolated `moss_speech` interpreter and release their models on process exit
+(restored 2026-09-05; see `forge-audio`). The older Comfy speech measurements
+above remain historical evidence, not measurements of this runtime.
+There is no resident ACE-Step server of its own and no `--stop-server`.
+**`forge gpu --free` is the door for the card; for the MOSS pack only `systemctl --user restart
 forge-comfy` returns it (measured, 4.4 s).** `POST /free` unloads native
 models — ACE-Step's card comes back with no intervention at all — and does
 nothing for what TTS-Audio-Suite loaded: there is no unload node in the
@@ -66,7 +71,10 @@ believe it.
   neither fails `forge verify`. **The reference is brought, not made here**
   — no image model ships in this toolkit; it comes through `forge ref
   import` / MCP `import_reference`, which writes all three files, and the
-  sample library's are drawn in Grok and said to be, in `SOURCES.md`.
+  sample references name their actual source in `SOURCES.md`. Earlier toolkit
+  examples used Grok; the Relay Run showcase also includes OpenAI-generated
+  references. Preserve each source statement rather than assigning one
+  generator to the whole library.
   **The stored PNG is the original bytes, never the keyed image**: the
   keyer runs again at lift time, so a keyed PNG in the source tree is a
   derived artefact whose hash and ledger row describe something nobody drew.

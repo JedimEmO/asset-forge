@@ -274,7 +274,7 @@ go back to the sweep, not to the knobs.
 | Seen | Consequence | Fix |
 |---|---|---|
 | `ardy is not installed — generation through it is off`, exit 3 in ~100 ms | no GPU work was attempted | `forge-setup` |
-| CUDA out of memory during the load | the card was not free | `just gpu`; stop the ACE-Step server or the studio; never two generates at once |
+| CUDA out of memory during the load | the card was not free | `just gpu`; release the ComfyUI host with `forge gpu --free` or close the studio; never two generates at once |
 | every row `STATIC` | the prompt may describe a pose, or the model may not perform the requested small action | compare a bounded activity control; do not assume another guard prompt fixes it; consider authored input keys |
 | `SKATE` on a take you like | ARDY's own foot-skate pass already ran | another sample or seed; `--no-postprocess` is for seeing, not shipping |
 | the character slides or moonwalks on the stage | root travel left in a clip the game moves itself | `--in-place strip` (locomotion loop) or `detrend` (roll, lunge) and re-promote |

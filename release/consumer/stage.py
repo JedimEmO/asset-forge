@@ -54,7 +54,11 @@ def stage(install, acceptance, scavenger, out):
     shutil.copy2(scavenger / 'designs/scrapyard/batch-02/image-prompts.json', out / 'provenance/vfx-image-prompts.json')
     for name in ('LICENSE-MIT', 'LICENSE-APACHE'):
         shutil.copy2(install / name, out / name)
-    shutil.copy2(scavenger / 'crates/scrapyard_arena/ASSET-NOTICES.md', out / 'SCRAPYARD-NOTICES.md')
+    notices = scavenger / 'designs/scrapyard/ASSET-NOTICES.md'
+    if not notices.is_file():
+        # Existing external acceptance projects retain the original layout.
+        notices = scavenger / 'crates/scrapyard_arena/ASSET-NOTICES.md'
+    shutil.copy2(notices, out / 'SCRAPYARD-NOTICES.md')
     config = dict(schema=1, actors=actors, prop='rusher/models/magnet.glb',
                   weapon='scavenger/models/scrapyard_rifle.glb')
     (assets / 'fixture.json').write_text(json.dumps(config, indent=2)+'\n')

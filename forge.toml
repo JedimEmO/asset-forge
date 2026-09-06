@@ -30,11 +30,11 @@ characters = true    # trellis2 + skintokens
 clips      = true    # ardy
 sfx        = true    # moss_sfx
 music      = true    # acestep
-voice      = true    # moss_tts
+voice      = true    # moss_tts voice design + isolated moss_speech
 
 [hardware]
 # Detected from the card and overridable. Tiers change registers and
-# variants, never features: lean runs MOSS-TTS at 1.7B rather than 8B, and
-# lifts at 1024 cubed exactly like full.
+# variants according to the backend descriptors. Lean lifts at 1024 cubed
+# like full; doctor checks the selected budgets.
 tier = "full"     # a 24 GB card: every model in its full register
 comfy_url = "http://127.0.0.1:8188"   # where the ComfyUI service answers; another machine's is fine

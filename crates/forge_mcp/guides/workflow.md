@@ -17,9 +17,12 @@ Use doctor to diagnose missing environments or weights before generation.
 ## Produce and review
 
 References are external original PNGs. Import with import_reference and truthful
-source information. Bring one complete subject in three-quarter view on a flat
-backdrop without cropping, a floor or cast shadow; the long side must be at least
-1024 pixels. Inspect the image first; import refusals explain what must change.
+source information. Bring one complete subject on a flat, uniform backdrop
+without cropping, a floor or cast shadow; the long side must be at least
+1024 pixels. Humanoids need a front view facing the camera in a strict T-pose.
+Props need a three-quarter view showing the top and one side. Inspect the image
+first; import refusals explain what must change. `forge gen ref-import --print-format text`
+prints the current reference contract.
 
 | Asset | Tools in order |
 |---|---|

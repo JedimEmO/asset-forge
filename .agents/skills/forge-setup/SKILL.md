@@ -49,11 +49,11 @@ skill guesses at what the table can say.
   setup` prints the bill for their answer, and `--dry-run` prints it
   without touching anything. For reference, per backend: `trellis2` ~20 GB
   and `ardy` ~35 GB and `skintokens` ~3 GB (environments and clones —
-  estimates), `acestep` 10.03 GB, `moss_sfx` 10.46 GB, `moss_tts` 16.28 GB
-  (5.72 + 3.95 + 6.61), the `comfy` host ~2 GB for its venv and clone. The
-  weights figures are each backend's own `[[models]] gb`, and a test holds
-  the bill to them — the `acestep 7.5 GB` this list used to carry was an
-  estimate of a model set that is not what ships.
+  estimates), `acestep` 10.03 GB, `moss_sfx` 10.46 GB, `moss_tts` 10.56 GB
+  (voice design + tokenizer), `moss_speech` 12.33 GB (speech + tokenizer),
+  the `comfy` host ~2 GB for its venv and clone. The
+  weights figures are each backend's own `[[models]] gb`; use the current
+  setup screen instead of adding historical estimates by hand.
 
 ## Steps
 
@@ -90,9 +90,9 @@ What the answers change downstream:
 - `[make]` decides which backends `forge setup` installs and which doctor
   rows are `off`.
 - `[hardware] tier` changes **registers and variants, never features**:
-  `lean` runs MOSS-TTS at 1.7B rather than 8B, and **lifts at 1024³ exactly
-  like `full`** — a 1024³
-  lift measures 4.7 GB, and 512³ costs the face rather than saving memory.
+  both `lean` and `full` lift at 1024³. That lift measured 4.7 GB; reducing
+  it to 512³ loses facial detail. Current speech uses the same pinned
+  `moss_speech` model on either tier; voice design stays on `moss_tts`.
   `fake` sets `FORGE_FAKE=1` as a first-class answer: every `forge gen`
   writes a branded placeholder through the same doors and validators.
 
@@ -140,7 +140,9 @@ What was accepted is appended to `$FORGE_BACKENDS_HOME/licences.json` —
 beside the installs, because the install is what is licensed, and never in
 `forge.toml`, which is hand-edited and would let an acceptance be *typed*
 rather than *given*. The receipt records who accepted (`human`, or
-`agent:Codex` through the MCP), when, and at which door.
+`agent:claude` through the current MCP implementation), when, and at
+which door. That MCP actor string is fixed in the server; it does not detect
+the client identity.
 
 **The DINOv3 login is a human's job and nothing gets past it.** Two
 commands, in this order:
@@ -175,7 +177,7 @@ env is a no-op) and every trap they encode is dated in
 | `--adopt-env DIR` | link an existing interpreter prefix instead of making one |
 | `--adopt-checkout DIR` | link an existing upstream clone instead of cloning |
 | `--adopt-text-encoders DIR` | `ardy`: link an assembled text-encoder directory |
-| `--adopt-checkpoints DIR` | `acestep`: link a checkpoints directory |
+| `--adopt-checkpoints DIR` | `acestep` or `moss_speech`: adopt a checkpoints directory |
 | `--no-models` | skip the weight downloads; doctor says `partial` until the first run |
 | `--yes` | accept the installer's own licence prompts without a TTY; the text prints either way |
 | `--no-service` | `comfy`: skip the systemd `--user` unit |
@@ -260,7 +262,8 @@ these do not share it. **Peaks measured 2026-08-30, `nvidia-smi` at 10 Hz**
 | `ardy` sweep | **15.4 GB measured** | no |
 | `trellis2` at 1024³ | **4.7 GB measured** | no |
 | `skintokens` skin-only | **3.3–4.4 GB measured** | no |
-| `moss_tts` speech (1.7B) | **7.1 GB measured**, on top of the designer's 5.4 GB if one just ran | **yes, 7.3 GB** |
+| retired Comfy speech (1.7B), historical | **7.1 GB measured**, on top of the designer's 5.4 GB if one just ran | **yes, 7.3 GB** |
+| `moss_speech` isolated speech | **14 GB budget**, no measured peak recorded here | no |
 | `moss_tts` voice design | **5.3 GB measured** | **yes, 5.4 GB** |
 | `moss_sfx` | **10.0 GB measured** | **yes, 9.1 GB** |
 | `acestep` | **13.1 GB measured** | **no** — the card comes back by itself |
@@ -303,22 +306,15 @@ window with a model loaded is up on the real adapter; never 1536³ on
   hand-assembled (Llama-3-8B-Instruct from an ungated mirror, the LLM2Vec
   MNTP adapter merged, the supervised adapter's base path rewritten) —
   `assemble_text_encoder.py` does all three; ~31 GB.
-- **The three audio backends run inside the ComfyUI host**, so they have no
-  venv of their own and no server of their own to stop: ACE-Step is native
-  in the host and MOSS speaks through TTS-Audio-Suite. What holds the card
-  is the unit, and the only lever for the MOSS pack is `systemctl --user
-  restart forge-comfy` — there is **no unload node** in the pack at this
-  pin and `POST /free` does not touch what it loaded. The pack's own
-  weights land in `$PREFIX/data/models/TTS/`, not in the HF cache, and it
-  fetches them on the node's first run — nothing an installer does. Two
-  thing does not work at this pin and is not a setup problem: `speech`. The
-  1.7B does not run under the host's transformers 5 and the pack returns
-  silence. A pack bump is **not** the fix — `fab00263` is already v5.8.7 —
-  and neither is the pack's isolated secondary runtime, which is not wired
-  to MOSS at this pin; the rewritten notice on `backends/moss_tts` says what
-  was measured and what would lift it. (`music`'s clipping was the other
-  one, and the graph now carries a stated `--gain-db` knob; its default of
-  −3 is a budget until three renders pin it.)
+- **Audio uses two execution paths.** `acestep`, `moss_sfx` and voice design
+  (`moss_tts`) run in ComfyUI. The MOSS pack has no unload node at this pin;
+  `forge gpu --free` uses the managed restart when `/free` cannot release it.
+  Spoken lines use `moss_speech`, an isolated interpreter pinned to
+  Transformers 5.0.0 and torch 2.9.1+cu128. This restored speech on
+  2026-09-05 without changing the shared host. Its installer can adopt existing
+  model directories with `--adopt-checkpoints`. The retired Comfy speech graph
+  remains diagnostic evidence; do not restore it by shimming or downgrading
+  the host. See `forge-audio` for sampling, reference and end-token checks.
 - **`comfy`:** a systemd `--user` unit on `127.0.0.1:8188`, started with
   `--base-directory` (without it the service writes into the clone and
   finds no models), `--disable-api-nodes` (no node can call a paid API) and

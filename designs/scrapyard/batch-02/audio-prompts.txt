@@ -1,7 +1,0 @@
-scrapyard_shot|0.5|One single sharp compact futuristic rifle shot, transient starts immediately, dry metallic crack layered with tight synthetic energy snap, short mechanical bolt click, no echo, complete fast decay, isolated sound effect.
-scrapyard_hit|0.5|One short sharp metallic bullet impact on thick robot armor, transient at the very start, hard steel clank and tiny bright sparks, dry close sound, rapidly decays completely, no ambience.
-scrapyard_explosion|1.4|One compact robot exploding, immediate sharp low punch followed by scattered metallic debris rattles, synthetic electrical fizz, quick complete decay, dry close isolated sound, no voices.
-scrapyard_pickup|0.5|One bright short futuristic pickup chime, immediate rising three note electronic arpeggio with a clean bell sparkle, cheerful crisp compact tone, quickly decays to silence, no ambience.
-scrapyard_dash|0.5|One very short fast air jet burst, sharp immediate compressed air whoosh with an electronic zip, rapidly decays fully, close dry isolated sound.
-scrapyard_upgrade|1.2|One triumphant short futuristic upgrade confirmation, immediate bright rising synth arpeggio resolving in a warm major chord, clean polished arcade sound, quickly decays fully, no ambience or voices.
-scrapyard_ui|0.5|One tiny crisp electronic button click at the very beginning, short high tech digital tick, quiet soft tail, no ambience, no voices, isolated sound effect.

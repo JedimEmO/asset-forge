@@ -1,4 +1,52 @@
-# Prototype verification
+# Relay Run verification
+
+## Current state — 2026-09-06
+
+The native demo passes 40 tests, Clippy with warnings denied and formatting.
+The wasm32 WebGPU release builds, and its committed asset/metadata receipts pass
+verification. Browser checks also passed against the exact GitHub Actions
+artifact: assets ready, rendering, mouse lock, rifle fire, plasma, pause and
+resume, with zero final console errors. The audio context entered running state
+after the user gesture; this is not a new listening approval.
+
+Successful browser checks used bundled Chromium 145 and the NVIDIA Vulkan ICD.
+The tested WebGPU limits disable SSAO. System Chrome 151 and the in-app browser
+did not provide a usable adapter in these tests; support is not claimed for
+every browser or GPU. Evidence is under `out/relay-browser-20260906/`.
+
+Public hosting remains pending a user-approved destination. GitHub refused
+Pages for this private repository's account plan with HTTP 422. The repository
+has not been made public, and there is no deployed game URL to verify yet.
+
+Toolkit verification passed `just ci` (583 Rust tests, two ignored, 297 Python
+tests and all other gates) and `just publish-check` for seven crates.
+These checks do not complete release stages 2–6. The current checkout can build
+and play using [the committed runtime assets](README.md#build-from-a-checkout);
+private generation and review directories are not build prerequisites.
+
+From the repository root, repeat the checks without private asset projects:
+
+```sh
+export CARGO_TARGET_DIR="$PWD/target"
+python3 demos/relay-runner/web/package.py --check
+cargo test --locked --manifest-path demos/relay-runner/Cargo.toml
+cargo clippy --locked --manifest-path demos/relay-runner/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path demos/relay-runner/Cargo.toml -- --check
+cargo check --locked --target wasm32-unknown-unknown --manifest-path demos/relay-runner/Cargo.toml
+```
+
+These commands verify code and asset integrity. Follow [the browser build](web/README.md)
+for a rendered play check; successful compilation alone is not visual verification.
+
+## Historical evidence
+
+The following entries retain the observations and test counts from each earlier
+package. Local absolute paths identify archived evidence, not current setup
+instructions. Native v16 is the accepted asset baseline; previous packages stay
+immutable. The former Scrapline showcase is archived at
+`archive/scrapline-20260906`.
+
+### v03 prototype — 2026-09-06
 
 Verified locally on 2026-09-06. The playable package is
 `/home/mmy/forge-demos/relay-runner-v03`; run its `PLAY.sh` from any directory.

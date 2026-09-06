@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config mesa-vulkan-drivers libvulkan1
       - id: toolchain
         run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master
@@ -102,12 +102,15 @@ jobs:
         with:
           shared-key: workspace
       - uses: taiki-e/install-action@just
-      - run: cargo test --workspace
-      # The Python layer's own tests (stdlib only, no backend).
+      # Install the declared test dependencies; generator runtimes remain separate.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python3 -m pip install --quiet "pytest>=8"
+      - run: python3 -m pip install --quiet "./python[dev]"
+      # MCP integration tests also invoke the software renderer.
+      - run: cargo test --workspace
+        env:
+          WGPU_BACKEND: vulkan
       - run: python3 -m pytest -q
         working-directory: python
       # `forge mcp` handshakes over stdio and lists exactly the tools the

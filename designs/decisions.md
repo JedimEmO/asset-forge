@@ -1779,3 +1779,13 @@ traffic and enemies, so mutating its loaded material globally would silently
 change gameplay readability. Sky clones retain textures and PBR properties while
 removing causeway fog and adding restrained texture fill; the shipped model and
 its integrity record remain unchanged.
+
+## 2026-09-06 — Compare animation poses across time within one view
+
+The software-rendered CI sheet rejected the accepted rifle aim as frozen: every
+adjacent frame's mean pixel difference was below 0.002, although its accumulated
+first-to-middle difference exceeded that same threshold. Compare temporal pairs
+within each camera band instead of only neighbors. Different camera angles and
+head close-ups must not count as animation. The threshold and accepted clip stay
+unchanged; slow-motion and static multi-view cases need separate regression checks.
+Preserve each failed sheet's renderer log instead of discarding all output.

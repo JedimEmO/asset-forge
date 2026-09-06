@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**2026-09-06: shared installations, verified consumers and Relay Run.**
+Relay Run is now the sole active game showcase; the older Scrapline demo and
+its review evidence are preserved at `archive/scrapline-20260906`. Repository
+instructions live in `AGENTS.md`, asset procedures in `.agents/skills/`, with
+Claude entry points reading those same sources. Setup and backend guides now
+describe isolated speech and the current shared installation.
+
+We can now serve independent game projects from one local installation,
+and carry recorded assets into a verified external Bevy consumer.
+Relay Run exercises generated characters, animation, audio, scenery and ships
+in an accepted combat runner, with a reproducible WebGPU browser build.
+The full local CI and seven-crate packaging gates pass;
+clean-install qualification and fresh real-agent release trials remain open
+in `designs/release-handoff.md`.
+
 **2026-09-04 — the toolchain reviewed as an agent's workbench.** Every
 door run for real from the MCP surface with the card: a sweep, a bake, a
 sound, a lift, a prepare, a skin, an export, a rig check, three renders.

@@ -5,10 +5,10 @@ description: Ship a rigged character from a reference PNG — import and pre-che
 
 # Character: PNG → import → lift → look → prepare → skin → promote
 
-Six `just` recipes in a fixed order with one look between each. Everything
-after the PNG is reproducible from the records beside it; the PNG itself is
-an input — brought, not made — and claims its sha256, a `.ref.json` record
-and a ledger row. Every name below is checked against `just --list` and
+Six `just` recipes in a fixed order with one look between each.
+Records preserve the inputs and settings; bodies and rigs claim integrity,
+not bit-exact reproduction. The PNG is a brought input and claims its sha256,
+a `.ref.json` record and a ledger row. Every name below is checked against `just --list` and
 `forge --help`; if a recipe here is missing there, this file is wrong, not
 the justfile.
 
@@ -119,7 +119,7 @@ edit it:
 
 `Read` the PNG (the Read tool shows images) before you import it. The gates
 measure geometry, not intent: the image has to *be* a T-pose, not describe
-one. A lift is minutes of a 22 GB card; a look is free.
+one. A lift uses the shared GPU; inspect the reference before spending that time.
 
 | Seen | Consequence downstream | Fix (in the image — the pipeline never compensates) |
 |---|---|---|

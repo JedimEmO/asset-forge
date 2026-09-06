@@ -1,20 +1,24 @@
-# Licence of the sample library
+# Sample asset notices
 
-The repository's MIT OR Apache-2.0 licence covers the **code**. The sample
-assets under `assets/` and `assets-src/` are shipped so the tools have
-something to show on a fresh clone, and each kind carries its own terms.
-Per-file provenance — where every file came from, on what terms, with what
-seed — is in [`assets-src/SOURCES.md`](../assets-src/SOURCES.md); this file
-is the summary a reuse decision can be made from.
+The repository's MIT OR Apache-2.0 licence covers the code. Sample assets
+under `assets/` and their sources under `assets-src/` carry separate provenance
+and notices. Use the [source ledger](../assets-src/SOURCES.md), reference
+records and individual sidecars for each file's recorded origin.
 
-| Sample | Files | Terms |
-|---|---|---|
-| Body and models | `bodies/vex_runner.glb`, `models/sword.glb`, `models/barrel.glb` (+ `.json` sidecars, the `.blend`) | Meshes lifted with TRELLIS.2 (MIT, code and weights). **Their textures were baked through nvdiffrast 0.4.0, which ships under the NVIDIA Source Code License — non-commercial use only. The sample textures are therefore NOT licensed for commercial use or commercial redistribution.** Demonstration and evaluation only; for a commercial project, regenerate from your own references once a replacement baker exists, or ship the geometry with your own textures. |
-| Reference images | `assets-src/refs/**/*.png` | Generated with xAI's grok (cloud image model); xAI's consumer Terms of Service state the user owns the output, commercial use included. That reading is recorded in `SOURCES.md` as confirmed through search excerpts, not a direct page retrieval — verify it yourself before relying on it commercially. Images with no human authorship are likely not copyrightable by anyone, which cuts both ways: weak exclusivity, and no third-party claim. |
-| Clips | `clips/*.glb` (+ takes under `assets-src/takes/`) | Baked from ARDY takes: code Apache-2.0, checkpoints under the NVIDIA Open Model License — outputs are usable under that licence's output terms. |
-| Audio | `audio/sfx/*`, `audio/music/*`, `audio/voice/*`, the designed voice under `assets-src/voices/` | Rendered here: MOSS-SoundEffect / MOSS-TTS / MOSS-VoiceGenerator outputs (models Apache-2.0) and ACE-Step outputs (MIT). The rendered files are the project's own. |
+| Material | Recorded source and scope |
+| --- | --- |
+| Bodies and static models | TRELLIS.2 lifts and Forge preparation. The recorded nvdiffrast texture baker carries a non-commercial notice; retain that restriction with the generated textures. |
+| Reference PNGs | Brought from external image tools, including Grok and OpenAI image generation. The ledger and `.ref.json` identify the source for each image; no single provider description applies to the whole library. |
+| Animation clips | ARDY takes and explicit Forge bake recipes. Keep selected takes and records for reproduction checks. ARDY code and checkpoint notices are distinct. |
+| Audio | MOSS and ACE-Step generation, plus deterministic authored Scrapyard synthesis. Individual records identify the source or explicitly record unknown backend provenance. The authored scripts and source manifests remain in the repository. |
+| Voice references | Recorded auditions under `assets-src/voices/`, with their own voice records. |
 
-The one encumbrance that matters is the first row: **nothing textured
-through this sample pipeline is for sale**. Every lift record names the
-baker (`texture_baker: "nvdiffrast (NVIDIA Source Code License,
-non-commercial)"`), so the fact travels with the asset.
+Bodies, models and audio claim integrity; clips additionally support the
+recorded reproduction audit. These claims describe verification, not a grant
+of rights. Code licensing does not override a model, reference or asset notice.
+
+The Relay Run delivery has [separate notices](../demos/relay-runner/web/NOTICES.md)
+for its selected runtime assets, including experimental Pixal3D exports. The
+older [Scrapyard notices](../designs/scrapyard/ASSET-NOTICES.md) are preserved
+unchanged alongside the shared source material; its game and review history
+are available in the [archive](../designs/scrapyard/README.md).

@@ -1151,7 +1151,7 @@ impl MakeKinds {
 pub enum Tier {
     /// A 24 GB card: every model in its full register.
     Full,
-    /// A 16 GB card: `MOSS-TTS` at 1.7B rather than 8B.
+    /// A 16 GB card: use the selected backends within the lean budget.
     /// **Lifts at 1024³ like the full tier** — a 1024³ lift measured 4.7 GB
     /// (`designs/decisions.md`, 2026-08-30), and 512³ costs the face.
     Lean,
@@ -1202,7 +1202,7 @@ impl Tier {
         match self {
             Self::Full => "a 24 GB card: every model in its full register",
             Self::Lean => {
-                "a 16 GB card: the Q4_K_M reference model and MOSS-TTS 1.7B; \
+                "a 16 GB card: selected backends within the lean budget; \
                  lifts at 1024 cubed like full"
             }
             Self::Fake => {
@@ -1310,8 +1310,8 @@ impl Hardware {
         format!(
             "[hardware]\n\
              # Detected from the card and overridable. Tiers change registers and\n\
-             # variants, never features: lean runs the reference image model quantised\n\
-             # and MOSS-TTS at 1.7B, and lifts at 1024 cubed exactly like full.\n\
+             # variants according to backend descriptors; no image generator ships here.\n\
+             # Lean lifts at 1024 cubed like full; doctor checks the selected budgets.\n\
              tier = {:?}     # {}\n\
              comfy_url = {:?}   # where the ComfyUI service answers; another machine's is fine\n",
             tier.as_str(),

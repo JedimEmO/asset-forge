@@ -435,7 +435,11 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
             fields["report"]
                 .as_str()
                 .expect("report")
-                .contains(String::from_utf8_lossy(&cli.stdout).trim())
+                .contains(String::from_utf8_lossy(&cli.stdout).trim()),
+            "{name} CLI/MCP reports differ:\nCLI stdout:\n{}\nCLI stderr:\n{}\nMCP report:\n{}",
+            String::from_utf8_lossy(&cli.stdout),
+            String::from_utf8_lossy(&cli.stderr),
+            fields["report"],
         );
         assert_eq!(
             std::fs::read(&path).expect("unchanged"),
@@ -487,6 +491,7 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
         !job.is_empty() && imported.contains("generate_mesh"),
         "the import hands back a job and the literal next call:\n{imported}"
     );
+    let mut submitted = vec![job];
 
     // The same name twice is refused: a reference is the durable source a
     // body is re-derived from, so this door has no overwrite at all.
@@ -542,7 +547,34 @@ async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path)
                 !job_id(&body).is_empty(),
                 "{tool} answered without a job id:\n{body}"
             );
+            submitted.push(job_id(&body));
         }
+    }
+
+    // The capability calls may still be publishing source references/records.
+    // Wait before comparing CLI and MCP checks against one stable library.
+    // A slow successful render used to hide this race; a missing adapter made
+    // rendering return immediately and the reports counted different files.
+    // These calls promise a job or refusal, not generator success: terminal
+    // failures are valid here and the complete fake loop checks success below.
+    for job in submitted {
+        let finished = call(client, "wait", json!({"job": job, "max_s": 120})).await;
+        let frame = finished
+            .content
+            .iter()
+            .find_map(|content| match &content.raw {
+                RawContent::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .expect("wait returns a job frame");
+        assert!(
+            matches!(
+                job_state(frame).as_str(),
+                "done" | "refused" | "failed" | "cancelled" | "interrupted"
+            ),
+            "the capability job must be terminal before validation: {}",
+            text(&finished)
+        );
     }
 
     // -- a body, filed ----------------------------------------------------

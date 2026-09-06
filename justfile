@@ -414,8 +414,11 @@ sheets *flags: _build
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         count=$((count + 1))
-        if ! {{forge}} sheet "$name" {{flags}} >/dev/null 2>&1; then
+        log="out/sheets/$name.log"
+        if ! {{forge}} sheet "$name" {{flags}} >"$log" 2>&1; then
             failed+=("$name")
+            echo "sheet failed: $name (full log: $log)" >&2
+            cat "$log" >&2
         fi
     done < <({{forge}} catalog --kind clip | awk 'NR > 1 && $1 == "clip" { print $2 }')
     echo "rendered $count clip(s) to out/sheets"
@@ -610,7 +613,7 @@ check:
 test:
     cargo test --workspace --manifest-path {{justfile_directory()}}/Cargo.toml
 
-# The launcher's own suite — stdlib + pytest, no backend, no GPU, seconds.
+# The launcher's own suite — install python[dev]; no backend or GPU required.
 # The Rust side's `python_records` test re-runs the record capture, but
 # only this runs test_cli, test_launcher, test_backends, test_doctor,
 # test_glb and test_npz.
@@ -942,11 +945,3 @@ publish-check:
         fi
     done
     echo "publish-check: $n crates package and build in isolation at $version"
-
-# Play the complete Bevy scrapyard survival game.
-play-scrapline:
-    cargo run -p scrapyard_arena --bin scrapline --manifest-path {{justfile_directory()}}/Cargo.toml
-
-# Copy a relocatable local Linux build and the reviewed runtime assets.
-package-scrapline:
-    python3 {{justfile_directory()}}/crates/scrapyard_arena/tools/package_game.py

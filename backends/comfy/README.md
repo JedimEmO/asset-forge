@@ -1,8 +1,7 @@
 # comfy — the ComfyUI host
 
 Not a generator. ComfyUI is a **host**: a service that loads models and runs
-graphs, driven over HTTP by the `comfy` executor `forge serve` grows in
-Phase 1. Nothing here is execed by the launcher, nothing of ComfyUI is
+graphs, driven over HTTP by the `comfy` executor behind `forge serve`. Nothing here is execed by the launcher, nothing of ComfyUI is
 imported into the toolkit, and its GPL-3.0 stays on its own side of a
 socket. What lives in this directory is the description, the installer, the
 probe, the unit file, the paths config and the Manager snapshot — the same
@@ -14,7 +13,9 @@ Installed by Phase 0 prep on 2026-08-30 so the reference-image spike
 That spike is over and its models have left: **the reference image is
 brought, not generated** (`designs/decisions.md`, "The reference image stays
 brought", 2026-08-30), and what the host runs today is the three audio
-backends — `acestep`, `moss_sfx`, `moss_tts`.
+backends: `acestep` for music, `moss_sfx` for effects and `moss_tts` for
+voice design. Spoken lines use the isolated `moss_speech` interpreter; they
+do not run inside this host.
 
 ## What is where
 
@@ -75,10 +76,11 @@ python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch \
   prompt with the same inputs returns the first one's image without
   executing. A re-roll that never ran is exactly the failure `forge2.md`
   names ("Node-result caching returns a stale output"), and the honest fix
-  at this stage is to turn the cache off. When Phase 1's job records carry
-  `cached: true, same_as`, this can be revisited.
-* `--disable-api-nodes` — no node in any graph can call a paid API or reach
-  the internet.
+  is to turn the cache off. Any future cache must record reuse explicitly
+  rather than presenting a cached output as a fresh generation.
+* `--disable-api-nodes` — disable ComfyUI's API-node integration. This is
+  not a network sandbox; model downloads and custom-node code can still
+  use the network.
 * `--listen 127.0.0.1` — loopback only. The daemon is the sole client.
 * `--enable-manager` — ComfyUI-Manager is a pip package now
   (`comfyui_manager`, pinned by the clone's own `manager_requirements.txt`),
@@ -152,8 +154,8 @@ see in its folders is a weight that is not installed, whatever is on disk.
 When a file *is* on disk and still not listed, the probe says so — that is a
 paths problem, not a download one.
 
-`$FORGE_COMFY_URL` points the probe at another machine's ComfyUI (what
-`forge.toml`'s `[hardware] comfy_url` will name in Phase 1).
+`$FORGE_COMFY_URL` points the probe at another machine's ComfyUI.
+Projects name their service in `forge.toml` under `[hardware] comfy_url`.
 
 ## The card
 
@@ -162,11 +164,15 @@ The service is up across calls, unlike every other backend, and holds about
 loaded stays resident until the graph's unload node or `POST /free` — and
 TTS-Audio-Suite ships neither at this pin, so `systemctl --user restart
 forge-comfy` (4.4 s, measured 2026-08-30) is the only lever that returns what
-the MOSS models took. Stop the unit before a 1024³ lift:
+the MOSS models took. Use the managed release door before another generator:
 
 ```sh
-systemctl --user stop forge-comfy      # and `start` when the lift is done
+forge gpu --free
+just gpu
 ```
+
+The release path restarts the managed service when the MOSS pack cannot unload.
+Do not start a lift until the GPU check confirms the required budget fits.
 
 ## Lingering
 

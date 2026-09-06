@@ -4,7 +4,14 @@ A third-person combat runner on a collapsing orbital causeway.
 Forward travel is automatic. Strafe freely, aim through the crosshair,
 and survive increasingly dense patrols and barriers.
 
-Run `./PLAY.sh`, then click **Start run** or press Enter.
+Relay Run is the current Asset Forge showcase. The browser build and native
+runtime use the committed assets in `web/assets`; no generator installation is
+needed to play. See [browser build instructions](web/README.md) or build natively
+below. Public hosting is pending; there is no live Pages link yet.
+
+In a native package, run `./PLAY.sh`, then click **Start run** or press Enter.
+In the browser, click **Launch game**, wait for loading, then click the game
+or press Enter. We require a desktop WebGPU browser, keyboard and mouse.
 
 | Control | Action |
 | --- | --- |
@@ -17,7 +24,7 @@ Run `./PLAY.sh`, then click **Start run** or press Enter.
 | Q | Shockwave, when charged |
 | E / middle mouse | Fire an aimed plasma blast |
 | R | Reload |
-| Escape | Pause / resume and release the mouse |
+| Escape | Pause and release the mouse; native also resumes |
 | M | Toggle sound |
 | Enter | Start, restart or resume |
 
@@ -25,34 +32,47 @@ Shields regenerate after 3.5 seconds without damage. Health does not.
 Cyan-marked supply crates refill the magazine, restore shields and ability charge.
 Tall station units block gunfire; move around them. Headshots deal extra damage.
 Intensity rises every 12 seconds and reaches its cap after one minute. Run again to beat your score.
-Best score is stored in `~/.local/share/relay-runner/best.json`
-(or under `XDG_DATA_HOME`). Automated runs never change the saved score.
+Native best score is stored in `~/.local/share/relay-runner/best.json`
+(or under `XDG_DATA_HOME`). Browser best score uses localStorage.
+Blocked browser storage does not stop play. Automated native runs never change
+the saved score.
 
-## Build and package
+## Build from a checkout
 
-The demo has an independent Cargo workspace and uses the reviewed stage-1 delivery.
-It does not alter Forge's accepted assets, records or release evidence.
+Use the pinned Rust toolchain from the repository root. The demo has an
+independent Cargo workspace; its committed runtime assets are ready to load.
 
 ```sh
-cargo build --locked --manifest-path demos/relay-runner/Cargo.toml
-python3 demos/relay-runner/package.py \
-  --delivery /absolute/stage1/consumer-final \
-  --binary demos/relay-runner/target/debug/relay-runner \
-  --showcase /absolute/relay-assets-v01 \
-  --pixal-trial /absolute/pixal3d-trial-20260906 \
-  --output /absolute/new/relay-runner
+export CARGO_TARGET_DIR="$PWD/target"
+python3 demos/relay-runner/web/package.py --check
+cargo run --locked --manifest-path demos/relay-runner/Cargo.toml -- \
+  --assets "$PWD/demos/relay-runner/web/assets"
 ```
 
-A shared `CARGO_TARGET_DIR` can reuse the toolkit's compiled Bevy dependencies.
-Packaging also copies the system's Lato fonts with their notice.
-The output includes original asset manifests, provenance and notices;
-its own `game-delivery.json` hashes the complete payload.
+Linux native builds need the Bevy system libraries, including ALSA, udev,
+Wayland and XKB development headers. On a PulseAudio/PipeWire desktop, set
+`ALSA_CONFIG_PATH="$PWD/demos/relay-runner/desktop-audio.conf"` for the game
+process to use the desktop mixer. A native package's `PLAY.sh` selects the
+desktop default sink automatically.
+
+For browser compilation, packaging and local serving, follow
+[web/README.md](web/README.md). Both targets retain the accepted v16 asset bytes;
+the browser uses embedded copies of the required metadata for startup.
+
+The older native `package.py` assembles a full provenance archive from a stage-1
+consumer delivery, showcase project and Pixal3D trial. Those external source
+projects are only needed when making that archival package, not to build or play
+from this checkout. Run `python3 demos/relay-runner/package.py --help` for its
+required inputs. Output directories must be new so accepted packages stay intact.
 
 For a bounded rendered test:
 
 ```sh
-./relay-runner --autoplay --quiet --frames 900 \
-  --screenshot /absolute/combat.png --report /absolute/combat.json
+mkdir -p out/relay-check
+./target/debug/relay-runner --assets "$PWD/demos/relay-runner/web/assets" \
+  --autoplay --quiet --frames 900 \
+  --screenshot "$PWD/out/relay-check/combat.png" \
+  --report "$PWD/out/relay-check/combat.json"
 ```
 
 `--scenario title`, `--scenario paused` and `--scenario dead` capture menu states.
@@ -61,8 +81,8 @@ unpackaged development binary. The packaged executable locates its own assets.
 
 This is an original prototype inspired by space-opera shooters, with a procedural
 station and previously accepted Forge characters, rifle and audio. Mesh texture
-baking carries the retained nvdiffrast non-commercial notice. See `CONTRACT.md`,
-`SCRAPYARD-NOTICES.md`, source ledgers and original generator records for scope.
+baking carries the retained nvdiffrast non-commercial notice.
+See [asset notices](web/NOTICES.md) and the accompanying records for scope.
 The run/aim/fire mask is consumer animation composition; terrain and support-hand
 IK are not implemented. The drone, cargo and station use reviewed experimental Pixal3D exports normalized through Forge; see
 `EXPERIMENTAL-ASSETS.md` for its provenance and remaining scope.
@@ -153,8 +173,8 @@ alongside the existing grade. HUD text remains crisp; transparent particles
 retain their authored trails because they do not write motion vectors.
 Use `--scenario focus` for the repeatable aimed-focus fixture.
 
-For the accepted v14 checkpoint, asset locations and next gameplay pass, see
-[HANDOFF.md](HANDOFF.md).
+For current validation, publication status and preserved historical packages, see
+[HANDOFF.md](HANDOFF.md) and [VERIFICATION.md](VERIFICATION.md).
 
 The v15 scenery pass uses generated radar and reactor installations on attached
 service decks, asymmetric arrangements and open bays. Interceptor formations,
@@ -172,3 +192,7 @@ Combat feedback: floating damage numbers show rifle, plasma and shockwave damage
 Gold CRIT labels distinguish critical rifle hits. Numbers drift and fade over
 0.85 seconds, freeze on pause and clear on restart. Enemy surfaces receive a
 small texture-preserving warm fill, with compact amber locators above targets.
+
+The earlier Scrapline showcase is archived at Git tag
+`archive/scrapline-20260906`. Its retained notices and source asset names remain
+provenance; they do not identify a second active demo.

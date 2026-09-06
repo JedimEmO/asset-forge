@@ -30,12 +30,12 @@ backends/<name>/
   .env        ->      gitignored symlink to the interpreter prefix (what the launcher execs)
   .checkout   ->      gitignored symlink to the upstream clone at the pinned commit
   .text-encoders ->   (ardy) gitignored symlink to the assembled text encoders
-  .checkpoints ->     (acestep) gitignored symlink to the checkpoint directory
+  .checkpoints ->     (moss_speech; legacy acestep) gitignored checkpoint link
   installed.json      gitignored receipt: commit, python, torch, date, adopted
 ```
 
-The seven the toolkit knows, in the order doctor lists them — five
-generators, then the two the Phase 0 spikes stood up:
+The toolkit describes seven generator backends and one ComfyUI host.
+Blender has a separate host-tool descriptor:
 
 | backend | role | upstream | env | entry |
 |---|---|---|---|---|
@@ -45,10 +45,10 @@ generators, then the two the Phase 0 spikes stood up:
 | `moss_sfx` | prompt → sound effect | MOSS-SoundEffect-v2.0 through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen sfx` |
 | `moss_tts` | description → voice | MOSS-VoiceGenerator through TTS-Audio-Suite @ `fab00263` | ComfyUI host | `forge gen voice` |
 | `moss_speech` | text → speech | MOSS-TTS-Local-Transformer and audio tokenizer | Python 3.12, Transformers 5.0.0, torch 2.9.1+cu128 | `forge gen speech` |
-| `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host, and it holds no graphs of its own: each guest's `workflows/*.api.json` are what it is sent |
-| `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
+| `comfy` | **host**, not a generator: the service the `comfy` executor drives over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host, and it holds no graphs of its own: each guest's `workflows/*.api.json` are what it is sent |
+| `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` |
 
-Doctor prints an eighth row, `blender`, between the two groups: it is
+Doctor also prints `blender`: it is
 described by a `backend.toml` like the rest so its version and licence
 notice have somewhere to live, but it is a host tool, not a backend (below).
 
@@ -68,7 +68,7 @@ one fact in one place — `props → trellis2`; `characters → + skintokens`;
 `clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice → moss_tts + moss_speech`;
 anything `comfy` adds the `comfy` host, and a mesh kind adds Blender. **No
 kind names an image model**: a reference PNG is brought through
-`import_reference` / `forge ref import` (Phase 3), not generated here
+`import_reference` / `forge ref import`, not generated here
 (`designs/decisions.md`, 2026-08-30), so a props- or characters-only project
 never installs the ComfyUI host at all.
 
@@ -151,7 +151,7 @@ installers.
 | LLM2Vec | MIT | |
 | ACE-Step 1.5 code + weights | MIT | |
 | MOSS-TTS family | Apache-2.0 | |
-| `OpenMOSS-Team/MOSS-VoiceGenerator` (1.7B, MossTTSDelay) | Apache-2.0 | the voice designer behind `forge gen voice`; the same env as MOSS-TTS |
+| `OpenMOSS-Team/MOSS-VoiceGenerator` (1.7B, MossTTSDelay) | Apache-2.0 | the voice designer behind `forge gen voice`; ComfyUI hosts it, while spoken lines use isolated `moss_speech` |
 | MOSS-SoundEffect-v2 | Apache-2.0 | |
 | Blender | GPL | A tool; nothing of it ships in an asset. |
 
@@ -182,8 +182,8 @@ lift record, and keep the Llama 3 notice in `ardy/backend.toml`.
 
 One 24 GB card with a desktop resident (~0.8 GB). Approximate peaks; two
 rows never share the card. `just gpu` before any generate, and give the
-card back before a lift — the audio models are the host's now, and it is
-the host that holds them. **`forge gpu --free` is the door; for the MOSS
+card back before a lift. Music, effects and voice-design models run on
+the host; isolated speech releases its model on process exit. **`forge gpu --free` is the door; for the MOSS
 pack only `systemctl --user restart forge-comfy` returns the card
 (measured 2026-08-30, 4.4 s):** `POST /free` unloads native models —
 ACE-Step gives its card back with no intervention at all — and does
@@ -198,7 +198,8 @@ were sampled are in `designs/hosting.md` § GPU co-residency.
 | `trellis2` at 512³ | **3.1 GB measured** (2026-08-30) | no |
 | `ardy` sweep | **15.4 GB measured** (2026-08-30; one model load covers a batch) | no |
 | ACE-Step 1.5 in the host (`acestep`) | **13.1 GB measured** (2026-08-30, a 30 s track at 96 bpm); `vram_gb = 14` | **no** — 22.8 → 22.6 GB free with no intervention; native models honour ComfyUI's own manager |
-| `moss_tts` speech (Local-Transformer 1.7B, in the host) | **7.1 GB measured** (2026-08-30) *with the designer's 5.4 GB already on the card*; `vram_gb = 13` is the pair | **yes, 7.3 GB** — `POST /free` does nothing for it; `systemctl --user restart forge-comfy` |
+| retired Comfy speech (Local-Transformer 1.7B), historical | **7.1 GB measured** (2026-08-30) *with the designer's 5.4 GB already on the card*; `vram_gb = 13` is the pair | **yes, 7.3 GB** — `POST /free` does nothing for it; `systemctl --user restart forge-comfy` |
+| `moss_speech` isolated speech | **14 GB budget**, not a measured peak | no |
 | `moss_tts` voice design (MOSS-VoiceGenerator 1.7B) | **5.3 GB measured** (2026-08-30, a 6 s audition) | **yes, 5.4 GB** — same lever |
 | `moss_sfx` (in the host) | **10.0 GB measured** (2026-08-30, 3 s at 100 steps, over a 1.2 GB floor); `vram_gb = 11` | **yes, 9.1 GB** — same lever |
 | `skintokens` skin-only | **3.3–4.4 GB measured** (2026-08-30) — not the 14 GB upstream and `backend.toml` claim | no |
@@ -214,8 +215,9 @@ rows this table carried — Qwen-Image fp8 at 23.3 GB and its Q4 GGUF at
 `designs/hosting.md` keeps them as the record of what they cost. ARDY's
 sweep is now the hungriest thing here.
 
-Never 1536³ on 24 GB. The 8B MOSS-TTS Delay model OOMs with the audio
-tokenizer loaded, which is why `speech.api.json` states the 1.7B.
+Never 1536³ on 24 GB. Historically, the 8B MOSS-TTS Delay model OOMed
+with the audio tokenizer loaded, which is why the retired Comfy speech graph
+used 1.7B. Current speech uses the isolated Local-Transformer path.
 
 **Three of these budgets were raised on 2026-08-30 because the first real
 run measured past them** — `moss_sfx` 8 → 11, `acestep` 12 → 14,
@@ -238,18 +240,15 @@ Each installer is idempotent (`set -euo pipefail`, sources
    MOSS models) and a systemd `--user` unit on `127.0.0.1:8188`. **It
    downloads no weights**: ACE-Step's own 10.03 GB checkpoint is step 3's and
    the MOSS weights are the node pack's on first run. `--no-service` skips
-   systemd; `--no-models` is accepted and does nothing. Every audio kind runs
-   on this host, so it comes before them.
+   systemd; `--no-models` is accepted and does nothing. Music, effects and
+   voice design need this host; isolated speech does not.
 3. `bash backends/moss_sfx/install.sh`, `bash backends/moss_tts/install.sh`
-   and `bash backends/acestep/install.sh` — none of which install anything.
-   Each checks that the host is there, that its pack is at the pin this
-   backend names and that the node classes the tracked graph needs are
-   registered, and names the fix when one is not. The MOSS weights download
-   on the node's first run into the **host's own base directory** —
-   `$PREFIX/data/models/TTS/moss_soundeffect_v2/` (10.46 GB) and
-   `.../moss_tts/` (5.72 + 3.95 + 6.61 GB: the 1.7B, the voice designer and
-   the audio tokenizer) — measured there 2026-08-30, and not into the HF
-   cache the other backends fill.
+   and `bash backends/acestep/install.sh` validate their host integration.
+   ACE-Step's installer downloads its checkpoint unless already present.
+   MOSS weights download on the node's first run into the host's own base
+   directory: `$PREFIX/data/models/TTS/moss_soundeffect_v2/` and
+   `.../moss_tts/`. The latter now needs voice design and its tokenizer
+   (3.95 + 6.61 GB); the old host speech weights may remain from earlier runs.
 4. `bash backends/trellis2/install.sh --yes` — conda (python 3.11, CUDA
    12.4.1 from the label channel, gcc 13), torch cu124, the CUDA extensions,
    **nvdiffrast after the licence prompt**, and the checksum-pinned CPython
@@ -259,6 +258,9 @@ Each installer is idempotent (`set -euo pipefail`, sources
 5. `bash backends/skintokens/install.sh` — venv (python 3.11, torch
    cu128), the two patches under `patches/` applied to the clone, ~1.6 GB
    of weights under `$PREFIX/weights`.
+6. `bash backends/moss_speech/install.sh` — isolated Python 3.12 with
+   Transformers 5.0.0, torch 2.9.1+cu128 and pinned speech/tokenizer weights.
+   Use `--adopt-checkpoints` to reuse existing model directories.
 
 ### What doctor's words mean
 
@@ -329,7 +331,7 @@ unproven. Re-run adoption with the flag to retain the pinned runtime.
 Adopting writes the `.env`/`.checkout` links and `installed.json`
 (`"adopted": true`), runs the probe, and installs nothing. A checkout at
 another commit than the pinned one is a doctor warning, not an error; a
-dirty checkout is noted (ACE-Step's is expected to be: the soundfile patch
-and a trimmed `pyproject`). `FORGE_BACKEND_<NAME>_PYTHON` is the
+dirty checkout is noted. The old standalone ACE-Step checkout and patches
+are historical; current music runs on ComfyUI. `FORGE_BACKEND_<NAME>_PYTHON` is the
 zero-install alternative for one shell: no links, no receipt, the
 interpreter named directly.

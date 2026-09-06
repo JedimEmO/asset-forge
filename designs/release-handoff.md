@@ -229,3 +229,21 @@ work. The external VFX contract is documented and descriptor/hash checked,
 without claiming VFX playback. Audio loading does not replace listening review.
 No accepted assets were regenerated, no shipped records were edited, and no
 commit or publication was made.
+
+## Showcase archive — 2026-09-06
+
+Relay Run is now the sole game showcase. The older Scrapyard tools, production
+reports and rendered evidence referenced above are preserved unchanged at tag
+`archive/scrapline-20260906` (commit `92f8866bf7e93c62f3c0efefbd5f1100e6b5e61b`).
+`designs/scrapyard/README.md` identifies the retained shared consumer inputs.
+The consumer staging recipe accepts both the new asset-notice location and the
+original layout in existing external acceptance projects. Completed evidence,
+accepted assets and the frozen release brief remain unchanged.
+
+Archive follow-up validation: the acceptance snapshot SHA-256 was rechecked,
+restored into a new scratch directory and used with the current checkout in
+the updated consumer staging recipe. Delivery verification passed for 227 files,
+six named animations, grounding and VFX. Both library manifests remained
+unchanged, and scale 0.916700005531311 was applied to Hips translation once.
+Evidence: `out/archive-consumer-check-20260906/delivery/`. This checks staging
+after archival; it does not replace the original rendered acceptance evidence.

@@ -5,7 +5,7 @@ description: Design a character's voice from a description — MOSS-VoiceGenerat
 
 # Voice: description → `assets-src/voices/<name>/{ref.wav,voice.json}` → lines by name
 
-A project never brings a voice. `just voice <name> "<description>"` has
+A project can design a voice instead of bringing a reference clip. `just voice <name> "<description>"` has
 MOSS-VoiceGenerator (1.7B, Apache-2.0, the `moss_tts` ComfyUI backend) speak one audition sentence in a timbre designed from the words,
 and what it speaks becomes a **source**: `ref.wav` beside `voice.json`, a
 generator record of kind `voice` naming the description, the line, the
@@ -33,12 +33,13 @@ Voice design remains on ComfyUI; speech releases its model when its process exit
   `model:OpenMOSS-Team/MOSS-VoiceGenerator absent` means the ~4 GB weights
   are not cached: the first `just voice` downloads them, or `just setup
   moss_tts` does. `missing` → `forge-setup`.
-- **The GPU is free enough.** `just gpu`. The design peaks at ~12 GB (the
-  generation loop, not the 1.7B's weights), the cloner at ~12 GB; neither
-  co-resides with a sweep (15.4 GB measured) or the image model (23.3 GB).
-  Both run inside the ComfyUI host now, so what holds the card afterwards is
-  the host: `forge gpu --free`, or `systemctl --user stop forge-comfy`.
-  Never two generates at once.
+- **The GPU is free.** Run `just gpu` before generation. Voice design measured
+  5.3 GB on 2026-08-30; its 13 GB descriptor remains a conservative budget.
+  The isolated speaker has a 14 GB budget, not a measured peak, and releases
+  its models on process exit. Comfy voice design leaves models resident:
+  use `forge gpu --free`; the managed release path restarts `forge-comfy`
+  when the MOSS pack cannot unload them. Never run two generators at once
+  or generate while a studio model holds the real adapter.
 - A name: `[a-z0-9_]+`, the character's, because it becomes a directory and
   the `--voice` argument of every line.
 

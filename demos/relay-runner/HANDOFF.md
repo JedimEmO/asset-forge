@@ -1,10 +1,48 @@
-# Relay Run gameplay handoff — 2026-09-06
+# Relay Run handoff — 2026-09-06
 
-The user accepted v14: “its wonderful.” This is the visual and game-feel
-checkpoint before the next gameplay additions. No specific addition has been
-selected yet. Start from this source; preserve the accepted assets and evidence.
+Relay Run is the current Asset Forge showcase. The user accepted native v16 and
+then requested browser publication. Build either target from this checkout using
+the committed `web/assets`; start with [README.md](README.md) and
+[web/README.md](web/README.md). The older Scrapline demo is preserved at Git tag
+`archive/scrapline-20260906`.
 
-## Accepted build and evidence
+## Browser publication and main integration
+
+The user accepted v16 and authorized committing, pushing and merging the full
+refactor to main, then requested a playable GitHub Pages build (correcting an
+earlier GitLab reference). The browser port retains the simulation and generated
+assets, uses WebGPU for Hanabi, embeds exact runtime metadata, and uses gesture
+handlers for mouse lock/audio and localStorage for best score. `web/package.py`
+checks the committed runtime subset before staging a site. v16 remains untouched.
+
+The full toolkit CI passed: 583 Rust tests, two ignored, 297 Python tests. Seven
+crates passed publish-check. All 40 native demo tests pass, as do native Clippy
+and wasm target checking; the release wasm builds. Browser rendering, mouse
+lock, firing, plasma, pause/resume and audio-context activation passed in
+Chromium on the NVIDIA adapter, including the exact GitHub Actions artifact.
+Public hosting is still pending the user's destination choice. GitHub refused
+Pages for this private repository's account plan (422); repository visibility
+has not been changed.
+This integration does not close toolkit release stages 2–6.
+
+Browser audio validation confirms a running context after a user gesture;
+it does not replace the earlier listening approval. Browser WebGPU limits disable
+SSAO on the tested configuration. Keep native v16 and earlier packages immutable.
+
+The remaining publication step is a user-approved public destination. Do not
+mark the game hosted or add a live README link until deployment succeeds.
+Keep the verified build artifact and its receipts available for that step.
+
+## Historical handoffs and local evidence
+
+The sections below record earlier checkpoints. Candidate labels and next-step
+suggestions describe those dates, not the current plan. Absolute paths identify
+preserved local evidence; they are not prerequisites for a fresh checkout.
+
+At the v14 checkpoint, the user accepted the visual and game-feel pass:
+“its wonderful.” The next gameplay additions had not yet been selected.
+
+### v14 build and evidence
 
 - Playable package: `/home/mmy/forge-demos/relay-runner-v14/PLAY.sh`.
 - Visual captures, reports, checks and desktop log:
@@ -20,7 +58,7 @@ a new version directory. Evidence under `out/` and external asset projects is
 local and intentionally not committed; this Git checkpoint alone is not a backup
 of those files.
 
-## What to preserve
+### Accepted behavior at v14
 
 Free lateral movement and mouse aiming, rifle/reload feedback, generated reload
 animation and sound, energy-funded plasma AOE, multikill and Free Fire calls,
@@ -40,10 +78,8 @@ fingers and a detached magazine are not animated.
 - `src/audio.rs`, `src/voice_fx.rs`: playback, announcer queue and streaming DSP.
 - `src/ui.rs`: menus and HUD.
 
-Choose the next gameplay slice with the user. Useful candidates are a distinct
-enemy attack pattern, an encounter objective or a run upgrade choice. These are
-backlog suggestions, not agreed scope. Implement one coherent slice and compare
-it against v14 before expanding further.
+The v14 backlog suggested enemy patterns, encounter objectives or run upgrades.
+The user subsequently selected the v15 and v16 passes recorded below.
 
 ## Asset inputs and provenance
 
@@ -64,27 +100,12 @@ never patch a shipped GLB or sidecar. Do not run generators while the game or
 another GPU backend holds the card. Stage 1 is complete; the remaining release
 stages in `designs/release-handoff.md` are a separate workstream.
 
-## Build, package and verify
+## Historical native packaging
 
-From the toolkit root:
-
-```sh
-export CARGO_TARGET_DIR="$PWD/target"
-cargo test --locked --offline --manifest-path demos/relay-runner/Cargo.toml
-cargo clippy --locked --offline --manifest-path demos/relay-runner/Cargo.toml --all-targets -- -D warnings
-cargo fmt --manifest-path demos/relay-runner/Cargo.toml -- --check
-cargo build --locked --offline --manifest-path demos/relay-runner/Cargo.toml
-python3 demos/relay-runner/package.py \
-  --delivery /home/mmy/forge-stage1-20260906/consumer-final \
-  --binary target/debug/relay-runner \
-  --showcase /home/mmy/forge-demos/relay-assets-v01 \
-  --pixal-trial /home/mmy/forge-demos/pixal3d-trial-20260906 \
-  --output /home/mmy/forge-demos/relay-runner-v15
-```
-
-Use v15 only if it does not exist; the packager refuses an existing destination.
-Run `just ci` for toolkit changes. Asset changes also require the showcase's
-verify, audit and manifest-check gates through the toolkit justfile.
+The original native packager used the external asset projects listed above.
+Current checkout build and verification commands are in [README.md](README.md)
+and [web/README.md](web/README.md); those commands need no private asset paths.
+Never reuse an existing native package or evidence directory.
 
 Capture bounded combat, focus, blast and menu fixtures and inspect the images.
 For the sustained twenty-drone benchmark use `--scenario crowded --benchmark
@@ -94,7 +115,7 @@ plasma kill/recharge loop. Its overload evidence is retained under v13; it is no
 a representative frame-time benchmark. Use `--autoplay` for normal combat.
 Verify the new package's payload hashes and play it with sound before acceptance.
 
-## v15 ready for playtest — faster combat and inhabited scenery
+## Historical v15 handoff — faster combat and inhabited scenery
 
 The user selected a faster difficulty ramp, additional enemy roles, new scenery
 models and passing ships, and explicitly authorized subagents. The encounter and
@@ -113,7 +134,7 @@ package and original v14 payload hashes were checked. Runtime screenshots,
 announcer checks and performance limits are recorded in `VERIFICATION.md`;
 evidence is under `out/relay-runner-20260906/v15/`. Current demo suite: 36 tests.
 
-## v16 — combat readability
+## Historical v16 handoff — combat readability
 
 The user accepted v15 and requested floating hit/critical text and more visible
 enemies. v15 is now the accepted fallback. v16 adds `combat_feedback.rs`: projected
@@ -125,19 +146,3 @@ expire after 0.85 seconds, pause with the game and clear on restart.
 Candidate: `/home/mmy/forge-demos/relay-runner-v16/PLAY.sh`. The bounded `feedback`
 scenario fires real body and critical shots for visual review. Evidence lives in
 `out/relay-runner-20260906/v16/`. No commit was requested for this pass.
-
-## Browser publication and main integration
-
-The user accepted v16 and authorized committing, pushing and merging the full
-refactor to main, then requested a playable GitHub Pages build (correcting an
-earlier GitLab reference). The browser port retains the simulation and generated
-assets, uses WebGPU for Hanabi, embeds exact runtime metadata, and uses gesture
-handlers for mouse lock/audio and localStorage for best score. `web/package.py`
-checks the committed runtime subset before staging a site. v16 remains untouched.
-
-The full toolkit CI passed: 583 Rust tests, two ignored, 297 Python tests. Seven
-crates passed publish-check. Native demo tests now total 39; native Clippy and
-wasm target checking pass, and the release wasm builds. Browser render validation
-and public hosting are still in progress. GitHub refused Pages for this private
-repository's account plan (422); repository visibility has not been changed.
-This integration does not close toolkit release stages 2–6.
