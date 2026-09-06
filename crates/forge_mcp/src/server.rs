@@ -10,11 +10,15 @@ use std::sync::Arc;
 
 use forge_serve::Queue;
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{ServerCapabilities, ServerInfo};
+use rmcp::model::{AnnotateAble, ServerCapabilities, ServerInfo};
 use rmcp::{ServerHandler, tool_handler};
 
 use crate::config::Config;
 use crate::tools;
+
+type ActivatedProject = (Config, Arc<dyn Queue>);
+
+const GUIDE_URI: &str = "forge://guides/v1/workflow";
 
 /// The MCP server: the configuration, the queue, and every tool.
 #[derive(Clone)]
@@ -28,6 +32,8 @@ pub(crate) struct ForgeServer {
     pub(crate) queue: Arc<dyn Queue>,
     /// Every tool, summed from the per-file routers.
     tool_router: ToolRouter<Self>,
+    /// A project created after startup activates once, including its queue.
+    activation: Arc<tokio::sync::Mutex<Option<ActivatedProject>>>,
 }
 
 impl ForgeServer {
@@ -37,6 +43,7 @@ impl ForgeServer {
             config,
             queue,
             tool_router: tools::router(),
+            activation: Arc::default(),
         }
     }
 
@@ -70,8 +77,8 @@ impl ForgeServer {
                  \n\
                  - init_project {{\"path\": \"{root}\", \"make\": {{…}}, \"tier\": \"full|lean|fake\"}} \
                  writes forge.toml and the asset directories. It is the first call, and after \
-                 it this server must be reconnected with --project <path> (or FORGE_PROJECT) \
-                 to work in what it made.\n\
+                 it this session continues immediately when the path is {root}. A different path \
+                 needs its own server with --project <path>.\n\
                  - licences {{}} returns every licence a kind carries, in full. The ids are \
                  the toolkit's, not a project's, so they answer before there is one.\n\
                  - doctor {{}} says what this machine can run at all.\n\
@@ -144,6 +151,9 @@ impl ForgeServer {
              here replaces the eye: render_model and render_clip_strip exist beside these \
              doors, not instead of them.\n\
              \n\
+             VALIDATING — verify checks integrity and provenance; audit checks full clip \
+             reproduction and body conformance; manifest_check detects stale projections. \
+             All three are read-only and return structured passed/exit_code/report fields.\n\
              When unsure what this machine can run, call doctor first. Refusals come back as \
              error results that name what would have worked; read them and correct the call \
              rather than retrying it.",
@@ -175,7 +185,51 @@ impl ServerHandler for ForgeServer {
         request: rmcp::model::CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-        if !self.config.project_found && !WITHOUT_A_PROJECT.contains(&request.name.as_ref()) {
+        // Serialize bootstrap calls so generation cannot see a half-written init.
+        // The bound root never changes, and activation creates only one queue.
+        let mut active = self.clone();
+        let mut activation = if self.config.project_found {
+            None
+        } else {
+            Some(self.activation.lock().await)
+        };
+        if let Some(state) = activation.as_mut() {
+            if state.is_none() && self.config.project.root.join("forge.toml").is_file() {
+                let project = match forge_library::Project::load(&self.config.project.root) {
+                    Ok(project) => project,
+                    Err(err) => {
+                        return Ok(crate::util::refuse(format!(
+                            "cannot activate this project: {err}"
+                        )));
+                    }
+                };
+                let queue = match forge_serve::discovery::queue_with(
+                    &project,
+                    forge_serve::LocalQueueOptions::for_project(
+                        &project,
+                        self.config.renderer.clone(),
+                    ),
+                ) {
+                    Ok(queue) => queue,
+                    Err(err) => {
+                        return Ok(crate::util::refuse(format!(
+                            "cannot activate this project's queue: {err}"
+                        )));
+                    }
+                };
+                let config = Config::with_renderer(project, self.config.renderer.clone());
+                **state = Some((config, queue));
+            }
+            if let Some((config, queue)) = state.as_ref() {
+                active.config = config.clone();
+                active.queue = queue.clone();
+            }
+        }
+        if active.config.project_found {
+            drop(activation);
+            activation = None;
+        }
+        if !active.config.project_found && !WITHOUT_A_PROJECT.contains(&request.name.as_ref()) {
             return Ok(crate::util::refuse(format!(
                 "{} needs a project and there is no forge.toml at {}.\ncall init_project \
                  {{\"path\": \"{}\", \"make\": {{\"props\": true}}, \"tier\": \"full\"}} to make one \
@@ -186,19 +240,60 @@ impl ServerHandler for ForgeServer {
                 self.config.project.root.display(),
             )));
         }
-        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        self.tool_router.call(tcc).await
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(&active, request, context);
+        let result = active.tool_router.call(tcc).await;
+        drop(activation);
+        result
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListResourcesResult, rmcp::ErrorData> {
+        let resources = vec![
+            rmcp::model::RawResource::new(GUIDE_URI, "Asset Forge workflow v1")
+                .with_description(
+                    "Local project setup, asset workflows, review, recovery and validation",
+                )
+                .with_mime_type("text/markdown")
+                .no_annotation(),
+        ];
+        Ok(rmcp::model::ListResourcesResult::with_all_items(resources))
+    }
+
+    async fn read_resource(
+        &self,
+        request: rmcp::model::ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
+        if request.uri != GUIDE_URI {
+            return Err(rmcp::ErrorData::resource_not_found(
+                format!("unknown resource; available: {GUIDE_URI}"),
+                None,
+            ));
+        }
+        Ok(rmcp::model::ReadResourceResult::new(vec![
+            rmcp::model::ResourceContents::text(crate::workflow_guide(), GUIDE_URI)
+                .with_mime_type("text/markdown"),
+        ]))
     }
 
     fn get_info(&self) -> ServerInfo {
         // ServerInfo is #[non_exhaustive], so build from the default rather
         // than a struct literal.
         let mut info = ServerInfo::default();
-        info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        info.capabilities = ServerCapabilities::builder()
+            .enable_tools()
+            .enable_resources()
+            .build();
         // Without this the handshake reports the SDK's crate name, not ours.
         env!("CARGO_PKG_NAME").clone_into(&mut info.server_info.name);
         env!("CARGO_PKG_VERSION").clone_into(&mut info.server_info.version);
-        info.instructions = Some(self.instructions());
+        info.instructions = Some(format!(
+            "{}\nRead the workflow guide through resources/read at {GUIDE_URI} (also discoverable with resources/list).",
+            self.instructions()
+        ));
         info
     }
 }

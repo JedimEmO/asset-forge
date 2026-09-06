@@ -5,6 +5,12 @@ description: Get a machine ready to make things — answer the three questions `
 
 # Setup: `forge init` → `forge setup` → `just doctor`
 
+**Speech update, 2026-09-05:** choosing voice now installs both the ComfyUI
+voice designer (`moss_tts`) and the isolated speaker (`moss_speech`). The speaker
+pins Transformers 5.0.0 and torch 2.9.1+cu128; its installer can adopt existing
+weights with `--adopt-checkpoints`. Historical host speech measurements below
+do not describe the new speaker. Do not repair speech by changing ComfyUI.
+
 Three doors, in that order, and each one is where its step actually
 happens:
 

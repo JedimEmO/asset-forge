@@ -75,7 +75,13 @@ pub fn find(project: &Project) -> Option<RemoteQueue> {
 ///
 /// [`ServeError::Io`] when the state directory cannot be made.
 pub fn queue_for(project: &Project) -> Result<Arc<dyn Queue>, ServeError> {
-    queue_with(project, LocalQueueOptions::default())
+    queue_with(
+        project,
+        LocalQueueOptions::for_project(
+            project,
+            std::env::current_exe().map_err(|e| ServeError::io(&project.root, &e))?,
+        ),
+    )
 }
 
 /// As [`queue_for`], with the local queue's options stated — what the CLI

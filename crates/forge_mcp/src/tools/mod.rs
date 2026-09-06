@@ -16,6 +16,7 @@ use crate::server::ForgeServer;
 
 pub(crate) mod audio;
 mod bundle;
+mod checks;
 mod doctor;
 mod generate;
 mod jobs;
@@ -39,4 +40,5 @@ pub(crate) fn router() -> ToolRouter<ForgeServer> {
         + reference::router()
         + bundle::router()
         + setup::router()
+        + checks::router()
 }

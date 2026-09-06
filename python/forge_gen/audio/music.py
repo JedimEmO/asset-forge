@@ -33,6 +33,9 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import array
+import math
+import shutil
 import os
 import sys
 import tempfile
@@ -42,7 +45,7 @@ from pathlib import Path
 from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
 from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_ogg, transcode_wav
-from forge_gen.exit_codes import InputRejected, UsageError
+from forge_gen.exit_codes import BackendFailed, InputRejected, UsageError
 
 #: The backend directory this command runs through.
 BACKEND = "acestep"
@@ -146,6 +149,8 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--prompt", metavar="TEXT", help="music description (genre, mood, instrumentation)")
     parser.add_argument("--lyrics-file", metavar="FILE", help="lyrics from a file; omit for instrumental")
     parser.add_argument("--duration", type=float, default=30.0, metavar="S", help="seconds, 10-600 (default 30)")
+    for knob in ("start", "duration", "crossfade"):
+        parser.add_argument(f"--loop-{knob}", type=float, default=None, metavar="S", help="explicit loop selection; all three loop knobs required")
     parser.add_argument("--seed", type=int, default=None, metavar="N", help="a fixed seed; omit for random")
     parser.add_argument("--bpm", type=int, default=None, metavar="N", help=f"tempo (default {DEFAULT_BPM}, the node's own)")
     parser.add_argument("--keyscale", default=None, metavar="KEY", help='e.g. "C major", "E minor" (default "C major")')
@@ -208,6 +213,8 @@ def check_gain_db(value) -> int:
         number = float(text)
     except ValueError:
         raise InputRejected(f"--gain-db {text!r} is not a number of decibels") from None
+    if not math.isfinite(number):
+        raise InputRejected("--gain-db must be finite")
     if number != int(number):
         raise InputRejected(
             f"--gain-db {text} is not a whole number of decibels. The graph's AudioAdjustVolume "
@@ -219,6 +226,58 @@ def check_gain_db(value) -> int:
     if not GAIN_DB_MIN <= number <= GAIN_DB_MAX:
         raise InputRejected(f"--gain-db {number} is outside the node's {GAIN_DB_MIN}..{GAIN_DB_MAX}")
     return number
+
+
+def check_loop(start, duration, crossfade, source_duration):
+    """Validate the complete selection before submission; actual frames are checked later."""
+    values = (start, duration, crossfade)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise InputRejected("--loop-start, --loop-duration and --loop-crossfade are required together")
+    if not all(math.isfinite(value) for value in values):
+        raise InputRejected("loop seconds must be finite")
+    if start < 0 or duration <= 0 or crossfade <= 0 or crossfade >= duration:
+        raise InputRejected("loop requires start >= 0 and 0 < crossfade < duration")
+    if start + duration + crossfade > source_duration:
+        raise InputRejected("loop start + duration + crossfade exceeds generated --duration")
+    return {"start_s": start, "duration_s": duration, "crossfade_s": crossfade,
+            "algorithm": "linear_wrap_pcm16_v1"}
+
+
+def derive_loop(source: Path, out: Path, recipe: dict) -> None:
+    """Keep N frames; blend its first C frames from source[S+N+i] to source[S+i].
+
+    Times round to nearest frame (ties to even). Weight i/C preserves the
+    original adjacent samples at the wrap, and reaches the untouched body at C.
+    PCM16 rounding is ties to even. This is a waveform operation, not a musical gate.
+    """
+    if source.resolve() == out.resolve():
+        raise InputRejected("loop source and output must differ")
+    with wave.open(str(source), "rb") as handle:
+        rate, channels = handle.getframerate(), handle.getnchannels()
+        if handle.getsampwidth() != 2 or handle.getcomptype() != "NONE":
+            raise BackendFailed("loop derivation requires PCM16 WAV")
+        start, length, overlap = (round(recipe[key] * rate) for key in ("start_s", "duration_s", "crossfade_s"))
+        if start < 0 or not 0 < overlap < length or start + length + overlap > handle.getnframes():
+            raise BackendFailed("actual source frames cannot supply the selected loop and crossfade")
+        handle.setpos(start)
+        raw = handle.readframes(length + overlap)
+    if len(raw) != (length + overlap) * channels * 2:
+        raise BackendFailed("loop source PCM is truncated")
+    samples = array.array("h", raw)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    result = samples[:length * channels]
+    for frame in range(overlap):
+        for channel in range(channels):
+            index = frame * channels + channel
+            result[index] = round((samples[length * channels + index] * (overlap - frame) + samples[index] * frame) / overlap)
+    if sys.byteorder != "little":
+        result.byteswap()
+    with wave.open(str(out), "wb") as handle:
+        handle.setparams((channels, 2, rate, length, "NONE", "not compressed"))
+        handle.writeframes(result.tobytes())
 
 
 def check_inputs(args) -> dict:
@@ -251,7 +310,9 @@ def check_inputs(args) -> dict:
     if timesignature is not None and timesignature not in TIMESIGNATURES:
         raise InputRejected(f"--timesignature {timesignature!r} is not one of {', '.join(TIMESIGNATURES)}")
     fmt = resolve_format(args.out, args.format)
+    loop = check_loop(*(getattr(args, "loop_" + key, None) for key in ("start", "duration", "crossfade")), duration)
     return {
+        "loop": loop,
         "gain_db": check_gain_db(getattr(args, "gain_db", None)),
         "prompt": prompt,
         "lyrics": read_lyrics(args.lyrics_file),
@@ -362,9 +423,22 @@ def build_record(
         # What was asked for; what came out is under measured.
         "duration_s": float(request["duration_s"]),
     }
+    if request.get("loop"):
+        rec["params"]["loop"] = {**request["loop"], "applied": not fake}
     rec["measured"] = dict(measured or {})
     rec["fake"] = bool(fake)
     return rec
+
+
+def check_encoded_track(ffmpeg: Path, out: Path, decoded: Path, expected_s: float, *, exact_frames: int | None = None) -> dict:
+    """Validate the final container and report its decoded duration and format."""
+    transcode_wav(ffmpeg, out, decoded)
+    check_pcm(decoded, expected_s=expected_s, what=f"the encoded track {out.name}")
+    if exact_frames is not None:
+        with wave.open(str(decoded), "rb") as handle:
+            if handle.getnframes() != exact_frames:
+                raise BackendFailed("encoded loop does not preserve the selected PCM period; generate a new trial with --format wav and a .wav output for an exact-period loop")
+    return measure_wav(decoded)
 
 
 def measure_wav(path: str | os.PathLike) -> dict:
@@ -431,6 +505,8 @@ def finish(rec: dict, request: dict, out: Path, record_path: Path) -> dict:
     """Hash the file inputs and the output into the record, write it, and shape the result."""
     if request.get("lyrics_file"):
         records.add_input(rec, "lyrics", request["lyrics_file"])
+    if request.get("loop_source"):
+        records.add_input(rec, "loop_source", request["loop_source"])
     records.add_output(rec, out)
     records.write(rec, record_path)
     return {
@@ -474,6 +550,8 @@ def run(args) -> dict:
     # Every failure that can happen before the card is leased happens here:
     # a missing ffmpeg (6), a template that cannot be built (3), a knob the
     # graph does not carry (3).
+    if request.get("loop") and any(request["out"].parent.glob(request["out"].stem + ".source.*")):
+        raise InputRejected("loop source already exists; choose a new output name")
     ffmpeg = ffmpeg_bin()
     host = comfy.host_backend(backend)
     base = comfy.base_url(backend, records.project())
@@ -494,15 +572,36 @@ def run(args) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="forge-music-") as scratch:
         saved = comfy.fetch(base, entry, Path(scratch))
-        wav = out if request["format"] == "wav" else Path(scratch) / "track.wav"
+        if request.get("loop"):
+            source = out.with_name(out.stem + ".source" + saved[0].suffix)
+            if source.exists():
+                raise InputRejected(f"loop source already exists: {source}; choose a new output name")
+            shutil.copyfile(saved[0], source)
+            request["loop_source"] = source
+        wav = Path(scratch) / "track.wav" if request.get("loop") else (out if request["format"] == "wav" else Path(scratch) / "track.wav")
         transcode_wav(ffmpeg, saved[0], wav)
         # On the PCM, before the ogg and before the record: nine renders off
         # this host came back pinned at 0.0 dBFS with runs of 10 to 186
         # full-scale samples and every one of them printed OK (2026-08-30).
         check_pcm(wav, expected_s=request["duration_s"], what="the track")
-        measured = measure_wav(wav)
+        exact_frames = None
+        expected = request["duration_s"]
+        if request.get("loop"):
+            selected = out if request["format"] == "wav" else Path(scratch) / "loop.wav"
+            derive_loop(wav, selected, request["loop"])
+            wav = selected
+            expected = request["loop"]["duration_s"]
+            check_pcm(wav, expected_s=expected, what="the selected loop")
+            with wave.open(str(wav), "rb") as handle:
+                exact_frames = handle.getnframes()
         if request["format"] == "ogg":
             transcode_ogg(ffmpeg, wav, out)
+            # Vorbis reconstruction can overshoot even when its input passed.
+            # Validate and measure the bytes the consumer will decode before
+            # publishing a success record; preserve rejected output for review.
+            measured = check_encoded_track(ffmpeg, out, Path(scratch) / "decoded.wav", expected, exact_frames=exact_frames)
+        else:
+            measured = measure_wav(out)
 
     result = {
         "prompt": request["prompt"],

@@ -290,7 +290,6 @@ def test_every_audio_verb_states_exactly_the_knobs_its_template_marks(tmp_path, 
     cases = [
         ("acestep", music, lambda spec: music.template_inputs(spec, seed=1, prefix="p")),
         ("moss_sfx", sfx, lambda spec: sfx.template_inputs(spec, spec["jobs"][0], prefix="p")),
-        ("moss_tts", speech, lambda spec: speech.template_inputs(spec, spec["jobs"][0], reference_name="r.wav", prefix="p")),
         ("moss_tts", voice, lambda spec: voice.template_inputs(spec, prefix="p")),
     ]
     specs = {

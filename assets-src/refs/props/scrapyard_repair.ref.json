@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-09-04",
+  "created_by": "unknown",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "designs/scrapyard/batch-02/repair-reference.png",
+      "sha256": "sha256:0d1a873909a26fb831c0216ea359ef1128e64e92f160e0a657382b37d1287824",
+      "source": "OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "prop",
+    "long_side_px": 1254,
+    "stated_source": "OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/props/scrapyard_repair.png",
+      "sha256": "sha256:0d1a873909a26fb831c0216ea359ef1128e64e92f160e0a657382b37d1287824",
+      "bytes": 1573963
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.5441,
+    "arm_line_fraction": null,
+    "backdrop_rgb": [
+      223,
+      223,
+      222
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 254,
+    "heads": null,
+    "height": 1254,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 2,
+    "keyer_tolerance": 28,
+    "span_over_height": 0.993,
+    "subject_fill": 0.855,
+    "width": 1254
+  },
+  "fake": false,
+  "note": null
+}

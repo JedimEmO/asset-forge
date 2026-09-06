@@ -91,10 +91,19 @@ pub const JOB_ID_ENV: &str = "FORGE_JOB_ID";
 /// How long a row and its log are kept before both are pruned, together.
 pub const LOG_KEEP_DAYS: u64 = 14;
 
-/// `<project>/out/serve` — where every file this crate writes lives.
+/// `<project>/out/serve` — project-local job rows, logs and daemon discovery.
 #[must_use]
 pub fn state_dir(project_root: &Path) -> PathBuf {
     project_root.join("out").join("serve")
+}
+
+/// Shared GPU ownership for all game projects run by this local user.
+/// Job rows stay project-local; the single supported GPU's lock does not.
+#[must_use]
+pub fn shared_card_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map_or_else(std::env::temp_dir, PathBuf::from)
+        .join(".cache/asset-forge/gpu")
 }
 
 /// Why a queue call could not be answered.

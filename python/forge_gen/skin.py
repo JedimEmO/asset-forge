@@ -866,6 +866,22 @@ def _places(args, prof: profile_mod.Profile) -> dict:
     }
 
 
+def _prepare_options(prepared: Path) -> dict:
+    """Replay the mesh transform on pass two, instead of fitting one mesh and skinning another.
+
+    Older records have no depth offset because that adjustment did not exist.
+    A source explicitly supplied without a record retains the legacy defaults.
+    """
+    path = prepared.with_suffix(".prepare.json")
+    params = json.loads(path.read_text(encoding="utf-8")).get("params", {}) if path.is_file() else {}
+    return {
+        "stature": params.get("stature_m"),
+        "yaw_deg": params.get("yaw_deg", 0.0),
+        "depth_offset": params.get("depth_offset_m", 0.0),
+        "budget": params.get("tri_budget"),
+    }
+
+
 def _lift_of(args, prepared: Path) -> Path:
     """The mesh the prepared glb was made from: ``--source``, else its own record.
 
@@ -1046,9 +1062,7 @@ def run(args) -> dict:
                 record=os.fspath(places["prepare2_record"]),
                 profile=os.fspath(prof.dir),
                 skeleton=os.fspath(skeleton_glb),
-                stature=None,
-                yaw_deg=0.0,
-                budget=None,
+                **_prepare_options(places["prepared"]),
                 **vars(inner),
             )
         )

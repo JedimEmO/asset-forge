@@ -1,0 +1,2027 @@
+{
+  "schema": "scrapyard-grounding-1",
+  "method": "Linear blend skinning, foot-dominated vertices, baked keys plus 60 Hz samples",
+  "application": "Interpolate offset at animation time and add to visual root Y. Blend this scalar with the same clip weights. Gameplay/controller position stays unchanged. Terrain and support-hand IK are separate.",
+  "clips": [
+    {
+      "body": "assets/bodies/scrapyard_scavenger.glb",
+      "clip": "assets/clips/scrapyard_rifle_aim.glb",
+      "animation": "scrapyard_rifle_aim-loop",
+      "max_lift_m": 0.0,
+      "samples": [
+        {
+          "t": 0.0,
+          "minimum_foot_y_m": 0.009663,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.016667,
+          "minimum_foot_y_m": 0.009662,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.033333,
+          "minimum_foot_y_m": 0.009661,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.05,
+          "minimum_foot_y_m": 0.009661,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.066667,
+          "minimum_foot_y_m": 0.009625,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.083333,
+          "minimum_foot_y_m": 0.00959,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.1,
+          "minimum_foot_y_m": 0.009555,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.116667,
+          "minimum_foot_y_m": 0.009519,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.133333,
+          "minimum_foot_y_m": 0.009484,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.15,
+          "minimum_foot_y_m": 0.00945,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.166667,
+          "minimum_foot_y_m": 0.009512,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.183333,
+          "minimum_foot_y_m": 0.009574,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.2,
+          "minimum_foot_y_m": 0.009637,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.216667,
+          "minimum_foot_y_m": 0.009665,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.233333,
+          "minimum_foot_y_m": 0.009693,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.25,
+          "minimum_foot_y_m": 0.009721,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.266667,
+          "minimum_foot_y_m": 0.009731,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.283333,
+          "minimum_foot_y_m": 0.00974,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.3,
+          "minimum_foot_y_m": 0.00975,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.316667,
+          "minimum_foot_y_m": 0.009759,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.333333,
+          "minimum_foot_y_m": 0.009769,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.35,
+          "minimum_foot_y_m": 0.009779,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.366667,
+          "minimum_foot_y_m": 0.0098,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.383333,
+          "minimum_foot_y_m": 0.009821,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.4,
+          "minimum_foot_y_m": 0.009843,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.416667,
+          "minimum_foot_y_m": 0.009871,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.433333,
+          "minimum_foot_y_m": 0.0099,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.45,
+          "minimum_foot_y_m": 0.009929,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.466667,
+          "minimum_foot_y_m": 0.009944,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.483333,
+          "minimum_foot_y_m": 0.009958,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.5,
+          "minimum_foot_y_m": 0.009974,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.516667,
+          "minimum_foot_y_m": 0.009991,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.533333,
+          "minimum_foot_y_m": 0.010009,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.55,
+          "minimum_foot_y_m": 0.010027,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.566667,
+          "minimum_foot_y_m": 0.010037,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.583333,
+          "minimum_foot_y_m": 0.010046,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.6,
+          "minimum_foot_y_m": 0.010056,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.616667,
+          "minimum_foot_y_m": 0.010067,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.633333,
+          "minimum_foot_y_m": 0.010079,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.65,
+          "minimum_foot_y_m": 0.010091,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.666667,
+          "minimum_foot_y_m": 0.010096,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.683333,
+          "minimum_foot_y_m": 0.010101,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.7,
+          "minimum_foot_y_m": 0.010107,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.716667,
+          "minimum_foot_y_m": 0.010129,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.733333,
+          "minimum_foot_y_m": 0.010151,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.75,
+          "minimum_foot_y_m": 0.010173,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.766667,
+          "minimum_foot_y_m": 0.010162,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.783333,
+          "minimum_foot_y_m": 0.010152,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.8,
+          "minimum_foot_y_m": 0.010142,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.816667,
+          "minimum_foot_y_m": 0.010108,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.833333,
+          "minimum_foot_y_m": 0.010074,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.85,
+          "minimum_foot_y_m": 0.01004,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.866667,
+          "minimum_foot_y_m": 0.010007,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.883333,
+          "minimum_foot_y_m": 0.009974,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.9,
+          "minimum_foot_y_m": 0.009942,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.916667,
+          "minimum_foot_y_m": 0.009924,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.933333,
+          "minimum_foot_y_m": 0.009907,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.95,
+          "minimum_foot_y_m": 0.00989,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.966667,
+          "minimum_foot_y_m": 0.009932,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.983333,
+          "minimum_foot_y_m": 0.009975,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.0,
+          "minimum_foot_y_m": 0.010018,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.016667,
+          "minimum_foot_y_m": 0.010022,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.033333,
+          "minimum_foot_y_m": 0.010026,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.05,
+          "minimum_foot_y_m": 0.01003,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.066667,
+          "minimum_foot_y_m": 0.010055,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.083333,
+          "minimum_foot_y_m": 0.01008,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.1,
+          "minimum_foot_y_m": 0.010105,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.116667,
+          "minimum_foot_y_m": 0.010152,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.133333,
+          "minimum_foot_y_m": 0.010199,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.15,
+          "minimum_foot_y_m": 0.010246,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.166667,
+          "minimum_foot_y_m": 0.010304,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.183333,
+          "minimum_foot_y_m": 0.010361,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.2,
+          "minimum_foot_y_m": 0.010419,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.216667,
+          "minimum_foot_y_m": 0.01041,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.233333,
+          "minimum_foot_y_m": 0.010402,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.25,
+          "minimum_foot_y_m": 0.010393,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.266667,
+          "minimum_foot_y_m": 0.010376,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.283333,
+          "minimum_foot_y_m": 0.010359,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.3,
+          "minimum_foot_y_m": 0.010342,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.316667,
+          "minimum_foot_y_m": 0.010323,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.333333,
+          "minimum_foot_y_m": 0.010304,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.35,
+          "minimum_foot_y_m": 0.010286,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.366667,
+          "minimum_foot_y_m": 0.010219,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.383333,
+          "minimum_foot_y_m": 0.010153,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.4,
+          "minimum_foot_y_m": 0.010086,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.416667,
+          "minimum_foot_y_m": 0.010045,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.433333,
+          "minimum_foot_y_m": 0.010003,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.45,
+          "minimum_foot_y_m": 0.009962,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.466667,
+          "minimum_foot_y_m": 0.009953,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.483333,
+          "minimum_foot_y_m": 0.009943,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.5,
+          "minimum_foot_y_m": 0.009934,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.516667,
+          "minimum_foot_y_m": 0.009984,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.533333,
+          "minimum_foot_y_m": 0.010034,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.55,
+          "minimum_foot_y_m": 0.010085,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.566667,
+          "minimum_foot_y_m": 0.01009,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.583333,
+          "minimum_foot_y_m": 0.010096,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.6,
+          "minimum_foot_y_m": 0.010102,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.616667,
+          "minimum_foot_y_m": 0.010073,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.633333,
+          "minimum_foot_y_m": 0.010045,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.65,
+          "minimum_foot_y_m": 0.010017,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.666667,
+          "minimum_foot_y_m": 0.009989,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.683333,
+          "minimum_foot_y_m": 0.009961,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.7,
+          "minimum_foot_y_m": 0.009934,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.716667,
+          "minimum_foot_y_m": 0.009967,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.733333,
+          "minimum_foot_y_m": 0.010001,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.75,
+          "minimum_foot_y_m": 0.010036,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.766667,
+          "minimum_foot_y_m": 0.010048,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.783333,
+          "minimum_foot_y_m": 0.01006,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.8,
+          "minimum_foot_y_m": 0.010072,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.816667,
+          "minimum_foot_y_m": 0.010052,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.833333,
+          "minimum_foot_y_m": 0.010031,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.85,
+          "minimum_foot_y_m": 0.010011,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.866667,
+          "minimum_foot_y_m": 0.009991,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.883333,
+          "minimum_foot_y_m": 0.009971,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.9,
+          "minimum_foot_y_m": 0.009951,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.916667,
+          "minimum_foot_y_m": 0.009978,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.933333,
+          "minimum_foot_y_m": 0.010005,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.95,
+          "minimum_foot_y_m": 0.010032,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.966667,
+          "minimum_foot_y_m": 0.010035,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.983333,
+          "minimum_foot_y_m": 0.010038,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.0,
+          "minimum_foot_y_m": 0.010041,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.016667,
+          "minimum_foot_y_m": 0.009997,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.033333,
+          "minimum_foot_y_m": 0.009954,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.05,
+          "minimum_foot_y_m": 0.00991,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.066667,
+          "minimum_foot_y_m": 0.009872,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.083333,
+          "minimum_foot_y_m": 0.009834,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.1,
+          "minimum_foot_y_m": 0.009795,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.116667,
+          "minimum_foot_y_m": 0.009802,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.133333,
+          "minimum_foot_y_m": 0.009808,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.15,
+          "minimum_foot_y_m": 0.009815,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.166667,
+          "minimum_foot_y_m": 0.009877,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.183333,
+          "minimum_foot_y_m": 0.009939,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.2,
+          "minimum_foot_y_m": 0.010002,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.216667,
+          "minimum_foot_y_m": 0.01001,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.233333,
+          "minimum_foot_y_m": 0.010018,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.25,
+          "minimum_foot_y_m": 0.010027,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.266667,
+          "minimum_foot_y_m": 0.010028,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.283333,
+          "minimum_foot_y_m": 0.01003,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.3,
+          "minimum_foot_y_m": 0.010032,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.316667,
+          "minimum_foot_y_m": 0.010036,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.333333,
+          "minimum_foot_y_m": 0.01004,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.35,
+          "minimum_foot_y_m": 0.010045,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.366667,
+          "minimum_foot_y_m": 0.01,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.383333,
+          "minimum_foot_y_m": 0.009956,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.4,
+          "minimum_foot_y_m": 0.009911,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.416667,
+          "minimum_foot_y_m": 0.009898,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.433333,
+          "minimum_foot_y_m": 0.009886,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.45,
+          "minimum_foot_y_m": 0.009873,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.466667,
+          "minimum_foot_y_m": 0.009879,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.483333,
+          "minimum_foot_y_m": 0.009884,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.5,
+          "minimum_foot_y_m": 0.00989,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.516667,
+          "minimum_foot_y_m": 0.00991,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.533333,
+          "minimum_foot_y_m": 0.009931,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.55,
+          "minimum_foot_y_m": 0.009952,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.566667,
+          "minimum_foot_y_m": 0.010009,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.583333,
+          "minimum_foot_y_m": 0.010066,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.6,
+          "minimum_foot_y_m": 0.010124,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.616667,
+          "minimum_foot_y_m": 0.010136,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.633333,
+          "minimum_foot_y_m": 0.010149,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.65,
+          "minimum_foot_y_m": 0.010163,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.666667,
+          "minimum_foot_y_m": 0.010167,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.683333,
+          "minimum_foot_y_m": 0.010171,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.7,
+          "minimum_foot_y_m": 0.010176,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.716667,
+          "minimum_foot_y_m": 0.010191,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.733333,
+          "minimum_foot_y_m": 0.010205,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.75,
+          "minimum_foot_y_m": 0.01022,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.766667,
+          "minimum_foot_y_m": 0.01023,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.783333,
+          "minimum_foot_y_m": 0.01024,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.8,
+          "minimum_foot_y_m": 0.01025,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.816667,
+          "minimum_foot_y_m": 0.010224,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.833333,
+          "minimum_foot_y_m": 0.010198,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.85,
+          "minimum_foot_y_m": 0.010173,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.866667,
+          "minimum_foot_y_m": 0.01008,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.883333,
+          "minimum_foot_y_m": 0.009989,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.9,
+          "minimum_foot_y_m": 0.0099,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.916667,
+          "minimum_foot_y_m": 0.009858,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.933333,
+          "minimum_foot_y_m": 0.009818,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.95,
+          "minimum_foot_y_m": 0.00978,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.966667,
+          "minimum_foot_y_m": 0.009767,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 2.983333,
+          "minimum_foot_y_m": 0.009756,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 3.0,
+          "minimum_foot_y_m": 0.009747,
+          "vertical_offset_m": 0.0
+        }
+      ],
+      "inputs_sha256": {
+        "assets/bodies/scrapyard_scavenger.glb": "d03c3be308813606f73e30071e1c402bffb307afed36b64929bb9ac427425e34",
+        "assets/clips/scrapyard_rifle_aim.glb": "c9df81c97b1f6ee9b29157daa37bee7d08cec4b1489f19a303210e3dc76f3677"
+      }
+    },
+    {
+      "body": "assets/bodies/scrapyard_scavenger.glb",
+      "clip": "assets/clips/scrapyard_rifle_run.glb",
+      "animation": "scrapyard_rifle_run-loop",
+      "max_lift_m": 0.066775,
+      "samples": [
+        {
+          "t": 0.0,
+          "minimum_foot_y_m": -0.052862,
+          "vertical_offset_m": 0.052862
+        },
+        {
+          "t": 0.016667,
+          "minimum_foot_y_m": -0.057868,
+          "vertical_offset_m": 0.057868
+        },
+        {
+          "t": 0.033333,
+          "minimum_foot_y_m": -0.062582,
+          "vertical_offset_m": 0.062582
+        },
+        {
+          "t": 0.05,
+          "minimum_foot_y_m": -0.066775,
+          "vertical_offset_m": 0.066775
+        },
+        {
+          "t": 0.066667,
+          "minimum_foot_y_m": -0.059352,
+          "vertical_offset_m": 0.059352
+        },
+        {
+          "t": 0.083333,
+          "minimum_foot_y_m": -0.047604,
+          "vertical_offset_m": 0.047604
+        },
+        {
+          "t": 0.1,
+          "minimum_foot_y_m": -0.031737,
+          "vertical_offset_m": 0.031737
+        },
+        {
+          "t": 0.116667,
+          "minimum_foot_y_m": -0.01858,
+          "vertical_offset_m": 0.01858
+        },
+        {
+          "t": 0.133333,
+          "minimum_foot_y_m": -0.001936,
+          "vertical_offset_m": 0.001936
+        },
+        {
+          "t": 0.15,
+          "minimum_foot_y_m": 0.015179,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.166667,
+          "minimum_foot_y_m": 0.012997,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.183333,
+          "minimum_foot_y_m": 0.012413,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.2,
+          "minimum_foot_y_m": 0.014135,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.216667,
+          "minimum_foot_y_m": 0.011692,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.233333,
+          "minimum_foot_y_m": 0.011153,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.25,
+          "minimum_foot_y_m": 0.012478,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.266667,
+          "minimum_foot_y_m": 0.009783,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.283333,
+          "minimum_foot_y_m": 0.008907,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.3,
+          "minimum_foot_y_m": 0.009593,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.316667,
+          "minimum_foot_y_m": 0.008625,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.333333,
+          "minimum_foot_y_m": 0.009704,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.35,
+          "minimum_foot_y_m": 0.013197,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.366667,
+          "minimum_foot_y_m": 0.007037,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.383333,
+          "minimum_foot_y_m": -0.01828,
+          "vertical_offset_m": 0.01828
+        },
+        {
+          "t": 0.4,
+          "minimum_foot_y_m": -0.040954,
+          "vertical_offset_m": 0.040954
+        },
+        {
+          "t": 0.416667,
+          "minimum_foot_y_m": -0.049662,
+          "vertical_offset_m": 0.049662
+        },
+        {
+          "t": 0.433333,
+          "minimum_foot_y_m": -0.056517,
+          "vertical_offset_m": 0.056517
+        },
+        {
+          "t": 0.45,
+          "minimum_foot_y_m": -0.060702,
+          "vertical_offset_m": 0.060702
+        },
+        {
+          "t": 0.466667,
+          "minimum_foot_y_m": -0.052602,
+          "vertical_offset_m": 0.052602
+        },
+        {
+          "t": 0.483333,
+          "minimum_foot_y_m": -0.042477,
+          "vertical_offset_m": 0.042477
+        },
+        {
+          "t": 0.5,
+          "minimum_foot_y_m": -0.03043,
+          "vertical_offset_m": 0.03043
+        },
+        {
+          "t": 0.516667,
+          "minimum_foot_y_m": -0.018881,
+          "vertical_offset_m": 0.018881
+        },
+        {
+          "t": 0.533333,
+          "minimum_foot_y_m": -0.00426,
+          "vertical_offset_m": 0.00426
+        },
+        {
+          "t": 0.55,
+          "minimum_foot_y_m": 0.005079,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.566667,
+          "minimum_foot_y_m": 0.003488,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.583333,
+          "minimum_foot_y_m": 0.003843,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.6,
+          "minimum_foot_y_m": 0.006606,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.616667,
+          "minimum_foot_y_m": 0.004537,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.633333,
+          "minimum_foot_y_m": 0.004411,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.65,
+          "minimum_foot_y_m": 0.006142,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.666667,
+          "minimum_foot_y_m": 0.002526,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.683333,
+          "minimum_foot_y_m": 0.000981,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.7,
+          "minimum_foot_y_m": 0.001701,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.716667,
+          "minimum_foot_y_m": -0.002575,
+          "vertical_offset_m": 0.002575
+        },
+        {
+          "t": 0.733333,
+          "minimum_foot_y_m": -0.001454,
+          "vertical_offset_m": 0.001454
+        },
+        {
+          "t": 0.75,
+          "minimum_foot_y_m": -0.009528,
+          "vertical_offset_m": 0.009528
+        },
+        {
+          "t": 0.766667,
+          "minimum_foot_y_m": -0.029247,
+          "vertical_offset_m": 0.029247
+        },
+        {
+          "t": 0.783333,
+          "minimum_foot_y_m": -0.043724,
+          "vertical_offset_m": 0.043724
+        },
+        {
+          "t": 0.8,
+          "minimum_foot_y_m": -0.052845,
+          "vertical_offset_m": 0.052845
+        }
+      ],
+      "inputs_sha256": {
+        "assets/bodies/scrapyard_scavenger.glb": "d03c3be308813606f73e30071e1c402bffb307afed36b64929bb9ac427425e34",
+        "assets/clips/scrapyard_rifle_run.glb": "6a558b40f664ac75df272c20a884bd7414dfe9c024b9022d7f017d94e7d7e697"
+      }
+    },
+    {
+      "body": "assets/bodies/scrapyard_scavenger.glb",
+      "clip": "assets/clips/scrapyard_rifle_fire.glb",
+      "animation": "scrapyard_rifle_fire",
+      "max_lift_m": 0.00145,
+      "samples": [
+        {
+          "t": 0.0,
+          "minimum_foot_y_m": 0.003627,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.016667,
+          "minimum_foot_y_m": 0.0035,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.033333,
+          "minimum_foot_y_m": 0.003423,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.05,
+          "minimum_foot_y_m": 0.003397,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.066667,
+          "minimum_foot_y_m": 0.003486,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.083333,
+          "minimum_foot_y_m": 0.0036,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.1,
+          "minimum_foot_y_m": 0.003181,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.116667,
+          "minimum_foot_y_m": 0.000111,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.133333,
+          "minimum_foot_y_m": -0.001108,
+          "vertical_offset_m": 0.001108
+        },
+        {
+          "t": 0.15,
+          "minimum_foot_y_m": -0.000731,
+          "vertical_offset_m": 0.000731
+        },
+        {
+          "t": 0.166667,
+          "minimum_foot_y_m": -0.000903,
+          "vertical_offset_m": 0.000903
+        },
+        {
+          "t": 0.183333,
+          "minimum_foot_y_m": -0.000862,
+          "vertical_offset_m": 0.000862
+        },
+        {
+          "t": 0.2,
+          "minimum_foot_y_m": -0.000609,
+          "vertical_offset_m": 0.000609
+        },
+        {
+          "t": 0.216667,
+          "minimum_foot_y_m": -0.000873,
+          "vertical_offset_m": 0.000873
+        },
+        {
+          "t": 0.233333,
+          "minimum_foot_y_m": -0.001113,
+          "vertical_offset_m": 0.001113
+        },
+        {
+          "t": 0.25,
+          "minimum_foot_y_m": -0.001361,
+          "vertical_offset_m": 0.001361
+        },
+        {
+          "t": 0.266667,
+          "minimum_foot_y_m": -0.00145,
+          "vertical_offset_m": 0.00145
+        },
+        {
+          "t": 0.283333,
+          "minimum_foot_y_m": -0.001448,
+          "vertical_offset_m": 0.001448
+        },
+        {
+          "t": 0.3,
+          "minimum_foot_y_m": -0.001354,
+          "vertical_offset_m": 0.001354
+        },
+        {
+          "t": 0.316667,
+          "minimum_foot_y_m": -0.001294,
+          "vertical_offset_m": 0.001294
+        },
+        {
+          "t": 0.333333,
+          "minimum_foot_y_m": -0.001034,
+          "vertical_offset_m": 0.001034
+        },
+        {
+          "t": 0.35,
+          "minimum_foot_y_m": -0.00057,
+          "vertical_offset_m": 0.00057
+        },
+        {
+          "t": 0.366667,
+          "minimum_foot_y_m": -0.000362,
+          "vertical_offset_m": 0.000362
+        },
+        {
+          "t": 0.383333,
+          "minimum_foot_y_m": 0.000117,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.4,
+          "minimum_foot_y_m": 0.00087,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.416667,
+          "minimum_foot_y_m": 0.000816,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.433333,
+          "minimum_foot_y_m": 0.000999,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.45,
+          "minimum_foot_y_m": 0.001425,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.466667,
+          "minimum_foot_y_m": 0.00167,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.483333,
+          "minimum_foot_y_m": 0.001977,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.5,
+          "minimum_foot_y_m": 0.002346,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.516667,
+          "minimum_foot_y_m": 0.002472,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.533333,
+          "minimum_foot_y_m": 0.002613,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.55,
+          "minimum_foot_y_m": 0.002769,
+          "vertical_offset_m": 0.0
+        }
+      ],
+      "inputs_sha256": {
+        "assets/bodies/scrapyard_scavenger.glb": "d03c3be308813606f73e30071e1c402bffb307afed36b64929bb9ac427425e34",
+        "assets/clips/scrapyard_rifle_fire.glb": "475bc6bd78291003426934ef11b6d357001f0f12db7807f17bf808e39b4b9d07"
+      }
+    },
+    {
+      "body": "assets/bodies/scrapyard_rusher.glb",
+      "clip": "assets/clips/scrapyard_rusher_rush.glb",
+      "animation": "scrapyard_rusher_rush-loop",
+      "max_lift_m": 0.033297,
+      "samples": [
+        {
+          "t": 0.0,
+          "minimum_foot_y_m": 0.057007,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.016667,
+          "minimum_foot_y_m": 0.048954,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.033333,
+          "minimum_foot_y_m": 0.050963,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.05,
+          "minimum_foot_y_m": 0.060274,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.066667,
+          "minimum_foot_y_m": 0.065216,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.083333,
+          "minimum_foot_y_m": 0.066769,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.1,
+          "minimum_foot_y_m": 0.03441,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.116667,
+          "minimum_foot_y_m": 0.009977,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.133333,
+          "minimum_foot_y_m": -0.008373,
+          "vertical_offset_m": 0.008373
+        },
+        {
+          "t": 0.15,
+          "minimum_foot_y_m": -0.021122,
+          "vertical_offset_m": 0.021122
+        },
+        {
+          "t": 0.166667,
+          "minimum_foot_y_m": -0.02038,
+          "vertical_offset_m": 0.02038
+        },
+        {
+          "t": 0.183333,
+          "minimum_foot_y_m": -0.019102,
+          "vertical_offset_m": 0.019102
+        },
+        {
+          "t": 0.2,
+          "minimum_foot_y_m": -0.017299,
+          "vertical_offset_m": 0.017299
+        },
+        {
+          "t": 0.216667,
+          "minimum_foot_y_m": 0.00444,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.233333,
+          "minimum_foot_y_m": 0.032006,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.25,
+          "minimum_foot_y_m": 0.057043,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.266667,
+          "minimum_foot_y_m": 0.056659,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.283333,
+          "minimum_foot_y_m": 0.05948,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.3,
+          "minimum_foot_y_m": 0.065221,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.316667,
+          "minimum_foot_y_m": 0.064984,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.333333,
+          "minimum_foot_y_m": 0.067451,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.35,
+          "minimum_foot_y_m": 0.072042,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.366667,
+          "minimum_foot_y_m": 0.072221,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.383333,
+          "minimum_foot_y_m": 0.074776,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.4,
+          "minimum_foot_y_m": 0.07109,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.416667,
+          "minimum_foot_y_m": 0.029896,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.433333,
+          "minimum_foot_y_m": -0.003188,
+          "vertical_offset_m": 0.003188
+        },
+        {
+          "t": 0.45,
+          "minimum_foot_y_m": -0.026912,
+          "vertical_offset_m": 0.026912
+        },
+        {
+          "t": 0.466667,
+          "minimum_foot_y_m": -0.026913,
+          "vertical_offset_m": 0.026913
+        },
+        {
+          "t": 0.483333,
+          "minimum_foot_y_m": -0.026812,
+          "vertical_offset_m": 0.026812
+        },
+        {
+          "t": 0.5,
+          "minimum_foot_y_m": -0.026609,
+          "vertical_offset_m": 0.026609
+        },
+        {
+          "t": 0.516667,
+          "minimum_foot_y_m": -0.010057,
+          "vertical_offset_m": 0.010057
+        },
+        {
+          "t": 0.533333,
+          "minimum_foot_y_m": 0.011779,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.55,
+          "minimum_foot_y_m": 0.037967,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.566667,
+          "minimum_foot_y_m": 0.045876,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.583333,
+          "minimum_foot_y_m": 0.057237,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.6,
+          "minimum_foot_y_m": 0.064296,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.616667,
+          "minimum_foot_y_m": 0.064947,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.633333,
+          "minimum_foot_y_m": 0.067714,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.65,
+          "minimum_foot_y_m": 0.072568,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.666667,
+          "minimum_foot_y_m": 0.072164,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.683333,
+          "minimum_foot_y_m": 0.073633,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.7,
+          "minimum_foot_y_m": 0.067301,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.716667,
+          "minimum_foot_y_m": 0.028925,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.733333,
+          "minimum_foot_y_m": -0.001722,
+          "vertical_offset_m": 0.001722
+        },
+        {
+          "t": 0.75,
+          "minimum_foot_y_m": -0.022944,
+          "vertical_offset_m": 0.022944
+        },
+        {
+          "t": 0.766667,
+          "minimum_foot_y_m": -0.027187,
+          "vertical_offset_m": 0.027187
+        },
+        {
+          "t": 0.783333,
+          "minimum_foot_y_m": -0.03064,
+          "vertical_offset_m": 0.03064
+        },
+        {
+          "t": 0.8,
+          "minimum_foot_y_m": -0.033297,
+          "vertical_offset_m": 0.033297
+        },
+        {
+          "t": 0.816667,
+          "minimum_foot_y_m": -0.022302,
+          "vertical_offset_m": 0.022302
+        },
+        {
+          "t": 0.833333,
+          "minimum_foot_y_m": -0.007449,
+          "vertical_offset_m": 0.007449
+        },
+        {
+          "t": 0.85,
+          "minimum_foot_y_m": 0.010307,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.866667,
+          "minimum_foot_y_m": 0.02562,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.883333,
+          "minimum_foot_y_m": 0.044174,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.9,
+          "minimum_foot_y_m": 0.058982,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.916667,
+          "minimum_foot_y_m": 0.060116,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.933333,
+          "minimum_foot_y_m": 0.063012,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.95,
+          "minimum_foot_y_m": 0.06829,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.966667,
+          "minimum_foot_y_m": 0.061822,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.983333,
+          "minimum_foot_y_m": 0.064188,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.0,
+          "minimum_foot_y_m": 0.074873,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.016667,
+          "minimum_foot_y_m": 0.075119,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.033333,
+          "minimum_foot_y_m": 0.07508,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.05,
+          "minimum_foot_y_m": 0.039304,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.066667,
+          "minimum_foot_y_m": 0.018174,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.083333,
+          "minimum_foot_y_m": 0.00064,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.1,
+          "minimum_foot_y_m": -0.012673,
+          "vertical_offset_m": 0.012673
+        },
+        {
+          "t": 1.116667,
+          "minimum_foot_y_m": -0.003604,
+          "vertical_offset_m": 0.003604
+        },
+        {
+          "t": 1.133333,
+          "minimum_foot_y_m": 0.006882,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.15,
+          "minimum_foot_y_m": 0.018699,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.166667,
+          "minimum_foot_y_m": 0.025962,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.183333,
+          "minimum_foot_y_m": 0.041684,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.2,
+          "minimum_foot_y_m": 0.05875,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.216667,
+          "minimum_foot_y_m": 0.060874,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.233333,
+          "minimum_foot_y_m": 0.059628,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 1.25,
+          "minimum_foot_y_m": 0.060135,
+          "vertical_offset_m": 0.0
+        }
+      ],
+      "inputs_sha256": {
+        "assets/bodies/scrapyard_rusher.glb": "6a7d63a21aa6469aca59d64cca99c7198fdc9cc53dd4541506cf090b7aeecd7e",
+        "assets/clips/scrapyard_rusher_rush.glb": "a86c28d0af65d396d1ce1298f0508cd38aaccfeca517781bacddcc8e3a52e492"
+      }
+    },
+    {
+      "body": "assets/bodies/scrapyard_rusher.glb",
+      "clip": "assets/clips/scrapyard_rusher_attack.glb",
+      "animation": "scrapyard_rusher_attack",
+      "max_lift_m": 0.0,
+      "samples": [
+        {
+          "t": 0.0,
+          "minimum_foot_y_m": 0.0688,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.016667,
+          "minimum_foot_y_m": 0.068104,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.033333,
+          "minimum_foot_y_m": 0.067826,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.05,
+          "minimum_foot_y_m": 0.067889,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.066667,
+          "minimum_foot_y_m": 0.067343,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.083333,
+          "minimum_foot_y_m": 0.066623,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.1,
+          "minimum_foot_y_m": 0.065694,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.116667,
+          "minimum_foot_y_m": 0.066973,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.133333,
+          "minimum_foot_y_m": 0.066856,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.15,
+          "minimum_foot_y_m": 0.066429,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.166667,
+          "minimum_foot_y_m": 0.054281,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.183333,
+          "minimum_foot_y_m": 0.043277,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.2,
+          "minimum_foot_y_m": 0.033449,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.216667,
+          "minimum_foot_y_m": 0.035434,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.233333,
+          "minimum_foot_y_m": 0.040107,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.25,
+          "minimum_foot_y_m": 0.04744,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.266667,
+          "minimum_foot_y_m": 0.057287,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.283333,
+          "minimum_foot_y_m": 0.066451,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.3,
+          "minimum_foot_y_m": 0.067925,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.316667,
+          "minimum_foot_y_m": 0.055287,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.333333,
+          "minimum_foot_y_m": 0.046506,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.35,
+          "minimum_foot_y_m": 0.045687,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.366667,
+          "minimum_foot_y_m": 0.04038,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.383333,
+          "minimum_foot_y_m": 0.040995,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.4,
+          "minimum_foot_y_m": 0.054835,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.416667,
+          "minimum_foot_y_m": 0.053479,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.433333,
+          "minimum_foot_y_m": 0.050436,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.45,
+          "minimum_foot_y_m": 0.050668,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.466667,
+          "minimum_foot_y_m": 0.048345,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.483333,
+          "minimum_foot_y_m": 0.044984,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.5,
+          "minimum_foot_y_m": 0.041948,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.516667,
+          "minimum_foot_y_m": 0.039747,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.533333,
+          "minimum_foot_y_m": 0.038664,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.55,
+          "minimum_foot_y_m": 0.038624,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.566667,
+          "minimum_foot_y_m": 0.040276,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.583333,
+          "minimum_foot_y_m": 0.045653,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.6,
+          "minimum_foot_y_m": 0.053357,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.616667,
+          "minimum_foot_y_m": 0.054609,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.633333,
+          "minimum_foot_y_m": 0.056482,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.65,
+          "minimum_foot_y_m": 0.060092,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.666667,
+          "minimum_foot_y_m": 0.060105,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.683333,
+          "minimum_foot_y_m": 0.060913,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.7,
+          "minimum_foot_y_m": 0.062552,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.716667,
+          "minimum_foot_y_m": 0.062526,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.733333,
+          "minimum_foot_y_m": 0.062843,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.75,
+          "minimum_foot_y_m": 0.06318,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.766667,
+          "minimum_foot_y_m": 0.062233,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.783333,
+          "minimum_foot_y_m": 0.061424,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.8,
+          "minimum_foot_y_m": 0.060751,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.816667,
+          "minimum_foot_y_m": 0.060877,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.833333,
+          "minimum_foot_y_m": 0.061042,
+          "vertical_offset_m": 0.0
+        },
+        {
+          "t": 0.85,
+          "minimum_foot_y_m": 0.061248,
+          "vertical_offset_m": 0.0
+        }
+      ],
+      "inputs_sha256": {
+        "assets/bodies/scrapyard_rusher.glb": "6a7d63a21aa6469aca59d64cca99c7198fdc9cc53dd4541506cf090b7aeecd7e",
+        "assets/clips/scrapyard_rusher_attack.glb": "a5e8287f281066a3e921c9a366dd541881b68a13ed3c6a01aacbfae513e0a6b3"
+      }
+    }
+  ]
+}

@@ -193,9 +193,6 @@ pub(crate) fn run(project: &Project, args: &DoctorArgs) -> Outcome {
     }
 }
 
-/// [`KNOWN`] as sort keys that order before any other name.
-const KNOWN_ORDER: [&str; 5] = ["0", "1", "2", "3", "4"];
-
 /// `--off name=reason` for every backend the directory describes that
 /// `[make]` did not choose, in the project's own words.
 ///
@@ -258,13 +255,13 @@ fn probed_lines(report: &Value, origin: &str, lines: &mut Vec<String>, not_ok: &
     }
     if let Some(entries) = report.get("backends").and_then(Value::as_object) {
         // The object's keys come back sorted; the rows go in doctor's order —
-        // the known five, then anything else the directory described.
+        // the known backends, then anything else the directory described.
         let mut names: Vec<&String> = entries.keys().collect();
         names.sort_by_key(|name| {
             KNOWN
                 .iter()
                 .position(|k| k == name)
-                .map_or((1, name.as_str()), |i| (0, KNOWN_ORDER[i]))
+                .map_or((usize::MAX, name.as_str()), |i| (i, name.as_str()))
         });
         for name in names {
             let entry = &entries[name];

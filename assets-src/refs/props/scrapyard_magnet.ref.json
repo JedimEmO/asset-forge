@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-09-04",
+  "created_by": "unknown",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "designs/scrapyard/batch-02/magnet-reference.png",
+      "sha256": "sha256:39876cd31e5071e35fe8720f29eef6cefc87c785db15c4d8eb8a95ea124e9b22",
+      "source": "OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "prop",
+    "long_side_px": 1254,
+    "stated_source": "OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/props/scrapyard_magnet.png",
+      "sha256": "sha256:39876cd31e5071e35fe8720f29eef6cefc87c785db15c4d8eb8a95ea124e9b22",
+      "bytes": 1164427
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.2106,
+    "arm_line_fraction": null,
+    "backdrop_rgb": [
+      208,
+      208,
+      207
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 242,
+    "heads": null,
+    "height": 1254,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 0.983,
+    "subject_fill": 0.604,
+    "width": 1254
+  },
+  "fake": false,
+  "note": null
+}

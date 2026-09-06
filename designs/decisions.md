@@ -1449,3 +1449,197 @@ usually comes back right. The measured candidate, for whoever writes the
 gate after more bodies: dominated-vertex centroid distance from the bone head,
 which reads 0.35–0.46 m on the flyers here and under 0.27 m on every limb
 bone of every body that walks. 2026-09-04.
+
+
+**Backpack bounds need an explicit depth correction, and preparation settings must survive skinning.** The scrapyard scavenger's bounding-box centre put its legs forward of the fixed skeleton plane. A recorded prepare depth offset of -0.12 m along glTF +Z, followed by both skinning passes, reduced planted-foot penetration on the unchanged walk from 0.097 m to 0.048 m. All 12 rig checks pass with the unchanged 0.050 m tolerance; all seven clip strips were reviewed before promotion. Skin's second prepare now replays stature, yaw, depth offset and triangle budget from the first prepare record. Older records default to zero depth offset. A fresh-walk sweep did not resolve the old mesh's failure, so the shared clip was not replaced. This is a measured per-body adjustment, not a universal offset. 2026-09-04.
+
+**Audio gates do not prove a useful game envelope.** The scrapyard trials produced short MOSS clips that passed clipping/silence checks but had late attacks or abrupt low-frequency tails. A 0.5-second impact began at 368 ms; one explosion carried DC offset -0.078. Those drafts were rejected. Accepted game effects and the seamless music loop were authored with retained deterministic synthesis scripts and promoted with honest unknown-backend provenance, not fabricated MOSS records. The consumer also caps simultaneous voices and coalesces repeated horde events. 2026-09-05.
+
+
+**Toolkit discovery and game selection are separate inputs.** A shared local install
+must not depend on the game containing the toolkit. Initialization and generation now
+use one resolver: explicit `FORGE_HOME`, legacy `FORGE_TOOLKIT`, then local discovery.
+Explicit invalid settings refuse instead of silently using the development checkout.
+Generated MCP configurations bind an absolute executable and project, and preserve
+existing client settings and instructions. Two external games and an unpacked runtime
+layout are checked independently of the caller's working directory. 2026-09-05.
+
+
+**Project activation includes the queue, not just the MCP gate.** A server launched
+before its bound project's forge.toml exists starts without a queue. After init,
+bootstrap calls now activate a single queue with that project's hardware settings;
+removing only the no-project refusal would leave generation broken. The acceptance
+session unsets FORGE_FAKE and still completes using the project's chosen fake tier.
+The bound root never switches when another directory is initialized. Verification,
+full audit and manifest checks invoke the CLI gates, so the two interfaces cannot
+silently claim different levels of validation. 2026-09-05.
+
+
+**A packaged character workflow tests more than an audio smoke test.** Running MCP
+against the staged toolkit caught a fake-tier preflight that still demanded TRELLIS
+and a packaging allowlist that omitted the humanoid profile.toml. A checkout with
+installed models hid the first; initialization and fake audio did not need the
+missing file. The fixture now selects fake tier explicitly, the preflight uses the
+bound queue's project tier, and the distribution includes the profile configuration.
+The complete staged character/prop loop passes without installed model receipts.
+2026-09-05.
+
+
+**A per-project GPU lock does not serialize different games.** Recovery review found
+that each queue acquired its own out/serve/card.lock. Production queue options now
+select one per-user GPU state directory independent of project and backend-store
+paths. Low-level test queues can still use isolated state. The cross-project test
+holds one game, observes the other blocked, cancels the first, and verifies separate
+outputs and job histories after the second finishes. Manual model freeing takes the
+same lease. Older daemons must stop before this lock convention is relied upon.
+2026-09-05.
+
+## 2026-09-05 — Generator help must bypass the queue inside projects too
+
+The no-project help path already called argparse directly, but a discovered
+project routed the same `gen mesh --help` through GPU admission. A withheld GPU
+therefore blocked an agent reading command syntax. Dispatch help before project
+discovery and never create a job or GPU lease for it. A CLI regression test
+checks successful help inside an initialized project without creating out/serve.
+
+## 2026-09-05 — Audio success belongs to the final container
+
+A real ACE-Step render passed the PCM clipping check, then its Vorbis
+encoding decoded with a three-sample clipped run. The music generator now
+decodes and gates the final OGG before publishing its success record and
+measures that decoded result. It keeps rejected bytes for diagnosis. A real
+codec regression uses clean square-wave PCM that overshoots after Vorbis;
+clean and corrupt-container cases are also covered. This does not make a
+track loopable: the frozen baseline's long silent tails remain rejections.
+
+## 2026-09-05 — Speech gets an executor that matches its runtime
+
+The shared audio host's Transformers 5.16.1 breaks the MOSS speech checkpoint,
+while the same weights work under 5.0.0. The user heard both isolated diagnostic
+lines and accepted their words and endings. We keep voice design on ComfyUI and
+route speech through a separate `moss_speech` environment. Changing only the
+Python launcher would leave queue budgets, setup and doctor describing the
+wrong executor, so the shared verb and project-kind maps changed with it.
+
+A real CLI line passed in 19.8 seconds and an MCP line in 21.0 seconds from an
+external project. The record names the env executor and hashes the actual model
+files, including Python code. An adopted directory's descriptor pin is not an
+observed revision: unobserved revisions stay null. The completion gate checks
+the checkpoint's list of token matrices for its end token before decoding;
+assuming a single tensor caused the first integration attempt to fail, and that
+failure is preserved in the evidence directory. A fresh interpreter also passed
+the packaged installer's probe. This is speech execution evidence, not approval
+of every language, long dialogue, musical loop or unrelated asset kind.
+
+
+## 2026-09-05 — A native crash must fail the job and release the card
+
+A generator killed by SIGSEGV has no numeric exit status. We preserve that
+fact and report the observed Unix signal in the job message and log.
+We do not synthesize an exit code or retry a failed seed automatically.
+
+The cross-project regression kills a real child process after it writes a
+partial output. The failed job keeps that file, writes no success record,
+and releases the shared GPU lease so another project can complete a job.
+Signal diagnostics do not use the executor's card-withholding note field:
+that field would incorrectly block later jobs after an ordinary process crash.
+
+Doctor must also enter the actual lazy pipeline import. Importing only the
+TRELLIS package root can pass while importing `trellis2.pipelines` fails.
+The probe now checks the latter, with a regression for that distinction.
+One successful probe still cannot certify an intermittent startup defect.
+
+
+## 2026-09-05 — Separate the tested interpreter from CUDA dependencies
+
+The TRELLIS startup failure also occurred in SciPy-only subprocesses. Several
+packaged Python and SciPy changes failed, while the pinned standalone CPython
+3.11.16 build passed 200 full imports and four real lift jobs across trial,
+installed and packaged configurations. We use that observed mitigation without
+claiming a proven compiler, hardware or SciPy root cause.
+
+Replacing the interpreter must not redirect nvdiffrast's JIT to a directory
+without CUDA. The installer therefore records a runtime layer over the existing
+CPython 3.11 dependency packages and links the native toolchain separately.
+`${TOOLCHAIN}` preserves old installs when no separate link exists; a dangling
+explicit link never silently selects another toolchain. Doctor tests the lazy
+pipeline import and refuses a missing nvcc or compiler executable.
+
+The runtime archive is checksum-pinned, existing dependency packages are left
+intact, and reuse checks the recorded executable and package path. Tests reject
+a bad download, a changed executable and reuse against another dependency env.
+The packaged installer must contain this helper; machine-local links never ship.
+
+## 2026-09-05 — Music loop selection is a recorded derivation
+
+ACE-Step tracks can fade into long silence despite a loop prompt. An explicit
+start, period and wrap crossfade now select a loop upstream of recording, retaining
+the original generated source and its hash. The PCM16 linear wrap algorithm is
+versioned and preserves the selected frame count; fake records say it did not run.
+Promotion retains the recipe and source. Listening over repeated seams remains
+required. A CPU codec probe found 48,000 PCM frames decoded from Vorbis as 47,872
+frames: loop generation refuses that duration drift and names WAV as the exact
+period route. It does not crop or pad the encoded asset, and legacy full-track
+validation remains unchanged.
+
+
+## 2026-09-05 — Check contact on the clip the project actually ships
+
+An external project had a reviewed run but no clip named `walk`. The rig gate
+returned zero with two warnings, so it had not measured binding or foot contact.
+`forge rig check --reference-clip <name>` now selects a library clip explicitly.
+A missing explicit selection is refused. The contract default keeps its existing
+warning behavior, and the report names the clip actually measured.
+
+The real rusher passed run contact over 18 frames, worst Y +0.048 m, and melee
+contact over 38 frames, worst Y -0.015 m, against the unchanged 0.050 m limit.
+The whole-clip minimum remains a separate note. Both motions were also judged
+on the actual body, including a rear attack strip.
+
+## 2026-09-05 — A CLI consumer needs the workflow without an MCP connection
+
+A fresh agent completed two placeholder project workflows from the packaged
+CLI, but its generated guide pointed at an MCP-only resource for the full recipe.
+`forge guide` now prints the exact same embedded text as that resource, without
+a project or backend. Generated instructions point CLI users at this command.
+The trial remains fake-mode evidence; it does not qualify real asset quality.
+
+## 2026-09-05 — Guard wording still produced frozen idle takes
+
+Twenty-four follow-up ARDY takes used guard, light bounce and rhythmic sway
+prompts across two seeds. All were flagged STATIC, and the contact sheets
+showed nearly fixed stances. None was accepted as the required living idle.
+The same model produced a readable melee swipe, so a successful run or attack
+must not be used as evidence that this idle brief passed. Original failed
+baseline attempts and all follow-up takes remain available for diagnosis.
+
+
+## 2026-09-06 — Sparse authored constraints can rescue a quiet idle
+
+A paired 24-take diagnostic kept the seed, prompts and durations fixed while
+toggling foot correction. All 16 guard/stretch takes stayed nearly static at
+CFG 2 and 5; all eight jogging controls moved. Disabling correction did not
+rescue these idle prompts. This is a bounded result, not a claim that every
+possible idle prompt fails.
+
+The existing keyframe CLI produced a readable weight-shifting guard from
+authored hips, hands and planted-feet constraints. The user accepted the
+lowered-hand revision on the actual rusher. Its low-activity STATIC advisory
+is retained: a quiet idle needs visual judgment, not a relaxed threshold.
+Contact passed over 118 frames, worst Y -0.009 m against the unchanged 0.050 m
+limit. The source constraints, failed trials and complete bake recipe remain
+available. No generated pose or shipped record was repaired by hand.
+
+An initial Head constraint exposed a validation defect: Head exists in the
+skeleton but is not an ARDY constraint group. The request loaded the model
+before failing. Forge now refuses unsupported or duplicate groups, invalid
+frame indices, nonfinite vectors and zero aim vectors before backend loading.
+Supported groups are Hips, LeftHand, RightHand, LeftFoot and RightFoot; hand
+groups can constrain their expanded hand-end positions. Seven regression
+tests cover early refusal and valid sparse input. This route currently needs
+the CLI; the MCP generate_clips tool does not expose authored key constraints.
+
+Twenty fresh-process runs of the exact previously crashing placeholder voice
+test passed, followed by full CI. The native Python crash remains unexplained;
+these passes are evidence of non-reproduction, not a fix. Evidence and the
+hashed project archive are indexed in out/idle-diagnosis-20260906/result.json.

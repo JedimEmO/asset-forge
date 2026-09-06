@@ -39,11 +39,12 @@ generators, then the two the Phase 0 spikes stood up:
 
 | backend | role | upstream | env | entry |
 |---|---|---|---|---|
-| `trellis2` | image → textured mesh | microsoft/TRELLIS.2 @ `75fbf018` | conda, python 3.11, CUDA 12.4 | `forge gen mesh` |
+| `trellis2` | image → textured mesh | microsoft/TRELLIS.2 @ `75fbf018` | conda dependencies/CUDA 12.4; pinned CPython 3.11.16 runtime | `forge gen mesh` |
 | `ardy` | prompt → motion take | nv-tlabs/ardy @ `693f74d1` | venv, python 3.12 | `forge gen motion sweep\|keys` |
 | `acestep` | prompt → music | ACE-Step 1.5, native to the pinned ComfyUI | **none of its own** — runs on the `comfy` host | `forge gen music` |
 | `moss_sfx` | prompt → sound effect | MOSS-SoundEffect-v2.0 through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen sfx` |
-| `moss_tts` | text → speech; description → voice | MOSS-TTS-Local-Transformer (1.7B) and MOSS-VoiceGenerator through TTS-Audio-Suite @ `fab00263` | **none of its own** — runs on the `comfy` host | `forge gen speech`, `forge gen voice` |
+| `moss_tts` | description → voice | MOSS-VoiceGenerator through TTS-Audio-Suite @ `fab00263` | ComfyUI host | `forge gen voice` |
+| `moss_speech` | text → speech | MOSS-TTS-Local-Transformer and audio tokenizer | Python 3.12, Transformers 5.0.0, torch 2.9.1+cu128 | `forge gen speech` |
 | `comfy` | **host**, not a generator: the service the `comfy` executor will drive over HTTP | comfyanonymous/ComfyUI @ `169fcf35` (+ one node pack, `diodiogod/TTS-Audio-Suite` @ `fab00263`) | venv, python 3.12, torch cu130, run as `forge-comfy.service`; doctor probes the service on `127.0.0.1:8188`, never the env | none — nothing execs a host, and it holds no graphs of its own: each guest's `workflows/*.api.json` are what it is sent |
 | `skintokens` | mesh + armature → skin weights | VAST-AI-Research/SkinTokens @ `273b691d` (two patches under `patches/`) | venv, python 3.11, CUDA 12.8 | `forge gen skin` — Phase 2; today `python/forge_gen/spike_skin.py` |
 
@@ -64,22 +65,19 @@ weights live under the host's model folders; `tool` is a host program
 `forge.toml`. A kind that was not chosen reads `off`: not probed, printed
 with the line that turned it off, and never a reason to exit 1. The map is
 one fact in one place — `props → trellis2`; `characters → + skintokens`;
-`clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice → moss_tts`;
+`clips → ardy`; `sfx → moss_sfx`; `music → acestep`; `voice → moss_tts + moss_speech`;
 anything `comfy` adds the `comfy` host, and a mesh kind adds Blender. **No
 kind names an image model**: a reference PNG is brought through
 `import_reference` / `forge ref import` (Phase 3), not generated here
 (`designs/decisions.md`, 2026-08-30), so a props- or characters-only project
 never installs the ComfyUI host at all.
 
-`moss_sfx` and `moss_tts` share the ComfyUI host, not a clone: since the
-three MOSS models moved onto TTS-Audio-Suite neither has an environment,
-a torch pin or a checkout of its own, and their installers only check that
-the host has the pack at its pin. `moss_tts` hosts two models:
-MOSS-TTS clones a line from a 5–15 s reference clip, and MOSS-VoiceGenerator
-designs that clip from a description (`forge gen voice`) so a project never
-has to bring a voice it does not own. Nothing heavy lives in this tree. Envs and clones go under `$PREFIX` — `${FORGE_BACKENDS_HOME:-~/.cache/
-asset-forge/backends}/<name>` by default — and the directory here holds only
-links to them. No absolute path is ever written into a tracked file.
+`moss_sfx` and the `moss_tts` voice designer share ComfyUI. Spoken lines
+use `moss_speech`, a separate interpreter. Its installer pins Transformers
+5.0.0 and torch 2.9.1+cu128 and can adopt existing weights with
+`--adopt-checkpoints`. No speech fix changes the shared host environment.
+Environments and models live outside the toolkit; backend folders hold links.
+The earlier co-residency measurements below describe the retired host speech path.
 
 Blender is a host tool, not a backend: `$BLENDER_BIN` or `blender` on PATH,
 ≥ 4.2, run `--background --factory-startup`. So is ffmpeg.
@@ -116,7 +114,7 @@ torch) and resolves the backend's interpreter in this order:
 It then execs `<python> -m forge_gen.<entry> --inner …` with this
 checkout's `python/` on `PYTHONPATH`, from the upstream checkout when
 `backend.toml` says `cwd = "checkout"`, with every `[env]` entry exported
-(`${PREFIX}`, `${CHECKOUT}`, `${TEXT_ENCODERS}`, `${CHECKPOINTS}` expanded)
+(`${PREFIX}`, `${TOOLCHAIN}`, `${CHECKOUT}`, `${TEXT_ENCODERS}`, `${CHECKPOINTS}` expanded)
 — as defaults, so a value you exported yourself wins — and
 `PYTHONNOUSERSITE=1` everywhere, because a `~/.local` that has seen years of
 experiments carries `.pth` hooks.
@@ -254,7 +252,8 @@ Each installer is idempotent (`set -euo pipefail`, sources
    cache the other backends fill.
 4. `bash backends/trellis2/install.sh --yes` — conda (python 3.11, CUDA
    12.4.1 from the label channel, gcc 13), torch cu124, the CUDA extensions,
-   and **nvdiffrast after the licence prompt**. DINOv3 is gated: accept on
+   **nvdiffrast after the licence prompt**, and the checksum-pinned CPython
+   3.11.16 standalone runtime. DINOv3 is gated: accept on
    the model page and `hf auth login --token <tok>` first, or doctor will
    tell you to.
 5. `bash backends/skintokens/install.sh` — venv (python 3.11, torch
@@ -315,6 +314,17 @@ bash backends/comfy/install.sh --adopt-env ~/src/ComfyUI/.venv \
 There is nothing to adopt for `acestep`, `moss_sfx` or `moss_tts`: they have
 no env and no checkout of their own since the audio kinds moved onto the
 host. Adopt the host, and their installers will find the pack there.
+
+For TRELLIS, add `--with-pinned-runtime` to use the tested CPython 3.11.16
+build with an existing dependency environment. The installer leaves those
+packages intact, downloads the pinned runtime, and records its archive hash
+and dependency path in `forge-runtime.json`. `.env` selects that runtime;
+`.toolchain` selects the original CUDA/dependency prefix. Older installs without
+that link retain the interpreter prefix as their toolchain. A generated `.pth`
+file exposes its CPython 3.11 packages to the new interpreter. Reuse checks
+the recorded interpreter hash and dependency path before skipping the download.
+This is an interpreter build mitigation; the native crash's root cause remains
+unproven. Re-run adoption with the flag to retain the pinned runtime.
 
 Adopting writes the `.env`/`.checkout` links and `installed.json`
 (`"adopted": true`), runs the probe, and installs nothing. A checkout at

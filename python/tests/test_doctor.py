@@ -35,7 +35,7 @@ def _schema_ok(report: dict) -> None:
 def test_described_but_not_installed_is_missing(backends_tree):
     report = doctor.diagnose(host=False)
     _schema_ok(report)
-    assert list(report["backends"]) == ["trellis2", "ardy", "acestep", "moss_sfx", "moss_tts"]
+    assert list(report["backends"]) == ["trellis2", "ardy", "acestep", "moss_sfx", "moss_tts", "moss_speech"]
     ardy = report["backends"]["ardy"]
     assert ardy["status"] == "missing"
     names = {check["name"]: check for check in ardy["checks"]}

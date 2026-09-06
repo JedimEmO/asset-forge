@@ -24,7 +24,7 @@
 //! queue would quietly lose `ci-fake` the serialisation it has today.
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -66,6 +66,8 @@ const STATUS_TAIL: usize = 8;
 /// What a queue needs that the project does not say.
 #[derive(Debug, Clone)]
 pub struct LocalQueueOptions {
+    /// Shared GPU lock and recovery state. None isolates low-level test queues.
+    pub card_state_dir: Option<PathBuf>,
     /// This binary, re-invoked as `forge gpu --json` to read the card.
     /// Never a second `nvidia-smi` reader.
     pub forge: PathBuf,
@@ -103,6 +105,7 @@ pub struct LocalQueueOptions {
 impl Default for LocalQueueOptions {
     fn default() -> Self {
         Self {
+            card_state_dir: None,
             forge: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("forge")),
             tier: String::from("full"),
             comfy_url: None,
@@ -127,6 +130,7 @@ impl LocalQueueOptions {
     #[must_use]
     pub fn for_project(project: &Project, forge: PathBuf) -> Self {
         Self {
+            card_state_dir: Some(crate::shared_card_dir()),
             forge,
             tier: project.tier().as_str().to_owned(),
             comfy_url: Some(project.hardware.comfy_url.clone()),
@@ -193,6 +197,13 @@ impl std::fmt::Debug for LocalQueue {
 }
 
 impl LocalQueue {
+    fn card_state_dir(&self) -> &Path {
+        self.options
+            .card_state_dir
+            .as_deref()
+            .unwrap_or_else(|| self.store.dir())
+    }
+
     /// Open the state directory, reconcile what a previous run left, prune
     /// what is older than a fortnight, and start the worker.
     ///
@@ -427,7 +438,7 @@ impl LocalQueue {
         // The card ladder may have decided nobody gets the card until a
         // human looks. That outlives this job and this lease.
         if let Some(note) = &outcome.note {
-            let _ = crate::card::withhold(self.store.dir(), note);
+            let _ = crate::card::withhold(self.card_state_dir(), note);
         }
         let after = self.card.read().map(|view| view.free_gb);
         let held_s = started.elapsed().as_secs_f64();
@@ -475,7 +486,7 @@ impl LocalQueue {
                 continue;
             }
             match CardLease::try_acquire(
-                self.store.dir(),
+                self.card_state_dir(),
                 job.id.as_str(),
                 plan.need_gb,
                 Some(&plan.what),
@@ -485,7 +496,7 @@ impl LocalQueue {
                     // Another door holds the one lock. That is the design
                     // working, not an error.
                     if job.state != JobState::Blocked {
-                        let holder = CardState::read(self.store.dir()).map_or_else(
+                        let holder = CardState::read(self.card_state_dir()).map_or_else(
                             || String::from("another forge process"),
                             |state| format!("{} (pid {})", state.holder, state.pid.unwrap_or(0)),
                         );
@@ -508,7 +519,7 @@ impl LocalQueue {
     /// Who is holding the card against this job, when anyone is.
     fn card_is_held(&self, plan: &Plan) -> Option<String> {
         let need = plan.need_gb?;
-        if let Some(note) = CardState::withheld(self.store.dir()) {
+        if let Some(note) = CardState::withheld(self.card_state_dir()) {
             return Some(format!("comfy — {note}"));
         }
         // A `running` row whose pid is still alive is another door's
@@ -567,8 +578,19 @@ impl LocalQueue {
             }
         } else {
             job.finish(JobState::Failed, None);
-            job.message = Some(String::from(
-                "the generator was ended by a signal; nothing said why",
+            job.message = Some(outcome.signal.map_or_else(
+                || {
+                    format!(
+                        "the generator ended without an exit status; see {}",
+                        job.log
+                    )
+                },
+                |signal| {
+                    format!(
+                        "the generator was terminated by signal {signal}; see {}",
+                        job.log
+                    )
+                },
             ));
         }
         if let Some(same) = self.same_as(job) {

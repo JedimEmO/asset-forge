@@ -103,11 +103,23 @@ pub(crate) struct GenerateAudioArgs {
     /// Speech only: the voice to clone — the name of one designed by
     /// `forge gen voice` (`assets-src/voices/<name>/ref.wav`), or a path
     /// to a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac).
-    /// Omitted, an uncloned voice.
+    /// Required for real speech; fake runs may omit it.
     pub(crate) voice: Option<String>,
     /// Music only: `ogg` (default; needs ffmpeg) or `wav`. Sfx and speech
     /// are always wav.
     pub(crate) format: Option<String>,
+    /// Music only: tempo in beats per minute.
+    pub(crate) bpm: Option<u32>,
+    /// Music only: whole-decibel graph gain, -100 to 100.
+    pub(crate) gain_db: Option<i32>,
+    /// Music only: enable the audio-code planner.
+    pub(crate) thinking: Option<bool>,
+    /// Music only: source offset; requires all three loop knobs.
+    pub(crate) loop_start: Option<f64>,
+    /// Music only: selected output period; seconds remains source length.
+    pub(crate) loop_duration: Option<f64>,
+    /// Music only: linear wrap overlap; source must extend beyond the period.
+    pub(crate) loop_crossfade: Option<f64>,
     /// Seconds to wait inline before answering. Omitted, the tool returns a
     /// job id at once and `wait` is the next call; a short fake-tier run is
     /// worth waiting out in one turn.
@@ -366,6 +378,9 @@ impl ForgeServer {
                 args.kind
             ));
         };
+        if let Err(message) = validate_music_options(kind, &args) {
+            return util::refuse(message);
+        }
         // Speech speaks `text`; the other two take `prompt`. Either word is
         // accepted for any kind so a caller that mixes them up is not sent
         // back for a retype.
@@ -487,6 +502,7 @@ impl ForgeServer {
             push("--created-by", String::from(ACTOR));
         }
 
+        append_music_options(&args, &mut argv);
         let spec = JobSpec {
             backend: Some(String::from(kind.backend())),
             ..spec::spec_for(&argv, &project.root, ACTOR)
@@ -584,6 +600,11 @@ impl ForgeServer {
                  to the asset-forge checkout and restart the server; doctor has the detail. \
                  nothing was written."
             )));
+        }
+        // Fake jobs use the toolkit's placeholders, not installed model environments.
+        // The queue applies this project's tier to the child process as well.
+        if self.config.project.tier().is_fake() {
+            return None;
         }
         let backends = Backends::discover(&self.config.project);
         if backends.is_found(backend) {
@@ -884,6 +905,33 @@ fn designed_voices(project: &Project) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fake_tier_needs_no_installed_model_but_real_tier_still_refuses() {
+        let (_dir, mut project) = crate::testing::empty_project();
+        project.backends_dir = Some(project.root.join("absent-backends"));
+        project.hardware.tier = Some(forge_library::project::Tier::Fake);
+        let mut server = crate::testing::server(project);
+        server.config.toolkit = Some(server.config.project.root.clone());
+        assert!(
+            server
+                .backend_refusal("trellis2", "generate_mesh")
+                .is_none()
+        );
+        server.config.project.hardware.tier = Some(forge_library::project::Tier::Full);
+        assert!(
+            server
+                .backend_refusal("trellis2", "generate_mesh")
+                .is_some()
+        );
+        server.config.project.hardware.tier = Some(forge_library::project::Tier::Fake);
+        server.config.toolkit = None;
+        assert!(
+            server
+                .backend_refusal("trellis2", "generate_mesh")
+                .is_some()
+        );
+    }
+
     fn captured(code: i32, stdout: &str, stderr: &str) -> Captured {
         Captured {
             code: Some(code),
@@ -1031,7 +1079,7 @@ mod tests {
         assert_eq!(AudioKind::parse("noise"), None);
         assert_eq!(AudioKind::Music.backend(), "acestep");
         assert_eq!(AudioKind::Sfx.backend(), "moss_sfx");
-        assert_eq!(AudioKind::Speech.backend(), "moss_tts");
+        assert_eq!(AudioKind::Speech.backend(), "moss_speech");
         assert_eq!(AudioKind::Speech.library_kind(), "voice");
     }
 
@@ -1048,5 +1096,111 @@ mod tests {
         let takes = npz_files(dir.path());
         assert_eq!(takes.len(), 2);
         assert!(takes[0].ends_with("a.npz"));
+    }
+}
+
+fn append_music_options(args: &GenerateAudioArgs, command: &mut Vec<String>) {
+    for (flag, value) in [
+        ("--bpm", args.bpm.map(|value| value.to_string())),
+        ("--gain-db", args.gain_db.map(|value| value.to_string())),
+        (
+            "--loop-start",
+            args.loop_start.map(|value| value.to_string()),
+        ),
+        (
+            "--loop-duration",
+            args.loop_duration.map(|value| value.to_string()),
+        ),
+        (
+            "--loop-crossfade",
+            args.loop_crossfade.map(|value| value.to_string()),
+        ),
+    ] {
+        if let Some(value) = value {
+            command.extend([String::from(flag), value]);
+        }
+    }
+    if let Some(thinking) = args.thinking {
+        command.push(String::from(if thinking {
+            "--thinking"
+        } else {
+            "--no-thinking"
+        }));
+    }
+}
+
+fn validate_music_options(kind: AudioKind, args: &GenerateAudioArgs) -> Result<(), String> {
+    let values = [args.loop_start, args.loop_duration, args.loop_crossfade];
+    let has_loop = values.iter().any(Option::is_some);
+    if kind != AudioKind::Music
+        && (has_loop || args.bpm.is_some() || args.gain_db.is_some() || args.thinking.is_some())
+    {
+        return Err(String::from(
+            "bpm, gain_db, thinking and loop options are music-only",
+        ));
+    }
+    if args.bpm == Some(0)
+        || args
+            .gain_db
+            .is_some_and(|gain| !(-100..=100).contains(&gain))
+    {
+        return Err(String::from(
+            "music requires positive bpm and gain_db in -100..100",
+        ));
+    }
+    if has_loop {
+        let [Some(start), Some(duration), Some(crossfade)] = values else {
+            return Err(String::from(
+                "loop_start, loop_duration and loop_crossfade are required together",
+            ));
+        };
+        if ![start, duration, crossfade]
+            .iter()
+            .all(|value| value.is_finite())
+            || start < 0.0
+            || crossfade <= 0.0
+            || crossfade >= duration
+            || start + duration + crossfade > f64::from(args.seconds.unwrap_or(30.0))
+        {
+            return Err(String::from(
+                "loop requires finite start >= 0, 0 < crossfade < duration, and start + duration + crossfade <= source seconds",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod music_loop_tests {
+    use super::{AudioKind, GenerateAudioArgs, append_music_options, validate_music_options};
+
+    #[test]
+    fn music_options_are_complete_bounded_and_kind_specific() {
+        let mut args: GenerateAudioArgs = serde_json::from_value(serde_json::json!({"kind": "music", "seconds": 30, "loop_start": 2, "loop_duration": 16, "loop_crossfade": 0.5, "bpm": 120, "gain_db": -6, "thinking": false})).expect("args");
+        assert!(validate_music_options(AudioKind::Music, &args).is_ok());
+        let mut command = Vec::new();
+        append_music_options(&args, &mut command);
+        assert_eq!(
+            command,
+            [
+                "--bpm",
+                "120",
+                "--gain-db",
+                "-6",
+                "--loop-start",
+                "2",
+                "--loop-duration",
+                "16",
+                "--loop-crossfade",
+                "0.5",
+                "--no-thinking"
+            ]
+        );
+        assert!(validate_music_options(AudioKind::Sfx, &args).is_err());
+        assert!(validate_music_options(AudioKind::Speech, &args).is_err());
+        args.loop_duration = Some(29.0);
+        assert!(validate_music_options(AudioKind::Music, &args).is_err());
+        args.loop_duration = None;
+        assert!(validate_music_options(AudioKind::Music, &args).is_err());
     }
 }

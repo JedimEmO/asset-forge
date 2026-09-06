@@ -3,7 +3,7 @@
 //!
 //! # Why a lock and not a pidfile
 //!
-//! `out/serve/card.lock` is held with `flock(LOCK_EX)` for exactly as long
+//! `card.lock` in the configured GPU state directory is held with `flock(LOCK_EX)` for exactly as long
 //! as the job runs. **The kernel releases it when the holder dies** — SIGKILL,
 //! the OOM killer, a laptop lid — so a crashed generate cannot leave the
 //! card claimed by a process that is not there. A pidfile can only ever be
@@ -15,6 +15,9 @@
 //! relation sidecars and the manifest already have. The sidecar is written
 //! after the lock is taken and overwritten by the next acquirer, so a stale
 //! one is harmless.
+//!
+//! Production uses one per-user state directory across all games; low-level
+//! tests can supply isolated directories.
 //!
 //! The lease is taken by the daemon's worker **and** by
 //! `commands/generate.rs` when no daemon is up. That is the whole answer to
@@ -74,13 +77,13 @@ pub const FREE_POLL_S: u64 = 15;
 /// How often it polls.
 const FREE_POLL_EVERY: Duration = Duration::from_millis(500);
 
-/// `out/serve/card.json`, the projection.
+/// `card.json` under the selected GPU state directory, the projection.
 #[must_use]
 pub fn card_json_path(state_dir: &Path) -> PathBuf {
     state_dir.join("card.json")
 }
 
-/// `out/serve/card.lock`, the truth.
+/// `card.lock` under the selected GPU state directory, the truth.
 #[must_use]
 fn card_lock_path(state_dir: &Path) -> PathBuf {
     state_dir.join("card.lock")

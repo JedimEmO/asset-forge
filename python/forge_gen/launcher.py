@@ -120,12 +120,25 @@ def prefix_of(backend: Backend, interpreter: Path | None = None) -> Path:
     return resolved.parent
 
 
+def toolchain_prefix(backend: Backend, interpreter: Path) -> Path:
+    """The native dependency prefix, preserving installs made before .toolchain.
+
+    A dangling explicit link stays dangling so doctor can report the missing
+    toolchain; it must never fall back to an unrelated interpreter prefix.
+    """
+    link = backend.dir / ".toolchain"
+    if link.exists() or link.is_symlink():
+        return link.resolve()
+    return prefix_of(backend, interpreter)
+
+
 def _expansion_mapping(backend: Backend, interpreter: Path) -> dict[str, str]:
     """What ``${...}`` in an ``[env]`` value may name: the placeholders, plus the ambient environment."""
     mapping = dict(os.environ)
     mapping.update(
         {
             "PREFIX": str(prefix_of(backend, interpreter)),
+            "TOOLCHAIN": str(toolchain_prefix(backend, interpreter)),
             "CHECKOUT": str(backend.checkout.resolve() if backend.checkout.exists() else backend.checkout),
             "BACKEND_DIR": str(backend.dir),
             "TEXT_ENCODERS": str(backend.text_encoders.resolve() if backend.text_encoders.exists() else backend.text_encoders),
@@ -140,7 +153,7 @@ def inner_env(backend: Backend, interpreter: Path | None = None) -> dict[str, st
 
     ``os.environ`` with this package prepended to ``PYTHONPATH``, then every
     ``[env]`` entry of ``backend.toml`` with ``${PREFIX}``, ``${CHECKOUT}``,
-    ``${BACKEND_DIR}``, ``${TEXT_ENCODERS}`` and ``${CHECKPOINTS}`` expanded
+    ``${BACKEND_DIR}``, ``${TOOLCHAIN}``, ``${TEXT_ENCODERS}`` and ``${CHECKPOINTS}`` expanded
     (plus anything already in the environment), applied with *setdefault*
     semantics so a value the user exported wins over the file's — except
     ``[env.force]`` entries, which are set unconditionally: those are the

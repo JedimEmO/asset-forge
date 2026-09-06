@@ -302,3 +302,24 @@ def test_the_fake_ratio_is_not_one(humanoid):
     """A placeholder skeleton at the contract's own lengths exercises nothing."""
     assert skin.FAKE_FIT_RATIO != 1.0
     assert 0.4 < skin.FAKE_FIT_RATIO < 2.5, "and it is inside the band the export gate holds a real one to"
+
+def test_second_prepare_replays_normalization_instead_of_refitting_a_different_mesh(tmp_path):
+    """A backpack correction and a non-default stature must survive both skinning passes."""
+    prepared = tmp_path / "hero.glb"
+    prepared.write_bytes(b"glTF")
+    prepared.with_suffix(".prepare.json").write_text(json.dumps({
+        "params": {"stature_m": 1.65, "yaw_deg": 180.0, "depth_offset_m": -0.12, "tri_budget": 42000},
+    }))
+    assert skin._prepare_options(prepared) == {
+        "stature": 1.65, "yaw_deg": 180.0, "depth_offset": -0.12, "budget": 42000,
+    }
+
+
+def test_legacy_preparation_keeps_its_recorded_scale_without_inventing_an_offset(tmp_path):
+    prepared = tmp_path / "hero.glb"
+    prepared.with_suffix(".prepare.json").write_text(json.dumps({
+        "params": {"stature_m": 1.7, "yaw_deg": 90.0, "tri_budget": 50000},
+    }))
+    assert skin._prepare_options(prepared) == {
+        "stature": 1.7, "yaw_deg": 90.0, "depth_offset": 0.0, "budget": 50000,
+    }

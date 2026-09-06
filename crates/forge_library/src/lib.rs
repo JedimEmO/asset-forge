@@ -43,6 +43,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+pub mod agent_kit;
 pub mod audit;
 pub mod backends;
 pub mod bundle;
@@ -59,6 +60,7 @@ pub mod rebake;
 pub mod report;
 pub mod schema;
 pub mod sidecar;
+pub mod toolkit;
 pub mod verify;
 
 pub use catalog::{AssetRecord, Catalog, Query};

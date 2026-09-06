@@ -1,0 +1,56 @@
+{
+  "forge_record": 2,
+  "kind": "export",
+  "tool": "blender",
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "backend": {
+    "name": "blender",
+    "commit": "9e2066aef7ef",
+    "python": "3.13.13",
+    "torch": null,
+    "model": "blender 5.2.1",
+    "model_revision": null,
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "blend",
+      "path": "assets-src/blender/scrapyard_scavenger.blend",
+      "sha256": "sha256:db41ffc406a3ccfd3500a06c1f195407e5a4423da52913750121199eecc8b8c4",
+      "source": null,
+      "prompt": null
+    },
+    {
+      "role": "reference",
+      "path": "rigs/humanoid/rig.blend",
+      "sha256": "sha256:56918a644ae50670f620dec111eb44673ced450d2fc2441c63952e7c99ffda69",
+      "source": "profile:humanoid",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "extra_bones": [],
+    "profile": "humanoid"
+  },
+  "outputs": [
+    {
+      "path": "out/export/scrapyard_scavenger.glb",
+      "sha256": "sha256:3faebd36fcd394acb9b9e185b41a66ca9fff2529d15a4abe8e53a95109c8beb0",
+      "bytes": 3106204
+    }
+  ],
+  "measured": {
+    "blender_version": "5.2.1",
+    "generator_string": "Khronos glTF Blender I/O v5.2.40",
+    "images": 1,
+    "meshes": 1,
+    "nodes": 57,
+    "skins": 1
+  },
+  "fake": false,
+  "note": null
+}

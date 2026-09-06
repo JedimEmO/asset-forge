@@ -1164,3 +1164,40 @@ fn a_bundle_takes_its_motion_scale_from_the_body_when_no_flag_states_one() {
     assert!((stated.record.motion_scale - 1.5).abs() < 1e-9);
     assert_eq!(stated.record.motion_scale_source, "stated by the caller");
 }
+
+#[test]
+fn music_loop_recipe_and_source_survive_promotion() {
+    let (dir, project) = temp_project();
+    let wav = dir.path().join("loop.wav");
+    let source = dir.path().join("source.wav");
+    write_sine_wav(&wav, 0.25);
+    write_sine_wav(&source, 1.0);
+    let source_sha = forge_library::hash::sha256_file(&source).expect("hash");
+    let recipe = serde_json::json!({"start_s": 0.1, "duration_s": 0.25, "crossfade_s": 0.05, "algorithm": "linear_wrap_pcm16_v1", "applied": true});
+    let value = serde_json::json!({"forge_record": 2, "kind": "music", "tool": "ace_step", "created": "2026-09-05", "created_by": "human",
+        "inputs": [{"role": "loop_source", "path": "source.wav", "sha256": source_sha}],
+        "params": {"duration_s": 1.0, "gain_db": -6, "thinking": false, "format": "wav", "loop": recipe}});
+    let run = GeneratorRecord::from_slice(
+        &serde_json::to_vec(&value).expect("json"),
+        Path::new("loop.json"),
+    )
+    .expect("record");
+    let mut request = audio_request(Kind::Music, "loop", &wav, false);
+    request.record = Some(run);
+    let promoted = promote_audio(&project, &request).expect("promote");
+    assert_eq!(promoted.record.source.path.as_deref(), Some("source.wav"));
+    assert_eq!(
+        promoted.record.source.sha256.as_deref(),
+        Some(source_sha.as_str())
+    );
+    let Generator::AceStep(params) = promoted.record.generator.expect("generator") else {
+        panic!("music");
+    };
+    assert_eq!(params.gain_db, Some(-6));
+    assert_eq!(params.thinking, Some(false));
+    assert_eq!(params.duration_s, Some(1.0));
+    assert_eq!(
+        serde_json::to_value(params.r#loop.expect("loop")).expect("json"),
+        recipe
+    );
+}

@@ -59,6 +59,17 @@ mod util;
 
 pub use config::{Config, ConfigError, PROJECT_ENV};
 
+/// The embedded workflow guide, shared verbatim by the CLI and MCP resource.
+/// Available before a project exists and without runtime documentation files.
+#[must_use]
+pub fn workflow_guide() -> String {
+    format!(
+        "Toolkit version: {}\n\n{}",
+        env!("CARGO_PKG_VERSION"),
+        include_str!("../guides/workflow.md")
+    )
+}
+
 /// Why serving stopped before the client hung up.
 ///
 /// Every rmcp type stays inside this crate — the workspace pins rmcp
@@ -296,13 +307,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tool_surface_is_the_twenty_seven_names_mcp_check_pins() {
+    fn the_tool_surface_is_the_thirty_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
         // The list is asserted rather than counted so a rename shows up as a
         // diff of names, which is what `just mcp-check` compares against and
         // what `mcp_session.rs` asserts over both transports.
-        let twenty_seven = [
+        let thirty = [
+            "audit",
             "cancel",
             "doctor",
             "export_body",
@@ -318,6 +330,7 @@ mod tests {
             "list_clips",
             "list_models",
             "list_runs",
+            "manifest_check",
             "prepare_body",
             "prepare_prop",
             "promote_audio",
@@ -329,14 +342,12 @@ mod tests {
             "setup",
             "skin_body",
             "status",
+            "verify",
             "wait",
         ];
         let mut names = server.tool_names();
         names.sort();
-        assert_eq!(
-            names, twenty_seven,
-            "the surface drifted from mcp-check's pin"
-        );
+        assert_eq!(names, thirty, "the surface drifted from mcp-check's pin");
     }
 
     #[test]

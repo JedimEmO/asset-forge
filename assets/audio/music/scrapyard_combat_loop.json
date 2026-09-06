@@ -1,0 +1,34 @@
+{
+  "schema": 2,
+  "kind": "music",
+  "name": "scrapyard_combat_loop",
+  "prompt": null,
+  "tags": [
+    "scrapyard",
+    "synthesized",
+    "loop"
+  ],
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "provenance": "unknown",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 32.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:8d5d25665a0b18f4712e8d260f03836d639948044fabae303a56272f0cc07c7b",
+  "note": "Original 16-bar 120 BPM E-minor industrial loop, 32 seconds, circular event tails. Source: assets-src/audio/scrapyard_music.py. Source hashes: designs/scrapyard/batch-02/music-source-manifest.json. Backend provenance intentionally unknown; authored outside registered generators."
+}

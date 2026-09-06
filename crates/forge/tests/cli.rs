@@ -245,10 +245,11 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    // Twenty-four of the twenty-seven `mcp-check` pins: `init_project`,
+    // Twenty-seven of the thirty `mcp-check` pins: `init_project`,
     // `licences` and `setup` land with tools/setup.rs. Anything else
     // appearing here is a surface change the skills are not written against.
     let mine = [
+        "audit",
         "cancel",
         "doctor",
         "export_body",
@@ -262,6 +263,7 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         "list_clips",
         "list_models",
         "list_runs",
+        "manifest_check",
         "prepare_body",
         "prepare_prop",
         "promote_audio",
@@ -272,6 +274,7 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         "render_model",
         "skin_body",
         "status",
+        "verify",
         "wait",
     ];
     for name in mine {
@@ -284,7 +287,7 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         assert!(
             mine.contains(&name.as_str())
                 || matches!(name.as_str(), "init_project" | "licences" | "setup"),
-            "{name} is not one of the twenty-seven --- stdout\n{out}"
+            "{name} is not one of the thirty --- stdout\n{out}"
         );
     }
     // The mesh doors are here now, and their being here is the decision:
@@ -810,6 +813,18 @@ fn help_and_refusals_reach_outside_a_project() {
     // A real call is still the ordinary refusal.
     let text = exits(dir.path(), &["gen", "doctor"], 2);
     assert!(text.contains("no forge.toml"), "{text}");
+}
+
+#[test]
+fn generator_help_inside_a_project_does_not_create_jobs() {
+    let (_dir, root) = init_project();
+    let output = forge(&root, &["gen", "mesh", "--help"]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(stdout(&output).contains("usage:"));
+    assert!(
+        !root.join("out/serve").exists(),
+        "help must not open the queue"
+    );
 }
 
 #[test]

@@ -481,6 +481,34 @@ pub struct AceStepParams {
     pub lyrics: Option<String>,
     /// Seconds requested.
     pub duration_s: Option<f32>,
+    /// Graph gain in whole decibels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gain_db: Option<i64>,
+    /// Whether the text model planned audio codes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<bool>,
+    /// Requested output container.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Explicit optional loop derivation; absent for historical full tracks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<MusicLoopParams>,
+}
+
+/// Explicit PCM loop selection, preserving the requested period.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MusicLoopParams {
+    /// Source offset in seconds.
+    pub start_s: f64,
+    /// Output period in seconds, rounded to the nearest frame.
+    pub duration_s: f64,
+    /// Wrap blend in seconds; source must extend beyond the period by this much.
+    pub crossfade_s: f64,
+    /// Versioned deterministic transform.
+    pub algorithm: String,
+    /// False for fake requests where no transform ran.
+    pub applied: bool,
 }
 
 /// What MOSS `SoundEffect` was asked for.

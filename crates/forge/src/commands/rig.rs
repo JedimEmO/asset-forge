@@ -29,14 +29,19 @@ pub(crate) fn run(cli: &Cli, command: &RigCommand) -> Outcome {
 /// or a failure with the reason, never a pass.
 fn check(cli: &Cli, args: &RigCheckArgs) -> Outcome {
     let project = crate::project(cli)?;
-    let report = forge_studio::rig_check::run(&project, &args.glb, args.out.as_deref()).map_err(
-        |error| match error {
-            forge_studio::rig_check::RigCheckError::NotAFile(_) => {
-                Failure::refused(error.to_string())
-            }
-            _ => Failure::failed(error.to_string()),
-        },
-    )?;
+    let report = forge_studio::rig_check::run_with_reference(
+        &project,
+        &args.glb,
+        args.out.as_deref(),
+        args.reference_clip.as_deref(),
+    )
+    .map_err(|error| match error {
+        forge_studio::rig_check::RigCheckError::NotAFile(_)
+        | forge_studio::rig_check::RigCheckError::MissingReference(_) => {
+            Failure::refused(error.to_string())
+        }
+        _ => Failure::failed(error.to_string()),
+    })?;
     println!("{report}");
     if report.failed() {
         Err(Failure::failed(format!(

@@ -53,6 +53,65 @@ not.
 
 ## TRELLIS.2 (`backends/trellis2`, conda, commit `75fbf018`)
 
+- **2026-09-05 follow-up: use the tested standalone CPython build at runtime.**
+  We reproduced SIGSEGV with `import scipy.special` alone, without torch,
+  TRELLIS or a GPU allocation. Gdb captured a crash in CPython's
+  `listiter_next` while incrementing an item's reference count. The Python
+  stack was parsing SciPy documentation. This identifies where it failed,
+  not which component corrupted the state.
+
+  The original conda Python 3.11.15 failed one of 30 full imports. A paired
+  run failed three of 30; both SIGSEGV and impossible Python argument types
+  occurred. An alternate conda 3.11.15 build, conda 3.11.16, SciPy 1.16.3,
+  the debug allocator and SciPy's array-API wrapper path also failed.
+  SciPy/NumPy wheel hashes and checked Python bytecode matched their sources.
+  None of these package changes was applied to the installed dependency env.
+
+  CPU placement and interpreter build affected the observations. Original
+  Python on performance core 4 failed one of 87 SciPy imports; efficiency
+  core 16 passed 200, then 500. A locally built Clang Python 3.11.15 passed
+  500 on core 4. These controls do not establish a hardware or compiler defect.
+  Gdb changed the observations too: later SciPy-only series passed 60
+  unpinned and 200 on core 6. We do not change CPU settings or ship affinity
+  restrictions as a fix.
+
+  The distributable candidate is Astral's Python build standalone release
+  `20260901`, CPython `3.11.16`, Clang `22.1.3`, Linux x86_64. Its official
+  archive SHA256 is pinned in `backends/trellis2/install_runtime.py`.
+  It passed 100 full TRELLIS imports on core 4, followed by 100 through the
+  installed default launcher with normal scheduling. Four real lifts passed:
+  a temporary trial, two normal installed jobs, and a packaged-toolkit job
+  from outside the repository. This is the tested runtime mitigation;
+  the native root cause remains unproven.
+
+  Fresh installs now add that runtime beside the conda dependency env.
+  `.env` points to Python; `.toolchain` points to conda's CUDA, gcc and
+  compiled dependencies. A generated `.pth` file exposes the dependency
+  site-packages, and `forge-runtime.json` records the archive hash, Python
+  executable hash and dependency path. Reuse verifies the executable and
+  path before skipping the download. Adoption adds this layer only with
+  `--with-pinned-runtime`; the original packages remain unchanged.
+  `${TOOLCHAIN}` falls back to the interpreter prefix for older installs
+  without a link, but an explicit dangling link stays an error. Doctor now
+  enters `trellis2.pipelines` and rejects missing CUDA/compiler tools.
+
+  The packaged installer built a fresh runtime using existing dependencies
+  and weights, then reused it with HTTP/HTTPS proxies set to an unreachable
+  address. Its probe and external-project generation passed. This did not
+  rebuild CUDA extensions from scratch or qualify the generated meshes' art.
+  Logs and trial summaries: `out/trellis-reliability-20260905/`.
+
+
+- **2026-09-05: the intermittent startup crash also occurs without a lift.**
+  The full torch → TRELLIS pipeline → o_voxel import failed once in five
+  attempts with SIGSEGV. The Python stack entered SciPy's documentation parser;
+  this does not establish SciPy as the cause. SciPy-only and torch+SciPy each
+  passed eight attempts, and all ten bounded gdb runs of the full import passed.
+  No native crash was captured under gdb and no dependency was changed.
+  Keep the fault handler enabled; startup reliability remains a release blocker.
+  Logs: `out/speech-isolation-20260905/trellis-*` and `scipy-*`.
+
+
 - **Install order: pip, then `typing-extensions`, then
   `torch==2.6.0+cu124`.** The cu124 wheel index serves a
   `typing_extensions` wheel whose metadata name the stock pip
@@ -176,6 +235,22 @@ prop path as systematically broken, on evidence that included a success.
   2026-08-30.
 
 ## MOSS-TTS and MOSS-SoundEffect (`backends/moss_tts`, `backends/moss_sfx`, commit `58b20a0`)
+
+- **2026-09-05: speech restored in an isolated interpreter.** The existing
+  Local-Transformer weights run with Transformers 5.0.0 and torch 2.9.1+cu128.
+  Both diagnostic lines were heard by the user and accepted for intelligibility
+  and complete endings. The old Comfy path still fails under 5.16.1; no model
+  or pack shim was retained. `moss_speech` now owns speech, while `moss_tts`
+  remains the Comfy voice designer. The shared verb map drives CLI and MCP
+  scheduling, and choosing voice installs both. The installer accepts existing
+  model directories through `--adopt-checkpoints`; generation runs offline.
+  Model-file hashes and actual runtime versions are recorded. Descriptor model
+  revisions pin downloads; adopted models do not inherit those revisions.
+  A fresh disposable environment installed successfully and passed its probe;
+  it occupies about 7.1 GiB on this machine. No model weights were downloaded
+  for this check. The offline attempt first refused because the exact PyTorch
+  wheels were absent from the cache. Evidence: `out/speech-isolation-20260905/`.
+
 
 **The retired path, kept while the venvs are.** Since 2026-08-30 all three
 MOSS models reach the card through TTS-Audio-Suite inside the ComfyUI host
@@ -1386,3 +1461,48 @@ is only available because the ledger is tracked; in a project made by `forge
 init` and not under git, the only way back is typing in the one file the door
 insists nobody types in. Noticed while proving the pre-checks refuse a bad
 picture, 2026-08-31.
+
+**TRELLIS startup failures were not GPU exhaustion.** During the scrapyard pickup batch, the Python 3.11 backend intermittently segfaulted in SciPy documentation/transformer imports with roughly 23 GB of GPU memory free. Fresh bytecode caches and single-threaded BLAS did not reliably help. `PYTHONMALLOC=debug PYTHONFAULTHANDLER=1` allowed one repair generation to complete, but a later overdrive export still failed with an impossible Python type error. This was a diagnostic workaround, not an established environment repair; no packages were changed and the defective meshes were not promoted. The accepted magnet and procedural game pickups avoided making these drafts a runtime dependency. 2026-09-05.
+
+### 2026-09-05 real-baseline recheck
+
+Fresh character TRELLIS seed 102 exited -11 about 3.2 s after launch, after
+seed 101 successfully generated but failed visual inspection. The outer CLI
+returned backend_failed (5); the GPU was released and the next ARDY sweep
+succeeded. No root cause has been established; retain
+`out/real-baseline-20260905/rusher102.log` and its run JSON.
+
+Both MOSS speech seeds 101/102 reproduced silent 1 s output (-120 dBFS),
+although the designer succeeded for both. The existing runtime limitation
+remains. ACE-Step produced both 30 s files, but both have long silent tails
+and fail the frozen loop criterion. OGG seed 101 clips after encoding even
+though the pre-encoding gate passed; final-container validation is needed.
+
+### 2026-09-05 diagnostic follow-up
+
+The MOSS speech failure is confirmed in the service traceback:
+`MossTTSDelayModel._sample` calls absent `_get_initial_cache_position`;
+the pack catches AttributeError and emits silence. Evidence is saved in
+`out/release-fixes-20260905/speech-runtime.log`. No shim or pin change made.
+
+TRELLIS seed 102 succeeded on one separately labeled diagnostic retry
+(109.5 s), so the earlier signal 11 is intermittent, not fixed. Enable
+`PYTHONFAULTHANDLER=1` by default in this backend to capture future fatal
+signal traces in job logs. The earlier crash had no available core dump.
+
+Music now gates and measures the decoded final OGG before recording success;
+this closes the encoding-overshoot gap, not the model's failed loop behavior.
+
+
+## 2026-09-05 — Default Conda Python crashed during the CPU test suite
+
+The full CI run used `/home/mmy/anaconda3/bin/python3` and exited 139 during
+`test_a_line_cloned_from_a_designed_voice_records_the_voice_record`.
+Faulthandler pointed at the placeholder WAV loop in `placeholders.py:83`.
+This was outside every generator backend. No environment or model pin was changed.
+
+Ten fresh interpreter controls each generated ten two-second placeholders
+without a crash. One complete rerun then passed all 277 Python tests and the
+remaining CI gates. The native cause is unresolved; these passes do not establish
+a fix. Both failed CI logs and the control results are retained under
+`out/release-quality-20260905/`. A fresh-machine qualification remains required.

@@ -1,0 +1,17 @@
+subject:   assets/bodies/scrapyard_scavenger.glb
+profile:   humanoid v1
+reference: clips/walk.glb
+ok:   animation root is named Armature
+ok:   armature transform is identity
+ok:   Hips found at depth 2, directly under the animation root
+ok:   all 55 contract bones present at contract depth
+ok:   rest rotations match the contract
+ok:   no unknown bones between Hips and the leaves
+ok:   skin present, 21555 weighted vertices
+ok:   height 1.80 m, within 1.4-2.2 m
+ok:   feet at y=-0.000 m
+ok:   reference clip: 27 bone(s) driven, 31 at rest, 0 orphaned curve(s)
+ok:   rest translation directions match the contract (worst 0.03 deg, LeftHandThumb1)
+note: the lowest vertex anywhere in walk is y = -0.048 m — the whole clip, any vertex, and not this gate
+ok:   the planted foot's own lowest vertex stays within 0.050 m of the floor over 78 contact frame(s) — worst y = -0.048 m (LeftFoot at 1.14 s)
+12 finding(s) passed, 0 failed, 1 note(s), 0 warning(s)

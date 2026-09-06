@@ -367,3 +367,33 @@ fn check_a_subject_from_the_environment() {
     println!("{report}");
     assert!(!report.failed(), "{:?}", failures(&report));
 }
+
+#[test]
+fn explicit_reference_is_used_and_missing_selection_is_refused() {
+    let (_dir, project, mannequin) = temp_project();
+    promote_clip(
+        &project,
+        &PromoteClip {
+            name: "jog".into(),
+            take_path: toolkit("crates/forge_motion/tests/fixtures/blender/gen_walk.npz"),
+            recipe: ClipRecipe::default(),
+            prompt: None,
+            tags: Vec::new(),
+            note: None,
+            events: Vec::new(),
+            created_by: Actor::Agent("tester".into()),
+            take_record: None,
+            overwrite: false,
+        },
+    )
+    .expect("promote jog without a walk entry");
+    let report =
+        rig_check::run_with_reference(&project, &mannequin, None, Some("jog")).expect("check jog");
+    assert_eq!(report.reference.as_deref(), Some("clips/jog.glb"));
+    assert!(!report.failed(), "{report}");
+    assert_eq!(report.count(Severity::Warn), 0, "{report}");
+    assert!(matches!(
+        rig_check::run_with_reference(&project, &mannequin, None, Some("missing")),
+        Err(rig_check::RigCheckError::MissingReference(_))
+    ));
+}

@@ -45,7 +45,7 @@ struct App {
 /// would not fit.
 pub(crate) fn run(project: &Project, args: &GpuArgs) -> Outcome {
     if args.free {
-        free(project);
+        free(project)?;
     }
     let binary = which("nvidia-smi").ok_or_else(|| {
         Failure::refused(
@@ -172,10 +172,14 @@ pub(crate) fn run(project: &Project, args: &GpuArgs) -> Outcome {
 /// one safety net `designs/hosting.md` makes load-bearing for the MOSS
 /// pack, and the command its own note tells the user to run must not clear
 /// it on no evidence.
-fn free(project: &Project) {
+fn free(project: &Project) -> Outcome {
+    let state = forge_serve::shared_card_dir();
+    let _lease = forge_serve::CardLease::try_acquire(&state, "manual-free", None, Some("forge gpu --free"))
+        .map_err(|e| Failure::failed(e.to_string()))?
+        .ok_or_else(|| Failure::refused("another Forge job holds the shared GPU lease; wait for it or cancel that job before freeing models"))?;
     let Some(url) = comfy_url(project) else {
         println!("free      no ComfyUI host is configured, so there is nothing to unload");
-        return;
+        return Ok(());
     };
     let before = forge_serve::comfy_free_gb(&url);
     let release =
@@ -199,7 +203,6 @@ fn free(project: &Project) {
             println!("floor     unknown — the host did not answer, so nothing was measured");
         }
     }
-    let state = forge_serve::state_dir(&project.root);
     if release.returned && release.floor_gb.is_some() {
         // A card that is **provably** back clears a withholding: this is
         // the one door that can say so, because it just measured free VRAM
@@ -219,6 +222,7 @@ fn free(project: &Project) {
         println!("free      {note}");
         println!("free      the withheld lease stays: nothing here proved the card is free");
     }
+    Ok(())
 }
 
 /// Where the `ComfyUI` host is: the environment first, then the host

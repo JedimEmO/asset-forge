@@ -1,0 +1,55 @@
+{
+  "forge_record": 2,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": "3.11.15",
+    "torch": "2.6.0+cu124",
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": "af44b45f2e35a493886929c6d786e563ec68364d",
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/scrapyard_rifle.png",
+      "sha256": "sha256:ceddb717ffa5fb99673a1da13c115fa1bfa596e1fad9c3d7305e4f7ae917e619",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "attn_backend": "flash_attn",
+    "decimation_target_vertices": 6000,
+    "pipeline_type": "1024_cascade",
+    "preset": "prop",
+    "prompt_from": null,
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 42,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/lifts/scrapyard_rifle.glb",
+      "sha256": "sha256:abd97f1a8190082cc5995e9d025882fc75a177c17bafdf7e316a771c8609d832",
+      "bytes": 2935808
+    }
+  ],
+  "measured": {
+    "images": 2,
+    "keyed_subject_fraction": 0.24155557081772142,
+    "triangles": 5818,
+    "vertices": 5162
+  },
+  "fake": false,
+  "note": null
+}

@@ -41,7 +41,8 @@ use serde_json::{Value, json};
 /// The whole tool surface, sorted. `mcp-check` pins the same list against a
 /// raw handshake; this pins it against a real client, so the two cannot
 /// drift apart without one of them saying so.
-const TOOLS: [&str; 27] = [
+const TOOLS: [&str; 30] = [
+    "audit",
     "cancel",
     "doctor",
     "export_body",
@@ -57,6 +58,7 @@ const TOOLS: [&str; 27] = [
     "list_clips",
     "list_models",
     "list_runs",
+    "manifest_check",
     "prepare_body",
     "prepare_prop",
     "promote_audio",
@@ -68,16 +70,21 @@ const TOOLS: [&str; 27] = [
     "setup",
     "skin_body",
     "status",
+    "verify",
     "wait",
 ];
 
-/// The binary under test: this build, always.
+/// This build by default; distribution acceptance can supply a staged binary.
 fn forge() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_forge"))
+    std::env::var_os("FORGE_TEST_BINARY")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_forge")), PathBuf::from)
 }
 
 /// The toolkit checkout, for `FORGE_HOME` — `crates/forge/` up two.
 fn toolkit() -> PathBuf {
+    if let Some(path) = std::env::var_os("FORGE_TEST_TOOLKIT") {
+        return PathBuf::from(path);
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -100,6 +107,7 @@ fn scratch_project() -> tempfile::TempDir {
         .arg(dir.path())
         .arg("--name")
         .arg("mcp_session")
+        .args(["--tier", "fake", "--yes"])
         .env("FORGE_HOME", toolkit())
         .env("FORGE_FAKE", "1")
         .stdin(std::process::Stdio::null())
@@ -177,6 +185,30 @@ async fn refused(
 /// meet the gate, ask what this machine can do, make a sound, wait for it,
 /// look at it, ship it, and hold the library to its own claims.
 async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
+    let resources = client.list_all_resources().await.expect("resources/list");
+    assert!(
+        resources
+            .iter()
+            .any(|r| r.uri == "forge://guides/v1/workflow")
+    );
+    let guide = client
+        .read_resource(rmcp::model::ReadResourceRequestParams::new(
+            "forge://guides/v1/workflow",
+        ))
+        .await
+        .expect("read workflow guide");
+    let guide = serde_json::to_string(&guide).expect("guide text");
+    for name in ["verify", "audit", "manifest_check", "generate_audio"] {
+        assert!(guide.contains(name), "{name} missing from guide");
+    }
+    assert!(
+        client
+            .read_resource(rmcp::model::ReadResourceRequestParams::new(
+                "forge://guides/missing"
+            ))
+            .await
+            .is_err()
+    );
     // -- the surface ------------------------------------------------------
     let mut names: Vec<String> = client
         .list_all_tools()
@@ -356,19 +388,61 @@ async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
     character_loop(client, project).await;
 
     // -- hold the library to its own claims -------------------------------
-    let verify = Command::new(forge())
-        .arg("verify")
-        .arg("--project")
-        .arg(project)
-        .env("FORGE_HOME", toolkit())
-        .output()
-        .expect("forge verify runs");
-    assert!(
-        verify.status.success(),
-        "verify failed on what the session shipped:\n{}\n{}",
-        String::from_utf8_lossy(&verify.stdout),
-        String::from_utf8_lossy(&verify.stderr)
-    );
+    for name in ["verify", "audit", "manifest_check"] {
+        let result = call(client, name, json!({})).await;
+        assert!(!is_error(&result), "{}: {}", name, text(&result));
+        let fields = result.structured_content.expect("structured validation");
+        assert_eq!(fields["passed"], true);
+        assert_eq!(fields["exit_code"], 0);
+    }
+    // Deliberate damage stays inside the throwaway project. Checks must report
+    // drift without repairing it; CLI and MCP must reach the same verdict.
+    for (name, path, args) in [
+        (
+            "verify",
+            project.join("assets/audio/sfx/door.wav"),
+            vec!["verify"],
+        ),
+        (
+            "audit",
+            project.join("assets/bodies/mannequin.glb"),
+            vec!["audit"],
+        ),
+        (
+            "manifest_check",
+            project.join("assets/library.json"),
+            vec!["manifest", "--check"],
+        ),
+    ] {
+        let original = std::fs::read(&path).expect("original fixture");
+        std::fs::write(&path, b"deliberately invalid test fixture").expect("damage fixture");
+        let result = call(client, name, json!({})).await;
+        assert!(
+            is_error(&result),
+            "{name} must report damage: {}",
+            text(&result)
+        );
+        let fields = result.structured_content.expect("failure fields");
+        assert_eq!(fields["passed"], false);
+        let cli = Command::new(forge())
+            .arg("--project")
+            .arg(project)
+            .args(args)
+            .output()
+            .expect("CLI validation");
+        assert_eq!(fields["exit_code"], cli.status.code().expect("exit code"));
+        assert!(
+            fields["report"]
+                .as_str()
+                .expect("report")
+                .contains(String::from_utf8_lossy(&cli.stdout).trim())
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("unchanged"),
+            b"deliberately invalid test fixture"
+        );
+        std::fs::write(&path, original).expect("restore fixture");
+    }
 }
 
 /// The character path, appended to the session: a reference in, a mesh out,
@@ -636,6 +710,7 @@ async fn mcp_session_with_no_project_yet() {
     let mut command = tokio::process::Command::new(forge());
     command.arg("mcp");
     session_env(&mut command, dir.path());
+    command.env_remove("FORGE_FAKE");
     command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -648,6 +723,14 @@ async fn mcp_session_with_no_project_yet() {
         .serve((stdout, stdin))
         .await
         .expect("the handshake completes where there is no forge.toml");
+
+    let guide = client
+        .read_resource(rmcp::model::ReadResourceRequestParams::new(
+            "forge://guides/v1/workflow",
+        ))
+        .await
+        .expect("guide is available before init");
+    assert!(!guide.contents.is_empty());
 
     // Every tool is still advertised — the surface is the toolkit's, not
     // the project's — and the seventeen that need a library refuse by
@@ -663,8 +746,7 @@ async fn mcp_session_with_no_project_yet() {
     let doctor = ok(client_ref(&client), "doctor", json!({"quick": true})).await;
     assert!(!doctor.is_empty());
 
-    // And the one that ends the condition, which then says plainly that
-    // this session cannot follow it.
+    // Initialize the bound directory, then run the entire workflow on this connection.
     let made = ok(
         client_ref(&client),
         "init_project",
@@ -673,10 +755,22 @@ async fn mcp_session_with_no_project_yet() {
     .await;
     assert!(dir.path().join("forge.toml").is_file(), "{made}");
     assert!(
-        made.contains("Reconnect it with `--project"),
-        "the frame says the running server is still holding what it started with:\n{made}"
+        made.contains("without reconnecting"),
+        "initialization must make continuation explicit:\n{made}"
     );
 
+    session(&client, dir.path()).await;
+
+    // Creating another game never switches this session's bound library.
+    let other = tempfile::tempdir().expect("other game");
+    let made = ok(
+        &client,
+        "init_project",
+        json!({"path": other.path(), "tier": "fake", "make": {}}),
+    )
+    .await;
+    assert!(made.contains("Reconnect"), "{made}");
+    assert!(ok(&client, "list_audio", json!({})).await.contains("door"));
     let _ = client.cancel().await;
     let _ = child.kill().await;
 }
@@ -845,19 +939,8 @@ async fn the_whole_character_loop_on_the_fake_tier() {
     .await;
     assert!(looked.contains("crate"), "{looked}");
 
-    let verify = Command::new(forge())
-        .arg("verify")
-        .arg("--project")
-        .arg(project)
-        .env("FORGE_HOME", toolkit())
-        .output()
-        .expect("forge verify runs");
-    assert!(
-        verify.status.success(),
-        "verify failed on the body the loop shipped:\n{}\n{}",
-        String::from_utf8_lossy(&verify.stdout),
-        String::from_utf8_lossy(&verify.stderr)
-    );
+    ok(&client, "verify", json!({})).await;
+    ok(&client, "manifest_check", json!({})).await;
 
     let _ = client.cancel().await;
     let _ = child.kill().await;

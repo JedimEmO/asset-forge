@@ -43,7 +43,14 @@ use serde::Deserialize;
 use crate::Project;
 
 /// The backends the toolkit knows, in the order doctor lists them.
-pub const KNOWN: [&str; 5] = ["trellis2", "ardy", "acestep", "moss_sfx", "moss_tts"];
+pub const KNOWN: [&str; 6] = [
+    "trellis2",
+    "ardy",
+    "acestep",
+    "moss_sfx",
+    "moss_tts",
+    "moss_speech",
+];
 
 /// The environment variable naming the backends directory.
 pub const BACKENDS_ENV: &str = "FORGE_BACKENDS";
@@ -487,33 +494,10 @@ pub fn override_var(name: &str) -> String {
     format!("FORGE_BACKEND_{}_PYTHON", name.to_ascii_uppercase())
 }
 
-/// The directory holding `python/forge_gen`: the project itself when it is
-/// the toolkit, else [`HOME_ENV`] or [`TOOLKIT_ENV`], else an ancestor of
-/// the running executable (a checkout's `target/debug/forge` is two levels
-/// under it).
+/// The shared resolver: explicit [`HOME_ENV`] or [`TOOLKIT_ENV`], then
+/// the project when it is a toolkit, then executable ancestors.
 fn toolkit_root(project: &Project) -> Option<PathBuf> {
-    let is_toolkit = |dir: &Path| dir.join("python").join("forge_gen").is_dir();
-    if is_toolkit(&project.root) {
-        return Some(project.root.clone());
-    }
-    for key in [HOME_ENV, TOOLKIT_ENV] {
-        if let Some(dir) = std::env::var_os(key) {
-            let dir = PathBuf::from(dir);
-            if is_toolkit(&dir) {
-                return Some(dir);
-            }
-        }
-    }
-    let exe = std::env::current_exe().ok()?;
-    let mut here = exe.parent()?.to_path_buf();
-    loop {
-        if is_toolkit(&here) {
-            return Some(here);
-        }
-        if !here.pop() {
-            return None;
-        }
-    }
+    crate::toolkit::root(Some(&project.root))
 }
 
 /// One backend's state, from its directory and the overrides.

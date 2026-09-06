@@ -2,6 +2,8 @@
 
 The step past plain prompting: a keys file authors sparse constraints — per
 keyed frame, which joints are pinned, and which way a bone should *aim*.
+Supported constraint groups are Hips, LeftHand, RightHand, LeftFoot and
+RightFoot. Other bones, including Head, are refused before model loading.
 Positions come from a base take (the body performance to keep); aims are
 authored, in character space, and become wrist/bone rotations via a minimal
 rotation of the bone's child axis. ARDY generates the full-body motion that
@@ -69,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -79,6 +82,10 @@ from forge_gen.motion import session
 from forge_gen.motion.sweep import DEFAULT_FPS, KNOWN_MODELS
 
 PRESETS = ("recoil",)
+
+# ARDY SkeletonBase.expand_joint_names accepts these semantic groups, not
+# arbitrary skeleton bones. Validate before loading the model.
+CONSTRAINT_JOINTS = ("Hips", "LeftHand", "RightHand", "LeftFoot", "RightFoot")
 
 #: The joints the recoil preset constrains (the old script's HANDS + Hips).
 RECOIL_JOINTS = ("LeftHand", "RightHand", "Hips")
@@ -303,20 +310,27 @@ def check_keys(spec: dict) -> None:
     """The shape the docstring promises, refused early with the defect named."""
     if not isinstance(spec, dict) or not isinstance(spec.get("joints"), list) or not spec["joints"]:
         raise InputRejected("keys file: 'joints' must be a non-empty list of joint names")
+    for joint in spec["joints"]:
+        if not isinstance(joint, str) or joint not in CONSTRAINT_JOINTS:
+            raise InputRejected(f"keys file: unsupported constraint joint {joint!r}; supported: {', '.join(CONSTRAINT_JOINTS)}")
+    if len(set(spec["joints"])) != len(spec["joints"]):
+        raise InputRejected("keys file: constraint joints must not repeat")
     if not isinstance(spec.get("keys"), list) or not spec["keys"]:
         raise InputRejected("keys file: 'keys' must be a non-empty list")
     for i, key in enumerate(spec["keys"]):
-        if not isinstance(key, dict) or not isinstance(key.get("frame"), int) or key["frame"] < 0:
+        if not isinstance(key, dict) or type(key.get("frame")) is not int or key["frame"] < 0:
             raise InputRejected(f"keys file: key #{i} needs an integer 'frame' >= 0")
-        if "pose_frame" in key and (not isinstance(key["pose_frame"], int) or key["pose_frame"] < 0):
+        if "pose_frame" in key and (type(key["pose_frame"]) is not int or key["pose_frame"] < 0):
             raise InputRejected(f"keys file: key #{i} 'pose_frame' must be an integer >= 0")
         for field in ("pos", "aim"):
             table = key.get(field, {})
             if not isinstance(table, dict):
                 raise InputRejected(f"keys file: key #{i} '{field}' must be an object of joint -> [x, y, z]")
             for joint, vec in table.items():
-                if not (isinstance(vec, list) and len(vec) == 3 and all(isinstance(v, (int, float)) for v in vec)):
-                    raise InputRejected(f"keys file: key #{i} {field}.{joint} must be [x, y, z]")
+                if not (isinstance(vec, list) and len(vec) == 3 and all(type(v) in (int, float) and math.isfinite(v) for v in vec)):
+                    raise InputRejected(f"keys file: key #{i} {field}.{joint} must be three finite numbers [x, y, z]")
+                if field == "aim" and not any(vec):
+                    raise InputRejected(f"keys file: key #{i} aim.{joint} must be a nonzero direction")
 
 
 def params_for(args, *, keys_path: Path, duration_s: float, history_frames, diffusion_steps, sample: int) -> dict:

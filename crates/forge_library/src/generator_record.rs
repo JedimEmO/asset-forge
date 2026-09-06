@@ -223,6 +223,15 @@ impl GeneratorRecord {
     pub fn from_slice(bytes: &[u8], path: &Path) -> Result<Self> {
         let value: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|e| LibraryError::json(path, e))?;
+        if value.get("kind").and_then(serde_json::Value::as_str) == Some("music")
+            && let Some(recipe) = value
+                .get("params")
+                .and_then(|params| params.get("loop"))
+                .filter(|recipe| !recipe.is_null())
+        {
+            let _: crate::schema::MusicLoopParams = serde_json::from_value(recipe.clone())
+                .map_err(|error| LibraryError::json(path, error))?;
+        }
         match value
             .get("forge_record")
             .and_then(serde_json::Value::as_u64)
@@ -435,6 +444,13 @@ impl GeneratorRecord {
             timesignature: self.param_str("timesignature"),
             genres: self.param_str("genres"),
             lyrics: self.param_str("lyrics"),
+            gain_db: self.param_i64("gain_db"),
+            thinking: self.param_bool("thinking"),
+            format: self.param_str("format"),
+            r#loop: self
+                .params
+                .get("loop")
+                .and_then(|value| serde_json::from_value(value.clone()).ok()),
             duration_s: self.param_f32("duration_s"),
         }
     }

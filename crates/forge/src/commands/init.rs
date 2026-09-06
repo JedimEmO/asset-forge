@@ -95,6 +95,11 @@ pub(crate) fn run_with(root: Option<&Path>, args: &InitArgs, flags: &MakeFlags) 
         Some(dir) => Some(dir.clone()),
         None => toolkit::profile_dir(&project_rig()),
     };
+    if profile.is_none() {
+        return Err(Failure::refused(
+            "no rig profile found — set FORGE_HOME to the toolkit installation (or pass --rig-dir); nothing was written",
+        ));
+    }
     let (project, lines) =
         forge_library::project::create(&root, &name, make, &hardware, profile.as_deref())?;
     let mut lines = lines.into_iter();
@@ -104,19 +109,7 @@ pub(crate) fn run_with(root: Option<&Path>, args: &InitArgs, flags: &MakeFlags) 
     for line in lines {
         println!("  {line}");
     }
-    if profile.is_none() {
-        // Exit non-zero: without the profile the project is half-made — the
-        // very next `forge verify` and `forge manifest` both exit 1 on it —
-        // and an `init` that said ok anyway buried the one message that
-        // names the fix.
-        return Err(Failure::refused(format!(
-            "no rig profile installed — the toolkit's rigs/{} could not be found from this \
-             executable. Set {} to the asset-forge checkout (or pass --rig-dir), then run \
-             `forge init` here again; forge.toml and the directories are already in place",
-            project.rig_name,
-            forge_library::backends::TOOLKIT_ENV,
-        )));
-    }
+    agent_config(&project)?;
     println!("next: {}", project.next_step());
     Ok(())
 }
@@ -248,6 +241,16 @@ fn prompt(question: &str) -> Result<String, Failure> {
         .read_line(&mut line)
         .map_err(|e| Failure::failed(e.to_string()))?;
     Ok(line.trim().to_string())
+}
+
+/// Generate an agent kit for a new or existing game without overwriting custom files.
+pub(crate) fn agent_config(project: &forge_library::Project) -> Outcome {
+    let exe = std::env::current_exe().map_err(|e| Failure::failed(e.to_string()))?;
+    let toolkit = forge_library::backends::Backends::toolkit_root(project);
+    for line in forge_library::agent_kit::write(project, &exe, toolkit.as_deref())? {
+        println!("{line}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

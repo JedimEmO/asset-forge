@@ -34,6 +34,12 @@ and `ember_knight` came through the door for real on 2026-08-31; the
 | `props/sword.png` | xAI grok, image_edit chained from the same style board; painted and lifted 2026-08-22 | `assets/models/sword.glb` — a held weapon, grip at the origin (`hand_r` socket) | 2026-08-30 |
 | `props/barrel.png` | xAI grok, image_edit chained from the same style board; painted 2026-08-18 | `assets/models/barrel.glb` — a floor prop, floor at the origin | 2026-08-30 |
 | `characters/ember_knight.png` | xAI grok (cloud image model), drawn 2026-08-30 under xAI's consumer terms (user owns the output) for the Phase 2 fitted-skeleton runs; third version, re-proportioned to fingertip span equal to height and seven heads after two squat drafts the fit gate refused | `assets/bodies/ember_knight.glb` — lifted at seed 7 (the first lift that needed no re-roll), skinned by SkinTokens and carrying its own fitted bone lengths | 2026-08-31 |
+| `characters/scrapyard_scavenger.png` | OpenAI built-in image_gen; generated 2026-09-04; prompt in designs/scrapyard/prompts-v1.json | a character reference, imported by `forge ref import` | 2026-09-04 |
+| `characters/scrapyard_rusher.png` | OpenAI built-in image_gen; revised solid head 2026-09-04; prompt in designs/scrapyard/rusher-reference-v2-prompt.txt | a character reference, imported by `forge ref import` | 2026-09-04 |
+| `props/scrapyard_rifle.png` | OpenAI built-in image_gen; generated 2026-09-04; prompt in designs/scrapyard/prompts-v1.json | a prop reference, imported by `forge ref import` | 2026-09-04 |
+| `props/scrapyard_repair.png` | OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch | a prop reference, imported by `forge ref import` | 2026-09-04 |
+| `props/scrapyard_overdrive.png` | OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch | a prop reference, imported by `forge ref import` | 2026-09-04 |
+| `props/scrapyard_magnet.png` | OpenAI built-in image_gen, generated 2026-09-04 for the scrapyard combat batch | a prop reference, imported by `forge ref import` | 2026-09-04 |
 
 **Licence posture.** All four were generated with the grok CLI ("Grok
 Build", xAI) in the repository this one was distilled from. xAI's consumer

@@ -1,0 +1,58 @@
+{
+  "source": "/home/mmy/repos/personal/gamedev/asset-forge/assets-src/audio/scrapyard_synth.py",
+  "source_sha256": "0f5c9ca407deb23c656534f16c91228f1825fbb335388f6c826cca1c5720ec2e",
+  "sample_rate": 48000,
+  "seed_base": 42017,
+  "method": "Original analytic oscillators, envelopes and seeded noise; no audio inputs.",
+  "sounds": {
+    "shot": {
+      "path": "out/audio/synth/scrapyard_shot.wav",
+      "duration_s": 0.24,
+      "peak_linear": 0.7,
+      "description": "Dry electric rifle crack with metallic bolt tail",
+      "sha256": "c93b0d1fca209ff3ae94771be3b74238344cd12077f0b08e8b1e7df89f82aee2"
+    },
+    "hit": {
+      "path": "out/audio/synth/scrapyard_hit.wav",
+      "duration_s": 0.22,
+      "peak_linear": 0.58,
+      "description": "Short bright armor impact with inharmonic ringing",
+      "sha256": "39fb74f666bcae0af51fd730577519a144e146f2bb4b2cdfcddc54a2706b5529"
+    },
+    "explosion": {
+      "path": "out/audio/synth/scrapyard_explosion.wav",
+      "duration_s": 0.9,
+      "peak_linear": 0.75,
+      "description": "Compact bass impact, electrical fizz and debris",
+      "sha256": "c77344fcd819ff943a4ebbef36a6f491a953ffe213d2e1dfa4df32ad57b3bf19"
+    },
+    "pickup": {
+      "path": "out/audio/synth/scrapyard_pickup.wav",
+      "duration_s": 0.42,
+      "peak_linear": 0.48,
+      "description": "Three rising bell notes: E6 G6 B6",
+      "sha256": "b9d83827cb0924c68c62ba1591c6b11ecba0ad88bf98afb594d31ebbb47fafd5"
+    },
+    "dash": {
+      "path": "out/audio/synth/scrapyard_dash.wav",
+      "duration_s": 0.28,
+      "peak_linear": 0.5,
+      "description": "Fast filtered air jet and descending electronic zip",
+      "sha256": "8cee7c5c130983920c955a385c18c76edbca67839a215ea34e544a6eac68c84e"
+    },
+    "upgrade": {
+      "path": "out/audio/synth/scrapyard_upgrade.wav",
+      "duration_s": 1.0,
+      "peak_linear": 0.52,
+      "description": "Ascending E minor arpeggio resolving to a bright E chord",
+      "sha256": "02dd87f57c5c489dfc72681d0e3a2dab28fb9385e289cce4fd2b9927aa1eb94c"
+    },
+    "ui": {
+      "path": "out/audio/synth/scrapyard_ui.wav",
+      "duration_s": 0.085,
+      "peak_linear": 0.35,
+      "description": "Quiet two-frequency digital confirmation tick",
+      "sha256": "f7b22b83b0fdcb39f68e7e2e7c28064bb8b523a355e96f7bf418f3556682b7c9"
+    }
+  }
+}

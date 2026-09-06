@@ -1,0 +1,32 @@
+{
+  "forge_bundle": 2,
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "body": {
+    "path": "assets/bodies/scrapyard_rusher.glb",
+    "sha256": "sha256:6a7d63a21aa6469aca59d64cca99c7198fdc9cc53dd4541506cf090b7aeecd7e"
+  },
+  "clips": [
+    {
+      "name": "scrapyard_rusher_rush",
+      "path": "assets/clips/scrapyard_rusher_rush.glb",
+      "sha256": "sha256:a86c28d0af65d396d1ce1298f0508cd38aaccfeca517781bacddcc8e3a52e492"
+    },
+    {
+      "name": "scrapyard_rusher_attack",
+      "path": "assets/clips/scrapyard_rusher_attack.glb",
+      "sha256": "sha256:a5e8287f281066a3e921c9a366dd541881b68a13ed3c6a01aacbfae513e0a6b3"
+    }
+  ],
+  "motion_scale": 0.916700005531311,
+  "motion_scale_source": "the body's own record, assets/bodies/scrapyard_rusher.json",
+  "output": {
+    "path": "designs/scrapyard/batch-02/rusher-combat.glb",
+    "sha256": "sha256:0af4df16213c8984da93a65da66fb09272f7d94de9e7333525a55a336e9829bc",
+    "bytes": 3223124,
+    "animations": [
+      "scrapyard_rusher_rush-loop",
+      "scrapyard_rusher_attack"
+    ]
+  }
+}

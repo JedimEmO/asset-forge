@@ -154,7 +154,7 @@ mod tests {
     fn a_command_line_names_the_backend_it_will_run_on() {
         assert_eq!(backend_of(&argv("sfx --prompt x")), Some("moss_sfx"));
         assert_eq!(backend_of(&argv("music --prompt x")), Some("acestep"));
-        assert_eq!(backend_of(&argv("speech --text hi")), Some("moss_tts"));
+        assert_eq!(backend_of(&argv("speech --text hi")), Some("moss_speech"));
         assert_eq!(backend_of(&argv("voice warden")), Some("moss_tts"));
         assert_eq!(backend_of(&argv("mesh a.png")), Some("trellis2"));
         assert_eq!(backend_of(&argv("motion sweep --samples 8")), Some("ardy"));

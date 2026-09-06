@@ -674,7 +674,7 @@ impl MakeKind {
             Self::Clips => &["ardy"],
             Self::Sfx => &["moss_sfx"],
             Self::Music => &["acestep"],
-            Self::Voice => &["moss_tts"],
+            Self::Voice => &["moss_tts", "moss_speech"],
         }
     }
 
@@ -772,7 +772,8 @@ pub fn backend_for_verb(verb: &str, sub: Option<&str>) -> Option<&'static str> {
     Some(match (verb, sub) {
         ("sfx", _) => "moss_sfx",
         ("music", _) => "acestep",
-        ("speech" | "voice", _) => "moss_tts",
+        ("voice", _) => "moss_tts",
+        ("speech", _) => "moss_speech",
         ("mesh", _) => "trellis2",
         ("motion", Some("sweep" | "keys")) => "ardy",
         ("skin", _) => "skintokens",
@@ -835,7 +836,16 @@ impl BackendNeed {
 /// Every backend the six kinds can need, with its executor, its disk and
 /// its licences. The counterpart to [`MakeKind::backends`]: that says which
 /// backends a kind needs, this says what each backend costs and carries.
-pub const BACKEND_NEEDS: [BackendNeed; 8] = [
+pub const BACKEND_NEEDS: [BackendNeed; 9] = [
+    BackendNeed {
+        name: "moss_speech",
+        executor: Executor::Env,
+        env_gb: 6.0,
+        weights_gb: 12.33,
+        disk_note: "isolated speech runtime (6 GB estimate) and pinned 1.7B speech + audio tokenizer weights; existing model directories can be adopted without copying",
+        licences: &[],
+        installer_prompts: &[],
+    },
     BackendNeed {
         name: "trellis2",
         executor: Executor::Env,
@@ -894,10 +904,8 @@ pub const BACKEND_NEEDS: [BackendNeed; 8] = [
         name: "moss_tts",
         executor: Executor::Comfy,
         env_gb: 0.0,
-        weights_gb: 16.28,
-        disk_note: "MOSS-TTS 1.7B 5.72 + MOSS-VoiceGenerator 3.95 + MOSS-Audio-Tokenizer \
-                    6.61, read out of backends/moss_tts/backend.toml and measured in the \
-                    host's models/TTS/ tree; the pack fetches them on first run",
+        weights_gb: 10.56,
+        disk_note: "MOSS-VoiceGenerator 3.95 GB and MOSS-Audio-Tokenizer 6.61 GB in the host model tree; the designer fetches them on first run. Speech has a separate runtime, which can adopt these weights",
         licences: &[],
         installer_prompts: &[],
     },
@@ -2232,7 +2240,7 @@ mod tests {
         );
         assert_eq!(
             make.backends(),
-            vec!["comfy", "moss_sfx", "moss_tts"],
+            vec!["comfy", "moss_sfx", "moss_speech", "moss_tts"],
             "anything comfy adds the host, and no mesh kind adds no Blender"
         );
         assert!(

@@ -51,7 +51,7 @@ pub(crate) fn spawn(
     cancel: &CancelToken,
     on_pid: &mut dyn FnMut(u32),
 ) -> GenOutcome {
-    use std::os::unix::process::CommandExt as _;
+    use std::os::unix::process::{CommandExt as _, ExitStatusExt};
 
     let Launch {
         project_root,
@@ -90,6 +90,7 @@ pub(crate) fn spawn(
             return GenOutcome {
                 // 6 is the table's missing-tool code, which is what this is.
                 exit: Some(6),
+                signal: None,
                 payload: None,
                 pid: None,
                 card: None,
@@ -131,8 +132,13 @@ pub(crate) fn spawn(
     if cancel.cancelled() {
         say(log, "cancelled: the process group was signalled");
     }
+    let signal = status.as_ref().ok().and_then(ExitStatusExt::signal);
+    if let Some(signal) = signal {
+        say(log, &format!("generator terminated by signal {signal}"));
+    }
     GenOutcome {
         exit: status.ok().and_then(|status| status.code()),
+        signal,
         payload,
         pid: Some(pid),
         card: None,

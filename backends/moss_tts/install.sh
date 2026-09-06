@@ -1,31 +1,5 @@
 #!/usr/bin/env bash
-# Check that the ComfyUI host can run `forge gen speech` and `forge gen voice`.
-# It installs nothing.
-#
-#   bash backends/moss_tts/install.sh
-#
-# There is no environment here to make. Both models run inside the host
-# through the TTS-Audio-Suite pack, which `backends/comfy/install.sh` clones
-# at its pin, and the weights are downloaded by the node itself on its first
-# run into the same HF cache every other backend fills. So this script's whole
-# job is to say whether the host is there, whether the pack is at the pin this
-# backend names, and whether the node class the tracked graphs need is
-# registered — and to name the fix when it is not.
-#
-# **The speech checkpoint is not the one the venv ran.** The pack offers
-# MOSS-TTS as 1.7B (OpenMOSS-Team/MOSS-TTS-Local-Transformer) or as the 8B
-# Delay checkpoints, and the 8B is the one this repository measured OOM-ing on
-# the 24 GB card. `workflows/speech.api.json` states 1.7B, so a line cloned
-# after this move is a different voice from one cloned before it at the same
-# reference. The voice *designer* is unchanged: the pack's "Voice Design 1.7B"
-# is the same MOSS-VoiceGenerator weights `forge gen voice` already recorded.
-#
-# What this replaced: a python 3.12 venv with transformers 5.0 and a clone of
-# OpenMOSS/MOSS-TTS shared with moss_sfx, plus the soundfile-and-codes dance
-# the cloner needed because torchaudio reaches for torchcodec here. The host
-# decodes the reference in its own venv, which carries PyAV. The old path is
-# in git history at the commit before this one.
-
+# Check the ComfyUI voice designer. Speech has its own moss_speech installer.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_NAME="moss_tts"

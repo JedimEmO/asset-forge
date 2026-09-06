@@ -53,6 +53,8 @@ pub(crate) struct Plan {
 pub struct GenOutcome {
     /// The child's exit code, or `None` when a signal ended it.
     pub exit: Option<i32>,
+    /// The terminating Unix signal, observed from the child status.
+    pub signal: Option<i32>,
     /// The object on its last stdout line, when there was one.
     pub payload: Option<Value>,
     /// The pid it ran as, which is also its process group.

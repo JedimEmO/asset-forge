@@ -38,6 +38,10 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Make a project here: forge.toml, the asset directories, the rig profile
     Init(InitArgs),
+    /// Write missing project agent instructions and explicit MCP launch configuration
+    AgentConfig,
+    /// Print the embedded workflow guide; no project or backend is required
+    Guide,
     /// Install the backends the chosen kinds need, after one screen naming
     /// every licence they carry and what they cost on disk
     Setup(crate::commands::setup::SetupArgs),
@@ -691,6 +695,9 @@ pub(crate) enum RigCommand {
 /// `forge rig check <glb>`.
 #[derive(Debug, Args)]
 pub(crate) struct RigCheckArgs {
+    /// Library clip to use for binding and planted-foot checks (default: rig contract).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) reference_clip: Option<String>,
     /// The rigged glb to check — an export under out/, or a shipped body.
     pub(crate) glb: PathBuf,
     /// Also render it playing the reference clip (or at rest, when the

@@ -81,6 +81,11 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Outcome {
     match &cli.command {
         Command::Init(args) => commands::init::run(cli.project.as_deref(), args),
+        Command::AgentConfig => commands::init::agent_config(&project(cli)?),
+        Command::Guide => {
+            print!("{}", forge_mcp::workflow_guide());
+            Ok(())
+        }
         Command::Setup(args) => commands::setup::run(&project(cli)?, args),
         Command::Catalog(args) => commands::catalog::run(&project(cli)?, args),
         Command::Manifest(args) => commands::manifest::run(&project(cli)?, args),
@@ -92,13 +97,10 @@ fn run(cli: &Cli) -> Outcome {
         Command::Audio(args) => commands::audio::run(cli, args),
         Command::Rig(args) => commands::rig::run(cli, args),
         Command::Ref(args) => commands::reference::run(&project(cli)?, args),
-        Command::Gen(args) => match project(cli) {
-            Ok(project) => commands::generate::run(&project, args),
-            // `--help` needs no library: print the Python layer's help from
-            // anywhere rather than refusing over a missing forge.toml.
-            Err(_) if commands::generate::wants_help(args) => commands::generate::help(args),
-            Err(refusal) => Err(refusal),
-        },
+        Command::Gen(args) if commands::generate::wants_help(args) => {
+            commands::generate::help(args)
+        }
+        Command::Gen(args) => commands::generate::run(&project(cli)?, args),
         Command::Doctor(args) => commands::doctor::run(&project(cli)?, args),
         Command::Gpu(args) => commands::gpu::run(&project(cli)?, args),
         Command::Sheet(args) => commands::look::sheet(&project(cli)?, args),

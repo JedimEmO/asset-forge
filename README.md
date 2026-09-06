@@ -308,6 +308,7 @@ The CLI is one binary:
 
 ```
 forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three questions)
+      agent-config                                    (add missing agent instructions and MCP config)
       setup [kind…] [--yes <licence>…] [--dry-run]         (one screen, then the installers)
       catalog | manifest [--check] | verify | audit [--fit] | rebake | migrate
       promote clip|body|model|audio        (direct; refuse an existing name unless --overwrite)
@@ -317,7 +318,7 @@ forge init [--make …] [--tier …] [--comfy-url …] [--yes]   (the three ques
       doctor | gpu | sheet | views | turntable | bones | bundle | studio | mcp
 ```
 
-`forge mcp` serves twenty-seven tools over stdio, registered in
+`forge mcp` serves thirty tools over stdio, registered in
 [`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
 a fresh clone does not have — run any `just` recipe once (`just doctor` is
 the usual first) to build it before the MCP server can start. Images come
@@ -346,11 +347,23 @@ exist, so a wrong name costs one turn, not a guess.
 | `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
 | `promote_audio` | file an auditioned sound as sfx, music or voice |
 | `export_bundle` | one glb: a body's skin and any number of clips as named animations, for handing outside the toolkit; nothing is filed |
+| `verify` | read-only integrity, reference provenance and profile checks; same gate as CLI |
+| `audit` | full byte and posed-animation reproduction audit; optional `fit` enables body-fit checks |
+| `manifest_check` | read-only comparison against a fresh manifest projection |
 | `doctor` | what this machine can run: ok, partial, missing, broken — and `off` for a kind the project did not choose |
 | `init_project` | make a project: what you make, what card this is, where ComfyUI is. Refuses an existing project unless `adopt` |
 | `licences` | every licence the chosen kinds carry, **each notice in full** — you cannot accept what you were not shown |
 | `setup` | install what a kind needs. **Refused** until `accept` names every gated id, and the refusal lists exactly which |
 | `wait` / `cancel` / `status` / `list_runs` | a generate returns a job; these are how you follow it, stop it, and see what the card is doing |
+
+The versioned workflow guide is discoverable with MCP `resources/list` and readable
+at `forge://guides/v1/workflow`. It is embedded in the binary, so installed clients
+need no repository access. After `init_project` creates the server's bound directory,
+this connection can generate and validate immediately. Creating another project
+never switches the server's library.
+
+Validation results include structured `check`, `passed`, `exit_code`, `code` and
+`report` fields. Failed checks set the MCP error-result flag and leave files unchanged.
 
 **A body and a model have doors now.** The first shape of this surface had
 none, on the ground that a mesh needs a human looking at it. The human is in
@@ -359,7 +372,7 @@ library is the export gate, the rig check and the refused taken name — all of
 which `promote_body` runs. The thing that must not be automatable is
 accepting a licence, which is why `accept` is an explicit argument.
 `just mcp-check` handshakes the server and holds the tool list to exactly
-these twenty-seven, and `just mcp-session` runs the whole path — the audio leg
+these thirty, and `just mcp-session` runs the whole path — the audio leg
 (`init_project → licences → setup → doctor → generate_audio → wait →
 inspect_audio → promote_audio → verify`) and the character leg
 (`import_reference → generate_mesh → wait → prepare_body → wait → skin_body →
@@ -452,29 +465,46 @@ out/           gitignored: lifts/ props/ export/ sweeps/ sheets/ views/ audio/
 
 ## Using it from your game
 
+One local Forge installation can serve several games. Keep each game's
+`forge.toml`, sources, accepted assets and output directory in that game.
+Use an explicit project argument when launching from an agent or another directory.
+
+For a development checkout:
+
 ```sh
-just install                            # or: cargo install --path crates/forge --locked
-export FORGE_TOOLKIT=~/src/asset-forge  # where the clone lives; forge init copies the rig profile from it
-cd ~/my-game && forge init --name my-game
+just install
+export FORGE_HOME=~/src/asset-forge
+forge --project ~/my-game init --name my-game
+forge --project ~/another-game init --name another-game
 ```
 
-`just install` puts a release `forge` on PATH (`~/.cargo/bin`). Outside
-the toolkit checkout, `forge init` needs `FORGE_TOOLKIT` (or `FORGE_HOME`)
-pointing at the clone so it can install the rig profile — it exits 2 and
-says so when it cannot. `forge init` writes `forge.toml`, the `assets/`
-and `assets-src/` directories, the reference ledger's header, an empty
-manifest, and a copy of the rig profile under `assets-src/rigs/`. Every
-`forge` verb walks up from the working directory to the nearest
-`forge.toml`, so the `just` recipes run from your project against its
-library:
+`FORGE_TOOLKIT` remains a legacy alias. `FORGE_HOME` takes precedence;
+an invalid explicit toolkit path refuses instead of selecting another install.
+Initialization copies the rig profile, creates the reference ledger and empty
+manifest, and writes `.forge/AGENT.md` and `.forge/mcp.json` in each game.
+It also creates `AGENTS.md` and `.mcp.json` when absent. Existing instructions
+and client settings are preserved; merge the generated server entry as needed.
+`forge --project ~/my-game agent-config` adds missing agent files later.
+
+The generated MCP entry uses an absolute executable and project path, so the
+client's working directory does not select the library. CLI calls can still
+walk up to the nearest `forge.toml` when `--project` is omitted.
+
+A [development distribution](release/README.md) can also be staged with the
+binary and runtime resources together. Its `bin/forge` finds those resources
+without a source checkout or `FORGE_HOME`. This layout has passed external-game
+fake workflow tests; the [agent-facing release gates](designs/release-baseline.md)
+are still open.
+
+Checkout recipes remain available from a game:
 
 ```sh
 just --justfile ~/src/asset-forge/justfile --working-directory . sheet walk
 ```
 
-(The dev recipes — `fmt`, `check`, `test`, `pytest`, `ci`, … — are the
-exception: run that way they still act on the toolkit checkout, never on
-your game.)
+The dev recipes (`fmt`, `check`, `test`, `pytest`, `ci`, …) always act on the
+toolkit checkout. A game verifies its own library with `forge verify`,
+`forge audit` and `forge manifest --check`.
 
 Your game reads one file, `assets/library.json`, through
 [`forge_manifest`](crates/forge_manifest) (serde only, no engine; a git or

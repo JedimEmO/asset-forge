@@ -244,13 +244,27 @@ impl ForgeServer {
             ));
         }
         match forge_library::project::create(&root, &name, make, &hardware, profile.as_deref()) {
-            Ok((project, lines)) => util::report(format!(
-                "{}\n{}\n{}next: {}",
-                lines.join("\n  "),
-                toml_tables(&project),
-                self.reconnect_note(&project.root),
-                project.next_step()
-            )),
+            Ok((project, mut lines)) => {
+                match forge_library::agent_kit::write(
+                    &project,
+                    &self.config.renderer,
+                    self.config.toolkit.as_deref(),
+                ) {
+                    Ok(kit) => lines.extend(kit),
+                    Err(err) => {
+                        return util::refuse(format!(
+                            "project created but agent configuration failed: {err}; repair with forge agent-config"
+                        ));
+                    }
+                }
+                util::report(format!(
+                    "{}\n{}\n{}next: {}",
+                    lines.join("\n  "),
+                    toml_tables(&project),
+                    self.reconnect_note(&project.root),
+                    project.next_step()
+                ))
+            }
             Err(err) => util::refuse(err.to_string()),
         }
     }
@@ -263,8 +277,12 @@ impl ForgeServer {
     /// project was made from the toolkit's own server and every tool after
     /// it went on answering about the toolkit (2026-08-30).
     fn reconnect_note(&self, made: &std::path::Path) -> String {
-        if self.config.project_found && made == self.config.project.root {
-            return String::new();
+        if made.canonicalize().ok() == self.config.project.root.canonicalize().ok()
+            && made.canonicalize().is_ok()
+        {
+            return String::from(
+                "This session is bound to the initialized project; continue with doctor, generation and validation without reconnecting.\n",
+            );
         }
         let serving = if self.config.project_found {
             format!(
@@ -642,7 +660,10 @@ mod tests {
         };
         let make: MakeKinds = arg.into();
         assert_eq!(make.chosen(), vec![MakeKind::Sfx, MakeKind::Voice]);
-        assert_eq!(make.backends(), vec!["comfy", "moss_sfx", "moss_tts"]);
+        assert_eq!(
+            make.backends(),
+            vec!["comfy", "moss_sfx", "moss_speech", "moss_tts"]
+        );
         assert_eq!(MakeKinds::from(MakeArg::default()), MakeKinds::none());
     }
 }

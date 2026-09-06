@@ -27,7 +27,7 @@ from forge_gen.exit_codes import MissingBackend
 
 #: The backends the toolkit knows, in the order doctor lists them. Mirrors
 #: ``forge_library::backends::KNOWN``.
-KNOWN = ("trellis2", "ardy", "acestep", "moss_sfx", "moss_tts")
+KNOWN = ("trellis2", "ardy", "acestep", "moss_sfx", "moss_tts", "moss_speech")
 
 #: The environment variable naming the backends directory.
 BACKENDS_ENV = "FORGE_BACKENDS"

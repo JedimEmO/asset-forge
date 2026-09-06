@@ -15,26 +15,9 @@ recorded too, so a line's provenance chains back through the audition clip
 to the description and the seed that made the voice. ``--lines-file``
 (one ``stem|text`` per line, into ``--out-dir``) renders a session of them.
 
-**It runs on the ComfyUI host**, through the TTS-Audio-Suite pack, so there
-is no venv here and no inner half that imports torch. The reference travels
-as an *uploaded file* — ``POST /upload/image`` puts the clip in ComfyUI's
-input directory, ``LoadAudio`` reads it and ``CharacterVoicesNode`` hands it
-on — and never as a path, which is what the old inner half could not do
-(``decisions.md``, 2026-08-23: torchaudio reaches for torchcodec, whose
-ffmpeg libraries will not load beside the system glib here). The decode now
-happens in the host's own venv, which carries PyAV.
-
-**The model is not the one the venv ran.** TTS-Audio-Suite offers MOSS-TTS
-as ``1.7B`` (OpenMOSS-Team/MOSS-TTS-Local-Transformer) or as the 8B Delay
-checkpoints, and the 8B is the one this repository measured OOM-ing on the
-24 GB card with the audio tokenizer loaded. So a line spoken after this move
-is a different voice from one spoken before it, at the same reference; the
-records of the shipped lines still say what made them, and re-auditioning a
-character is the only honest way to put a new line beside an old one.
-
-The command is backend-agnostic on its face — ``--backend`` names who
-speaks — and ``moss_tts`` is the one backend v1 ships. OmniVoice is a
-documented v1.1 add; naming it today exits 2 and says so.
+Speech runs in the isolated ``moss_speech`` interpreter, pinned to
+transformers 5.0.0 and torch 2.9.1+cu128. ``moss_tts`` remains accepted as
+a legacy speech alias; voice design still runs on ComfyUI. The former Comfy speech graph is retained on disk for historical diagnosis.
 
 Each WAV gets a ``forge_record`` beside it (``<stem>.json``, or ``--record``):
 the spoken line is the prompt, because that is what a reader searches for,
@@ -55,40 +38,25 @@ import os
 import random
 import re
 import sys
-import tempfile
 import wave
 from pathlib import Path
 
-from forge_gen import backends as backends_mod
 from forge_gen import placeholders, records
-from forge_gen.audio import check_pcm, ffmpeg_bin, transcode_wav
+from forge_gen.audio import check_pcm
 from forge_gen.exit_codes import InputRejected, UsageError
 
-#: The backends that can speak. ``moss_tts`` is the one that exists.
-BACKENDS = ("moss_tts",)
-DEFAULT_BACKEND = "moss_tts"
+#: The isolated backend and its legacy public alias.
+BACKENDS = ("moss_speech", "moss_tts")
+DEFAULT_BACKEND = "moss_speech"
 
 #: Names a user may reach for that are not here yet, with the answer.
-PLANNED = {"omnivoice": "OmniVoice is a v1.1 add; only moss_tts speaks in this build"}
+PLANNED = {"omnivoice": "OmniVoice is a v1.1 add; moss_speech is the isolated speaker in this build"}
 
-#: The record's ``tool`` — the sidecar's generator name, which for this backend is also the backend's name.
+#: Keep the generator family name stable; the backend names its executor separately.
 TOOL = "moss_tts"
 
-#: What the host's engine node loads for its ``1.7B`` variant, read from the
-#: pack's own ``model_specs.py`` at its pin on 2026-08-30. It is **not** the
-#: ``-v1.5`` checkpoint the venv ran: the pack does not offer that one, and
-#: the 8B Delay checkpoints it does offer are what OOMs here.
 MODEL_ENV = "MOSS_TTS_MODEL"
 DEFAULT_MODEL = "OpenMOSS-Team/MOSS-TTS-Local-Transformer"
-
-#: The variant the tracked graph states, and the only one this command runs.
-MODEL_VARIANT = "1.7B"
-
-#: The tracked graph, under ``backends/moss_tts/workflows/``.
-WORKFLOW = "speech.api.json"
-
-#: Seconds between ``/history`` polls, and how long one line may take.
-POLL_S = 2.0
 GENERATE_TIMEOUT_S = 1800.0
 
 #: Reference clip containers the processor reads (it decodes through its own audio loader).
@@ -107,7 +75,13 @@ REFERENCE_GOOD_S = (5.0, 15.0)
 REFERENCE_HARD_S = (3.0, 30.0)
 
 #: The sampling knobs the model card recommends; recorded with every line.
-SAMPLING = {"temperature": 1.7, "top_p": 0.8, "top_k": 25, "repetition_penalty": 1.0, "max_new_tokens": 4096}
+SAMPLING = {
+    "max_new_tokens": 512,
+    "text_temperature": 1.5, "text_top_p": 1.0, "text_top_k": 50,
+    "text_repetition_penalty": 1.0,
+    "audio_temperature": 1.0, "audio_top_p": 0.95, "audio_top_k": 50,
+    "audio_repetition_penalty": 1.1,
+}
 
 #: MOSS-TTS wants the language by name ("English"); the 31 it speaks, by ISO 639-1/-3 code.
 LANGUAGES = {
@@ -246,6 +220,7 @@ def build_record(
     torch: str | None = None,
     model_revision: str | None = None,
     executor: str = "comfy",
+    backend_name: str = TOOL,
     comfyui_commit: str | None = None,
     workflow_sha256: str | None = None,
     packs: dict | None = None,
@@ -266,12 +241,12 @@ def build_record(
     reference; OmniVoice will.
     """
     if fake:
-        rec = placeholders.fake_record("speech", TOOL, backend=TOOL, created_by=created_by, model=model)
+        rec = placeholders.fake_record("speech", TOOL, backend=backend_name, created_by=created_by, model=model)
         rec["backend"]["executor"] = executor
     else:
         rec = records.new_record("speech", TOOL, created_by=created_by)
         rec["backend"] = records.backend_block(
-            name=TOOL, commit=commit, python=python, torch=torch, model=model,
+            name=backend_name, commit=commit, python=python, torch=torch, model=model,
             model_revision=model_revision, executor=executor, comfyui_commit=comfyui_commit,
             workflow_sha256=workflow_sha256, packs=packs,
         )
@@ -324,11 +299,11 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--text", metavar="TEXT", help="the line to speak; [pause 1.5s] is an explicit pause")
     parser.add_argument("--out", metavar="WAV", help="where the WAV goes (single line)")
     parser.add_argument("--record", metavar="JSON", help="where the record goes (default: <out stem>.json beside it)")
-    parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); omit for an uncloned voice")
-    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference clip; the cloner asks for it. Default: the designed voice's own audition line, from voice.json params.text")
-    parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "Norwegian", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
+    parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); required for real speech")
+    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference clip, recorded but unused by this checkpoint. Default: the designed voice's own audition line, from voice.json params.text")
+    parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "English", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
     parser.add_argument("--backend", default=DEFAULT_BACKEND, metavar="NAME", help=f"who speaks (default {DEFAULT_BACKEND}; OmniVoice is v1.1)")
-    parser.add_argument("--seed", type=int, default=None, metavar="N", help="seed torch's RNG for the sampler (recorded only when given)")
+    parser.add_argument("--seed", type=int, default=None, metavar="N", help="seed torch's RNG for the sampler (drawn and recorded if omitted)")
     parser.add_argument("--lines-file", metavar="FILE", help='one "stem|text" per line; # comments; into --out-dir')
     parser.add_argument("--out-dir", metavar="DIR", help="where a batch's <stem>.wav and <stem>.json go")
     parser.add_argument("--model", default=None, metavar="ID", help=f"weights (default ${MODEL_ENV} or {DEFAULT_MODEL})")
@@ -442,7 +417,7 @@ def plan(args) -> dict:
         )
     project = records.project()
     return {
-        "backend": backend,
+        "backend": "moss_speech",
         "model": args.model or model_id(),
         "reference": str(reference) if reference else None,
         "voice_record": str(voice_record) if voice_record else None,
@@ -475,134 +450,10 @@ def _success(spec: dict, rendered: list[dict]) -> dict:
     }
 
 
-# ---------------------------------------------------------------- the graph --
-
-
-def _say(text: str) -> None:
-    sys.stderr.write(f"[tts] {text}\n")
-    sys.stderr.flush()
-
-
-def _progress(seconds: float, entry) -> None:
-    if seconds >= 30 and int(seconds) % 30 == 0:
-        _say(f"{seconds:.0f}s on the host")
-
-
-def template_inputs(spec: dict, job: dict, *, reference_name: str, prefix: str) -> dict:
-    """Every knob ``speech.api.json`` marks, filled from a checked spec.
-
-    ``reference`` is the **name ComfyUI filed the upload under**, not a path:
-    ``LoadAudio`` lists its own input directory, and handing this model a
-    path is the thing that did not work in the venv.
-    """
-    sampling = spec["sampling"]
-    return {
-        "text": job["text"],
-        "seed": int(spec["seed"]),
-        "reference": reference_name,
-        # Never absent: every PATCH point in the template is required, and
-        # "" is what the node's own default is — a reference with no
-        # transcript is a supported call, an unpatched input is not.
-        "voice_text": spec["voice_text"] or "",
-        "language": spec["language"] or "Auto",
-        "temperature": float(sampling["temperature"]),
-        "top_p": float(sampling["top_p"]),
-        "top_k": int(sampling["top_k"]),
-        "repetition_penalty": float(sampling["repetition_penalty"]),
-        "max_new_tokens": int(sampling["max_new_tokens"]),
-        "filename_prefix": prefix,
-    }
-
-
 def run(args) -> dict:
-    """Validate, upload the reference, run the graph per line, record each."""
-    # Imported here and not at the top of the module: `run_fake` must never
-    # load the graph client, which is what keeps `just ci-fake` a control
-    # for the whole move to the host.
-    from forge_gen import comfy  # noqa: PLC0415
-
-    spec = plan(args)
-    backend = backends_mod.load_backend(spec["backend"])
-    if spec["model"] != DEFAULT_MODEL:
-        raise InputRejected(
-            f"the host's MOSS-TTS node offers {MODEL_VARIANT} ({DEFAULT_MODEL}), not {spec['model']!r}",
-            hint=f"unset ${MODEL_ENV}, or add a template that states another variant",
-        )
-    if not spec["reference"]:
-        raise InputRejected(
-            "this graph clones a voice and needs one: --voice <name> for a designed voice, "
-            "or --voice <clip.wav> for one you own",
-            hint="forge gen voice <name> --describe '…' designs one",
-        )
-    ffmpeg = ffmpeg_bin()
-    host = comfy.host_backend(backend)
-    base = comfy.base_url(backend, records.project())
-    graph, template_sha = comfy.load_template(backend, WORKFLOW)
-    where = str(backend.workflow(WORKFLOW))
-    points = comfy.patch_points(graph, where)
-    facts = {
-        "executor": "comfy",
-        "comfyui_commit": comfy.host_commit(host),
-        "workflow_sha256": template_sha,
-        "packs": comfy.packs_block(backend),
-    }
-
-    # One upload for the run: every line of a batch clones the same voice.
-    reference = Path(spec["reference"])
-    reference_name = comfy.upload_image(base, reference, f"forge_voice_{reference.parent.name}_{reference.name}")
-    _say(f"reference {reference} uploaded as {reference_name}")
-
-    rendered = []
-    blocks = []
-    for job in spec["jobs"]:
-        out = Path(job["out"])
-        inputs = template_inputs(spec, job, reference_name=reference_name, prefix=comfy.output_prefix(out.stem))
-        patched = comfy.patch(graph, inputs, where)
-        _say(f"seed {spec['seed']}, {spec['language'] or 'Auto'}: {job['text'][:60]}")
-        prompt_id = comfy.submit(base, patched, comfy.client_id())
-        entry = comfy.wait_for(base, prompt_id, timeout=float(getattr(args, "timeout", GENERATE_TIMEOUT_S)), poll=POLL_S, on_progress=_progress)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="forge-speech-") as scratch:
-            saved = comfy.fetch(base, entry, Path(scratch))
-            transcode_wav(ffmpeg, saved[0], out)
-        # The gate this verb exists to have: the pack catches its own
-        # AttributeError, returns a silent tensor and lets the graph
-        # complete, so `OK` used to mean "the graph completed" and a record
-        # was written for 1.000 s of digital zeros (2026-08-30).
-        measured = check_pcm(out, what="the line")
-        rec = build_record(
-            text=job["text"],
-            out_path=out,
-            model=spec["model"],
-            reference=spec["reference"],
-            language=spec["language"],
-            voice_text=spec["voice_text"],
-            voice_record=spec.get("voice_record"),
-            seed=spec["seed"],
-            sampling=spec["sampling"],
-            created_by=spec["created_by"],
-            workflow=WORKFLOW,
-            **facts,
-        )
-        records.write(rec, job["record"])
-        _say(f"OK {out} (peak {measured['peak_dbfs']}, {measured['duration_s']:.2f} s)")
-        rendered.append({"out": str(out), "record": job["record"]})
-        blocks.append(
-            {
-                "template": f"backends/{spec['backend']}/workflows/{WORKFLOW}",
-                "template_sha256": template_sha,
-                "inputs": inputs,
-                "comfyui_commit": facts["comfyui_commit"],
-                "packs": facts["packs"],
-                "prompt_id": prompt_id,
-                "cached": comfy.was_cached(entry, points["filename_prefix"][0]),
-            }
-        )
-    summary = _success(spec, rendered)
-    summary["comfy"] = blocks[0]
-    if len(blocks) > 1:
-        summary["comfy_batch"] = blocks
-    return summary
+    """Run speech in the pinned isolated interpreter, including the legacy alias."""
+    from forge_gen.audio.speech_isolated import run as run_isolated
+    return run_isolated(plan(args), timeout=float(getattr(args, "timeout", GENERATE_TIMEOUT_S)))
 
 
 def run_fake(args) -> dict:
@@ -625,6 +476,8 @@ def run_fake(args) -> dict:
             sampling=spec["sampling"],
             created_by=spec["created_by"],
             fake=True,
+            executor="env",
+            backend_name="moss_speech",
         )
         records.write(rec, job["record"])
         rendered.append({"out": job["out"], "record": job["record"]})

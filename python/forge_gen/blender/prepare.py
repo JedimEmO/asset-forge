@@ -82,6 +82,7 @@ and would otherwise look fine.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import sys
@@ -142,6 +143,7 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--stature", type=float, metavar="M", help="height to scale the body to (default: the profile's reference stature)")
     parser.add_argument("--yaw-deg", type=float, default=0.0, metavar="DEG", help="turn about +Z so the body faces the rig's front")
+    parser.add_argument("--depth-offset", type=float, default=0.0, metavar="M", help="shift the normalized mesh along glTF +Z (forward), in metres; use negative values for a body pushed forward by a backpack")
     parser.add_argument("--budget", type=int, metavar="N", help="triangle ceiling before the decimate kicks in (default: the profile's [rig] tri_budget)")
 
 
@@ -191,8 +193,13 @@ def _spec(args, source: Path, out: Path) -> dict:
     material = profile.section("material")
     export = profile.section("export")
     stature = float(args.stature) if args.stature is not None else float(bones["reference_stature_m"])
-    if stature <= 0:
+    if not math.isfinite(stature) or stature <= 0:
         raise UsageError(f"--stature {stature} is not a height")
+    depth_offset = float(getattr(args, "depth_offset", 0.0))
+    if not math.isfinite(depth_offset):
+        raise UsageError("--depth-offset must be finite")
+    if source.suffix.lower() == ".blend" and depth_offset != 0.0:
+        raise UsageError("--depth-offset applies to a raw lift, not an already-rigged blend")
     budget = int(args.budget) if args.budget is not None else int(rig["tri_budget"])
     if budget <= 0:
         raise UsageError(f"--budget {budget} is not a triangle count")
@@ -211,6 +218,7 @@ def _spec(args, source: Path, out: Path) -> dict:
         "root": str(bones["root"]),
         "stature": stature,
         "yaw_deg": float(args.yaw_deg),
+        "depth_offset": depth_offset,
         "budget": budget,
         "arm_height_tolerance": float(fit["arm_height_tolerance_m"]),
         "arm_tip_fraction": float(fit["arm_tip_fraction"]),
@@ -233,6 +241,7 @@ def _params(spec: dict) -> dict:
         "skeleton": records.record_path(spec["skeleton"]),
         "stature_m": spec["stature"],
         "yaw_deg": spec["yaw_deg"],
+        "depth_offset_m": spec["depth_offset"],
         "tri_budget": spec["budget"],
         "dust_diagonal_m": spec["dust_diagonal"],
         "arm_height_tolerance_m": spec["arm_height_tolerance"],
@@ -264,6 +273,7 @@ def run(args) -> dict:
         "--skeleton", os.fspath(spec["skeleton"]),
         "--stature", str(spec["stature"]),
         f"--yaw-deg={spec['yaw_deg']}",
+        f"--depth-offset={spec['depth_offset']}",
         "--budget", str(spec["budget"]),
     ]
     argv += _common.passthrough_argv(args)
@@ -556,11 +566,11 @@ def _normalize(body, armature, spec: dict) -> None:
 
     lo = lo * scale
     hi = hi * scale
-    # X centred on the rig's own mirror plane; depth centred where the spine
-    # actually stands (the root bone's head), not on the bounding box's idea of it.
+    # Align the bounds centre with the rig's mirror plane and root depth.
+    # Protruding gear may need a recorded correction; glTF +Z is Blender -Y.
     root_y = armature.data.bones[spec["root"]].head_local.y
     centre = (lo + hi) / 2.0
-    body.location = Vector((-centre.x, root_y - centre.y, -lo.z))
+    body.location = Vector((-centre.x, root_y - centre.y - spec["depth_offset"], -lo.z))
     _common.apply_transforms(body)
 
 

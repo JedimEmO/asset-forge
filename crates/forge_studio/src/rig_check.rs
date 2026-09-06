@@ -64,6 +64,8 @@ const REFERENCE: &str = "reference.glb";
 pub enum RigCheckError {
     /// The subject is not a file.
     NotAFile(PathBuf),
+    /// An explicitly selected library clip does not exist.
+    MissingReference(String),
     /// The project's rig profile does not load.
     Profile(String),
     /// The scratch root the subject is spawned from could not be made.
@@ -81,6 +83,10 @@ impl fmt::Display for RigCheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotAFile(path) => write!(f, "{} is not a file", path.display()),
+            Self::MissingReference(name) => write!(
+                f,
+                "reference clip {name:?} was not found in this project; choose a promoted library clip"
+            ),
             Self::Profile(detail) => write!(f, "the rig profile does not load: {detail}"),
             Self::Staging(detail) => write!(f, "cannot stage the subject: {detail}"),
             Self::Spawn(error) => write!(f, "the subject did not spawn: {error}"),
@@ -183,14 +189,39 @@ pub fn run(
     glb: &Path,
     out: Option<&Path>,
 ) -> Result<CheckReport, RigCheckError> {
+    run_with_reference(project, glb, out, None)
+}
+
+/// Check a body using an explicitly selected library clip, or the contract default.
+/// An explicit missing clip is refused instead of silently skipping motion checks.
+///
+/// # Errors
+///
+/// Returns the same errors as [`run`], plus [`RigCheckError::MissingReference`]
+/// when an explicitly selected clip cannot be resolved.
+pub fn run_with_reference(
+    project: &Project,
+    glb: &Path,
+    out: Option<&Path>,
+    clip: Option<&str>,
+) -> Result<CheckReport, RigCheckError> {
     if !glb.is_file() {
         return Err(RigCheckError::NotAFile(glb.to_path_buf()));
     }
     let profile = project
         .profile()
         .map_err(|error| RigCheckError::Profile(error.to_string()))?;
-    let contract = &profile.contract;
+    let mut selected_contract = profile.contract.clone();
+    if let Some(name) = clip {
+        name.clone_into(&mut selected_contract.reference_clip);
+    }
+    let contract = &selected_contract;
     let reference = reference_clip(project, contract);
+    if let Some(name) = clip
+        && reference.is_none()
+    {
+        return Err(RigCheckError::MissingReference(name.to_owned()));
+    }
 
     // Bevy loads assets below one root, and the subject can live anywhere, so
     // both files are staged into a scratch root of their own. Copying the

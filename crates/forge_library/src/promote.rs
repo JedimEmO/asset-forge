@@ -1081,9 +1081,11 @@ pub fn promote_audio(project: &Project, request: &PromoteAudio) -> Result<Promot
         // A line's durable input is the voice it was cloned from: the
         // reference clip, hashed as it was read, so a re-designed voice
         // shows as drift on every line that still carries the old one.
-        if request.kind == Kind::Voice
-            && let Some(reference) = run.input("reference")
-        {
+        if let Some(reference) = match request.kind {
+            Kind::Voice => run.input("reference"),
+            Kind::Music => run.input("loop_source"),
+            _ => None,
+        } {
             record.source = Source {
                 path: reference.path.clone(),
                 sha256: reference.sha256.clone(),

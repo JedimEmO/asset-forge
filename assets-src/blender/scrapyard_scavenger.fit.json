@@ -1,0 +1,1522 @@
+{
+  "profile": "humanoid",
+  "root": "Hips",
+  "landmarks": [
+    "Neck",
+    "LeftArm",
+    "RightArm",
+    "LeftForeArm",
+    "RightForeArm",
+    "LeftHand",
+    "RightHand",
+    "LeftUpLeg",
+    "RightUpLeg",
+    "LeftLeg",
+    "RightLeg",
+    "LeftFoot",
+    "RightFoot",
+    "LeftToeBase",
+    "RightToeBase"
+  ],
+  "sources": {
+    "limbs": "weights",
+    "root": "geometry",
+    "shoulder_line": "weights",
+    "ground": "geometry"
+  },
+  "shoulder_line": {
+    "joints": [
+      "LeftArm",
+      "RightArm"
+    ],
+    "weights_m": 1.4197,
+    "arm_tube_geometry_m": 1.30117,
+    "gap_m": 0.1185,
+    "note": "the weights placed these joints; the arm tube's median height is a cross-check and places nothing"
+  },
+  "geometry": {
+    "half_span": 1.02729,
+    "lowest_y": 0.0,
+    "highest_y": 1.8,
+    "shoulder_y": 1.30117,
+    "arm_tip_y": 1.28857,
+    "crotch_y": 0.66,
+    "heads": 3.608,
+    "vertices": 21554,
+    "arm_tube_vertices": 2087,
+    "arm_tip_vertices": 345
+  },
+  "symmetrised": true,
+  "grounded": true,
+  "runs": [
+    {
+      "run": "Hips->Neck",
+      "start": "Hips",
+      "end": "Neck",
+      "bones": [
+        "Spine",
+        "Spine1",
+        "Spine2",
+        "Spine3",
+        "Neck"
+      ],
+      "reference_length_m": 0.60272,
+      "ratio_measured": 0.867,
+      "ratio": 0.867,
+      "support": 321.8,
+      "squareness": 0.529,
+      "off_axis_m": 0.0161,
+      "split_length_m": 0.50136,
+      "landmark_centroid": [
+        -0.01239,
+        1.47539,
+        -0.04191
+      ]
+    },
+    {
+      "run": "Spine3->LeftArm",
+      "start": "Spine3",
+      "end": "LeftArm",
+      "bones": [
+        "LeftShoulder",
+        "LeftArm"
+      ],
+      "reference_length_m": 0.26294,
+      "ratio_measured": 0.9074,
+      "ratio": 0.9207,
+      "support": 230.3,
+      "squareness": 0.392,
+      "off_axis_m": 0.0373,
+      "split_length_m": 0.12709,
+      "landmark_centroid": [
+        0.19325,
+        1.40404,
+        -0.0426
+      ]
+    },
+    {
+      "run": "Spine3->RightArm",
+      "start": "Spine3",
+      "end": "RightArm",
+      "bones": [
+        "RightShoulder",
+        "RightArm"
+      ],
+      "reference_length_m": 0.26294,
+      "ratio_measured": 0.9341,
+      "ratio": 0.9207,
+      "support": 193.1,
+      "squareness": 0.406,
+      "off_axis_m": 0.0523,
+      "split_length_m": 0.13884,
+      "landmark_centroid": [
+        -0.19846,
+        1.41443,
+        -0.06028
+      ]
+    },
+    {
+      "run": "LeftArm->LeftForeArm",
+      "start": "LeftArm",
+      "end": "LeftForeArm",
+      "bones": [
+        "LeftForeArm"
+      ],
+      "reference_length_m": 0.29544,
+      "ratio_measured": 0.9439,
+      "ratio": 0.8889,
+      "support": 135.5,
+      "squareness": 0.56,
+      "off_axis_m": 0.1577,
+      "split_length_m": 0.28003,
+      "landmark_centroid": [
+        0.45208,
+        1.26799,
+        -0.06466
+      ]
+    },
+    {
+      "run": "RightArm->RightForeArm",
+      "start": "RightArm",
+      "end": "RightForeArm",
+      "bones": [
+        "RightForeArm"
+      ],
+      "reference_length_m": 0.29544,
+      "ratio_measured": 0.834,
+      "ratio": 0.8889,
+      "support": 83.0,
+      "squareness": 0.483,
+      "off_axis_m": 0.1185,
+      "split_length_m": 0.24305,
+      "landmark_centroid": [
+        -0.42472,
+        1.30905,
+        -0.04864
+      ]
+    },
+    {
+      "run": "LeftForeArm->LeftHand",
+      "start": "LeftForeArm",
+      "end": "LeftHand",
+      "bones": [
+        "LeftHand"
+      ],
+      "reference_length_m": 0.23265,
+      "ratio_measured": 1.3996,
+      "ratio": 1.441,
+      "support": 228.5,
+      "squareness": 0.502,
+      "off_axis_m": 0.1058,
+      "split_length_m": 0.33164,
+      "landmark_centroid": [
+        0.77771,
+        1.31732,
+        -0.04851
+      ]
+    },
+    {
+      "run": "RightForeArm->RightHand",
+      "start": "RightForeArm",
+      "end": "RightHand",
+      "bones": [
+        "RightHand"
+      ],
+      "reference_length_m": 0.23265,
+      "ratio_measured": 1.4825,
+      "ratio": 1.441,
+      "support": 149.9,
+      "squareness": 0.499,
+      "off_axis_m": 0.1123,
+      "split_length_m": 0.35712,
+      "landmark_centroid": [
+        -0.76962,
+        1.31293,
+        -0.03954
+      ]
+    },
+    {
+      "run": "Hips->LeftUpLeg",
+      "start": "Hips",
+      "end": "LeftUpLeg",
+      "bones": [
+        "LeftUpLeg"
+      ],
+      "reference_length_m": 0.09889,
+      "ratio_measured": 1.6907,
+      "ratio": 1.6703,
+      "support": 262.1,
+      "squareness": 0.579,
+      "off_axis_m": 0.0638,
+      "split_length_m": 0.1798,
+      "landmark_centroid": [
+        0.14259,
+        0.8463,
+        -0.00104
+      ]
+    },
+    {
+      "run": "Hips->RightUpLeg",
+      "start": "Hips",
+      "end": "RightUpLeg",
+      "bones": [
+        "RightUpLeg"
+      ],
+      "reference_length_m": 0.09889,
+      "ratio_measured": 1.6499,
+      "ratio": 1.6703,
+      "support": 288.9,
+      "squareness": 0.572,
+      "off_axis_m": 0.0652,
+      "split_length_m": 0.19246,
+      "landmark_centroid": [
+        -0.14005,
+        0.85198,
+        0.02757
+      ]
+    },
+    {
+      "run": "LeftUpLeg->LeftLeg",
+      "start": "LeftUpLeg",
+      "end": "LeftLeg",
+      "bones": [
+        "LeftLeg"
+      ],
+      "reference_length_m": 0.41212,
+      "ratio_measured": 0.89,
+      "ratio": 1.0309,
+      "support": 108.9,
+      "squareness": 0.435,
+      "off_axis_m": 0.0526,
+      "split_length_m": 0.37002,
+      "landmark_centroid": [
+        0.13349,
+        0.54075,
+        0.04511
+      ],
+      "grounding_factor": 1.1561
+    },
+    {
+      "run": "RightUpLeg->RightLeg",
+      "start": "RightUpLeg",
+      "end": "RightLeg",
+      "bones": [
+        "RightLeg"
+      ],
+      "reference_length_m": 0.41212,
+      "ratio_measured": 0.8933,
+      "ratio": 1.0309,
+      "support": 106.2,
+      "squareness": 0.459,
+      "off_axis_m": 0.062,
+      "split_length_m": 0.39223,
+      "landmark_centroid": [
+        -0.14397,
+        0.5405,
+        0.0607
+      ],
+      "grounding_factor": 1.1561
+    },
+    {
+      "run": "LeftLeg->LeftFoot",
+      "start": "LeftLeg",
+      "end": "LeftFoot",
+      "bones": [
+        "LeftFoot"
+      ],
+      "reference_length_m": 0.45609,
+      "ratio_measured": 0.8353,
+      "ratio": 0.9634,
+      "support": 137.7,
+      "squareness": 0.362,
+      "off_axis_m": 0.0143,
+      "split_length_m": 0.36682,
+      "landmark_centroid": [
+        0.17469,
+        0.15979,
+        -0.0017
+      ],
+      "grounding_factor": 1.1561
+    },
+    {
+      "run": "RightLeg->RightFoot",
+      "start": "RightLeg",
+      "end": "RightFoot",
+      "bones": [
+        "RightFoot"
+      ],
+      "reference_length_m": 0.45609,
+      "ratio_measured": 0.8312,
+      "ratio": 0.9634,
+      "support": 148.2,
+      "squareness": 0.338,
+      "off_axis_m": 0.0296,
+      "split_length_m": 0.36933,
+      "landmark_centroid": [
+        -0.18496,
+        0.1614,
+        -0.00853
+      ],
+      "grounding_factor": 1.1561
+    },
+    {
+      "run": "LeftFoot->LeftToeBase",
+      "start": "LeftFoot",
+      "end": "LeftToeBase",
+      "bones": [
+        "LeftToeBase"
+      ],
+      "reference_length_m": 0.17097,
+      "ratio_measured": 0.7089,
+      "ratio": 0.7496,
+      "support": 95.0,
+      "squareness": 0.548,
+      "off_axis_m": 0.0963,
+      "split_length_m": 0.13114,
+      "landmark_centroid": [
+        0.21326,
+        0.04268,
+        0.08635
+      ],
+      "grounding_factor": 1.1561
+    },
+    {
+      "run": "RightFoot->RightToeBase",
+      "start": "RightFoot",
+      "end": "RightToeBase",
+      "bones": [
+        "RightToeBase"
+      ],
+      "reference_length_m": 0.17097,
+      "ratio_measured": 0.588,
+      "ratio": 0.7496,
+      "support": 135.0,
+      "squareness": 0.567,
+      "off_axis_m": 0.073,
+      "split_length_m": 0.1089,
+      "landmark_centroid": [
+        -0.20518,
+        0.07576,
+        0.07581
+      ],
+      "grounding_factor": 1.1561
+    }
+  ],
+  "bones": [
+    {
+      "bone": "LeftToeBase",
+      "parent": "LeftFoot",
+      "kind": "bone",
+      "reference_length_m": 0.17097,
+      "fitted_length_m": 0.12816,
+      "ratio": 0.7496,
+      "source": "run",
+      "run": "LeftFoot->LeftToeBase"
+    },
+    {
+      "bone": "LeftFoot",
+      "parent": "LeftLeg",
+      "kind": "bone",
+      "reference_length_m": 0.45609,
+      "fitted_length_m": 0.4394,
+      "ratio": 0.9634,
+      "source": "run",
+      "run": "LeftLeg->LeftFoot"
+    },
+    {
+      "bone": "LeftLeg",
+      "parent": "LeftUpLeg",
+      "kind": "bone",
+      "reference_length_m": 0.41212,
+      "fitted_length_m": 0.42485,
+      "ratio": 1.0309,
+      "source": "run",
+      "run": "LeftUpLeg->LeftLeg"
+    },
+    {
+      "bone": "LeftUpLeg",
+      "parent": "Hips",
+      "kind": "bone",
+      "reference_length_m": 0.09889,
+      "fitted_length_m": 0.16517,
+      "ratio": 1.6703,
+      "source": "run",
+      "run": "Hips->LeftUpLeg"
+    },
+    {
+      "bone": "RightToeBase",
+      "parent": "RightFoot",
+      "kind": "bone",
+      "reference_length_m": 0.17097,
+      "fitted_length_m": 0.12816,
+      "ratio": 0.7496,
+      "source": "run",
+      "run": "RightFoot->RightToeBase"
+    },
+    {
+      "bone": "RightFoot",
+      "parent": "RightLeg",
+      "kind": "bone",
+      "reference_length_m": 0.45609,
+      "fitted_length_m": 0.4394,
+      "ratio": 0.9634,
+      "source": "run",
+      "run": "RightLeg->RightFoot"
+    },
+    {
+      "bone": "RightLeg",
+      "parent": "RightUpLeg",
+      "kind": "bone",
+      "reference_length_m": 0.41212,
+      "fitted_length_m": 0.42485,
+      "ratio": 1.0309,
+      "source": "run",
+      "run": "RightUpLeg->RightLeg"
+    },
+    {
+      "bone": "RightUpLeg",
+      "parent": "Hips",
+      "kind": "bone",
+      "reference_length_m": 0.09889,
+      "fitted_length_m": 0.16517,
+      "ratio": 1.6703,
+      "source": "run",
+      "run": "Hips->RightUpLeg"
+    },
+    {
+      "bone": "LeftHandEnd",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.06961,
+      "fitted_length_m": 0.10031,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandIndex3",
+      "parent": "LeftHandIndex2",
+      "kind": "bone",
+      "reference_length_m": 0.026,
+      "fitted_length_m": 0.03747,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandIndex2",
+      "parent": "LeftHandIndex1",
+      "kind": "bone",
+      "reference_length_m": 0.04,
+      "fitted_length_m": 0.05764,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandIndex1",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.08078,
+      "fitted_length_m": 0.1164,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandMiddle3",
+      "parent": "LeftHandMiddle2",
+      "kind": "bone",
+      "reference_length_m": 0.028,
+      "fitted_length_m": 0.04035,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandMiddle2",
+      "parent": "LeftHandMiddle1",
+      "kind": "bone",
+      "reference_length_m": 0.043,
+      "fitted_length_m": 0.06196,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandMiddle1",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.07566,
+      "fitted_length_m": 0.10903,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandPinky3",
+      "parent": "LeftHandPinky2",
+      "kind": "bone",
+      "reference_length_m": 0.021,
+      "fitted_length_m": 0.03026,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandPinky2",
+      "parent": "LeftHandPinky1",
+      "kind": "bone",
+      "reference_length_m": 0.033,
+      "fitted_length_m": 0.04755,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandPinky1",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.08078,
+      "fitted_length_m": 0.1164,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandRing3",
+      "parent": "LeftHandRing2",
+      "kind": "bone",
+      "reference_length_m": 0.026,
+      "fitted_length_m": 0.03747,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandRing2",
+      "parent": "LeftHandRing1",
+      "kind": "bone",
+      "reference_length_m": 0.04,
+      "fitted_length_m": 0.05764,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandRing1",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.07566,
+      "fitted_length_m": 0.10903,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandThumb3",
+      "parent": "LeftHandThumb2",
+      "kind": "bone",
+      "reference_length_m": 0.032,
+      "fitted_length_m": 0.04611,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandThumb2",
+      "parent": "LeftHandThumb1",
+      "kind": "bone",
+      "reference_length_m": 0.05722,
+      "fitted_length_m": 0.08245,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHandThumb1",
+      "parent": "LeftHand",
+      "kind": "bone",
+      "reference_length_m": 0.05722,
+      "fitted_length_m": 0.08245,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftHand",
+      "parent": "LeftForeArm",
+      "kind": "bone",
+      "reference_length_m": 0.23265,
+      "fitted_length_m": 0.33525,
+      "ratio": 1.441,
+      "source": "run",
+      "run": "LeftForeArm->LeftHand"
+    },
+    {
+      "bone": "LeftForeArm",
+      "parent": "LeftArm",
+      "kind": "bone",
+      "reference_length_m": 0.29544,
+      "fitted_length_m": 0.26261,
+      "ratio": 0.8889,
+      "source": "run",
+      "run": "LeftArm->LeftForeArm"
+    },
+    {
+      "bone": "LeftArm",
+      "parent": "LeftShoulder",
+      "kind": "bone",
+      "reference_length_m": 0.15891,
+      "fitted_length_m": 0.14631,
+      "ratio": 0.9207,
+      "source": "run",
+      "run": "Spine3->LeftArm"
+    },
+    {
+      "bone": "LeftShoulder",
+      "parent": "Spine3",
+      "kind": "bone",
+      "reference_length_m": 0.18362,
+      "fitted_length_m": 0.16906,
+      "ratio": 0.9207,
+      "source": "run",
+      "run": "Spine3->LeftArm"
+    },
+    {
+      "bone": "Head",
+      "parent": "Neck",
+      "kind": "bone",
+      "reference_length_m": 0.13015,
+      "fitted_length_m": 0.11284,
+      "ratio": 0.867,
+      "source": "inherited",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "Neck",
+      "parent": "Spine3",
+      "kind": "bone",
+      "reference_length_m": 0.25098,
+      "fitted_length_m": 0.2176,
+      "ratio": 0.867,
+      "source": "run",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "RightHandEnd",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.06961,
+      "fitted_length_m": 0.10031,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandIndex3",
+      "parent": "RightHandIndex2",
+      "kind": "bone",
+      "reference_length_m": 0.026,
+      "fitted_length_m": 0.03747,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandIndex2",
+      "parent": "RightHandIndex1",
+      "kind": "bone",
+      "reference_length_m": 0.04,
+      "fitted_length_m": 0.05764,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandIndex1",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.08078,
+      "fitted_length_m": 0.1164,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandMiddle3",
+      "parent": "RightHandMiddle2",
+      "kind": "bone",
+      "reference_length_m": 0.028,
+      "fitted_length_m": 0.04035,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandMiddle2",
+      "parent": "RightHandMiddle1",
+      "kind": "bone",
+      "reference_length_m": 0.043,
+      "fitted_length_m": 0.06196,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandMiddle1",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.07566,
+      "fitted_length_m": 0.10903,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandPinky3",
+      "parent": "RightHandPinky2",
+      "kind": "bone",
+      "reference_length_m": 0.021,
+      "fitted_length_m": 0.03026,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandPinky2",
+      "parent": "RightHandPinky1",
+      "kind": "bone",
+      "reference_length_m": 0.033,
+      "fitted_length_m": 0.04755,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandPinky1",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.08078,
+      "fitted_length_m": 0.1164,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandRing3",
+      "parent": "RightHandRing2",
+      "kind": "bone",
+      "reference_length_m": 0.026,
+      "fitted_length_m": 0.03747,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandRing2",
+      "parent": "RightHandRing1",
+      "kind": "bone",
+      "reference_length_m": 0.04,
+      "fitted_length_m": 0.05764,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandRing1",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.07566,
+      "fitted_length_m": 0.10903,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandThumb3",
+      "parent": "RightHandThumb2",
+      "kind": "bone",
+      "reference_length_m": 0.032,
+      "fitted_length_m": 0.04611,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandThumb2",
+      "parent": "RightHandThumb1",
+      "kind": "bone",
+      "reference_length_m": 0.05722,
+      "fitted_length_m": 0.08245,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHandThumb1",
+      "parent": "RightHand",
+      "kind": "bone",
+      "reference_length_m": 0.05722,
+      "fitted_length_m": 0.08245,
+      "ratio": 1.441,
+      "source": "inherited",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightHand",
+      "parent": "RightForeArm",
+      "kind": "bone",
+      "reference_length_m": 0.23265,
+      "fitted_length_m": 0.33525,
+      "ratio": 1.441,
+      "source": "run",
+      "run": "RightForeArm->RightHand"
+    },
+    {
+      "bone": "RightForeArm",
+      "parent": "RightArm",
+      "kind": "bone",
+      "reference_length_m": 0.29544,
+      "fitted_length_m": 0.26261,
+      "ratio": 0.8889,
+      "source": "run",
+      "run": "RightArm->RightForeArm"
+    },
+    {
+      "bone": "RightArm",
+      "parent": "RightShoulder",
+      "kind": "bone",
+      "reference_length_m": 0.15891,
+      "fitted_length_m": 0.14631,
+      "ratio": 0.9207,
+      "source": "run",
+      "run": "Spine3->RightArm"
+    },
+    {
+      "bone": "RightShoulder",
+      "parent": "Spine3",
+      "kind": "bone",
+      "reference_length_m": 0.18362,
+      "fitted_length_m": 0.16906,
+      "ratio": 0.9207,
+      "source": "run",
+      "run": "Spine3->RightArm"
+    },
+    {
+      "bone": "Spine3",
+      "parent": "Spine2",
+      "kind": "bone",
+      "reference_length_m": 0.09465,
+      "fitted_length_m": 0.08206,
+      "ratio": 0.867,
+      "source": "run",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "Spine2",
+      "parent": "Spine1",
+      "kind": "bone",
+      "reference_length_m": 0.09465,
+      "fitted_length_m": 0.08206,
+      "ratio": 0.867,
+      "source": "run",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "Spine1",
+      "parent": "Spine",
+      "kind": "bone",
+      "reference_length_m": 0.09465,
+      "fitted_length_m": 0.08206,
+      "ratio": 0.867,
+      "source": "run",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "Spine",
+      "parent": "Hips",
+      "kind": "bone",
+      "reference_length_m": 0.08532,
+      "fitted_length_m": 0.07397,
+      "ratio": 0.867,
+      "source": "run",
+      "run": "Hips->Neck"
+    },
+    {
+      "bone": "Hips",
+      "kind": "root",
+      "source_of_height": "geometry",
+      "support": 544.8,
+      "squareness": 0.58,
+      "measured": true,
+      "measured_height_m": 1.8,
+      "floor_y_m": 0.0,
+      "crotch_y_m": 0.66,
+      "hip_line_weights_m": 0.8493,
+      "hip_line_contract_m": 0.9267,
+      "fitted_y_m": 0.9544,
+      "reference_y_m": 0.9544,
+      "note": "height from this body's own floor and stature; x and z are the contract's; the weight band and the crotch are cross-checks",
+      "reference_length_m": 0.0,
+      "fitted_length_m": 0.0,
+      "ratio": 1.0,
+      "source": "root",
+      "run": null
+    }
+  ],
+  "fitted_joints": {
+    "LeftToeBase": [
+      0.15854,
+      1e-05,
+      0.12043
+    ],
+    "LeftFoot": [
+      0.15854,
+      0.04385,
+      -0.0
+    ],
+    "LeftLeg": [
+      0.15854,
+      0.48324,
+      -0.0
+    ],
+    "LeftUpLeg": [
+      0.15854,
+      0.9081,
+      -0.0
+    ],
+    "RightToeBase": [
+      -0.15854,
+      1e-05,
+      0.12043
+    ],
+    "RightFoot": [
+      -0.15854,
+      0.04385,
+      -0.0
+    ],
+    "RightLeg": [
+      -0.15854,
+      0.48324,
+      -0.0
+    ],
+    "RightUpLeg": [
+      -0.15854,
+      0.9081,
+      -0.0
+    ],
+    "LeftHandEnd": [
+      0.87394,
+      1.41966,
+      -0.01334
+    ],
+    "LeftHandIndex3": [
+      0.95644,
+      1.34676,
+      0.05313
+    ],
+    "LeftHandIndex2": [
+      0.9231,
+      1.35311,
+      0.03725
+    ],
+    "LeftHandIndex1": [
+      0.87181,
+      1.36288,
+      0.01283
+    ],
+    "LeftHandMiddle3": [
+      0.9615,
+      1.37118,
+      0.06926
+    ],
+    "LeftHandMiddle2": [
+      0.9256,
+      1.37802,
+      0.05217
+    ],
+    "LeftHandMiddle1": [
+      0.87047,
+      1.38852,
+      0.02591
+    ],
+    "LeftHandPinky3": [
+      0.93701,
+      1.42662,
+      0.08505
+    ],
+    "LeftHandPinky2": [
+      0.91009,
+      1.43175,
+      0.07223
+    ],
+    "LeftHandPinky1": [
+      0.86778,
+      1.43981,
+      0.05208
+    ],
+    "LeftHandRing3": [
+      0.95375,
+      1.39805,
+      0.07929
+    ],
+    "LeftHandRing2": [
+      0.92041,
+      1.4044,
+      0.06342
+    ],
+    "LeftHandRing1": [
+      0.86912,
+      1.41417,
+      0.039
+    ],
+    "LeftHandThumb3": [
+      0.81375,
+      1.52147,
+      0.05354
+    ],
+    "LeftHandThumb2": [
+      0.81375,
+      1.47536,
+      0.05354
+    ],
+    "LeftHandThumb1": [
+      0.81375,
+      1.39291,
+      0.05354
+    ],
+    "LeftHand": [
+      0.77363,
+      1.41966,
+      -0.01334
+    ],
+    "LeftForeArm": [
+      0.43838,
+      1.41966,
+      -0.01334
+    ],
+    "LeftArm": [
+      0.17576,
+      1.41966,
+      -0.01334
+    ],
+    "LeftShoulder": [
+      0.02946,
+      1.41966,
+      -0.01334
+    ],
+    "Head": [
+      -0.0,
+      1.58713,
+      -0.01207
+    ],
+    "Neck": [
+      -0.0,
+      1.47601,
+      -0.03166
+    ],
+    "RightHandEnd": [
+      -0.87394,
+      1.41966,
+      -0.01334
+    ],
+    "RightHandIndex3": [
+      -0.95644,
+      1.34676,
+      0.05313
+    ],
+    "RightHandIndex2": [
+      -0.9231,
+      1.35311,
+      0.03725
+    ],
+    "RightHandIndex1": [
+      -0.87181,
+      1.36288,
+      0.01283
+    ],
+    "RightHandMiddle3": [
+      -0.9615,
+      1.37118,
+      0.06926
+    ],
+    "RightHandMiddle2": [
+      -0.9256,
+      1.37802,
+      0.05217
+    ],
+    "RightHandMiddle1": [
+      -0.87047,
+      1.38852,
+      0.02591
+    ],
+    "RightHandPinky3": [
+      -0.93701,
+      1.42662,
+      0.08505
+    ],
+    "RightHandPinky2": [
+      -0.91009,
+      1.43175,
+      0.07223
+    ],
+    "RightHandPinky1": [
+      -0.86778,
+      1.43981,
+      0.05208
+    ],
+    "RightHandRing3": [
+      -0.95375,
+      1.39805,
+      0.07929
+    ],
+    "RightHandRing2": [
+      -0.92041,
+      1.4044,
+      0.06342
+    ],
+    "RightHandRing1": [
+      -0.86912,
+      1.41417,
+      0.039
+    ],
+    "RightHandThumb3": [
+      -0.81375,
+      1.52147,
+      0.05354
+    ],
+    "RightHandThumb2": [
+      -0.81375,
+      1.47536,
+      0.05354
+    ],
+    "RightHandThumb1": [
+      -0.81375,
+      1.39291,
+      0.05354
+    ],
+    "RightHand": [
+      -0.77363,
+      1.41966,
+      -0.01334
+    ],
+    "RightForeArm": [
+      -0.43838,
+      1.41966,
+      -0.01334
+    ],
+    "RightArm": [
+      -0.17576,
+      1.41966,
+      -0.01334
+    ],
+    "RightShoulder": [
+      -0.02946,
+      1.41966,
+      -0.01334
+    ],
+    "Spine3": [
+      0.0,
+      1.26059,
+      -0.06243
+    ],
+    "Spine2": [
+      0.0,
+      1.17853,
+      -0.06243
+    ],
+    "Spine1": [
+      0.0,
+      1.09678,
+      -0.05528
+    ],
+    "Spine": [
+      -0.0,
+      1.01596,
+      -0.04103
+    ],
+    "Hips": [
+      0.0,
+      0.95441,
+      -0.0
+    ]
+  },
+  "reference_joints": {
+    "LeftToeBase": [
+      0.09492,
+      0.0,
+      0.16066
+    ],
+    "LeftFoot": [
+      0.09492,
+      0.05848,
+      -0.0
+    ],
+    "LeftLeg": [
+      0.09492,
+      0.51457,
+      -0.0
+    ],
+    "LeftUpLeg": [
+      0.09492,
+      0.92668,
+      -0.0
+    ],
+    "RightToeBase": [
+      -0.09492,
+      0.0,
+      0.16066
+    ],
+    "RightFoot": [
+      -0.09492,
+      0.05848,
+      -0.0
+    ],
+    "RightLeg": [
+      -0.09492,
+      0.51457,
+      -0.0
+    ],
+    "RightUpLeg": [
+      -0.09492,
+      0.92668,
+      -0.0
+    ],
+    "LeftHandEnd": [
+      0.7886,
+      1.48033,
+      -0.01869
+    ],
+    "LeftHandIndex3": [
+      0.84585,
+      1.42974,
+      0.02744
+    ],
+    "LeftHandIndex2": [
+      0.82272,
+      1.43415,
+      0.01642
+    ],
+    "LeftHandIndex1": [
+      0.78713,
+      1.44093,
+      -0.00053
+    ],
+    "LeftHandMiddle3": [
+      0.84937,
+      1.44669,
+      0.03864
+    ],
+    "LeftHandMiddle2": [
+      0.82445,
+      1.45144,
+      0.02677
+    ],
+    "LeftHandMiddle1": [
+      0.78619,
+      1.45872,
+      0.00855
+    ],
+    "LeftHandPinky3": [
+      0.83237,
+      1.48516,
+      0.04959
+    ],
+    "LeftHandPinky2": [
+      0.81369,
+      1.48872,
+      0.04069
+    ],
+    "LeftHandPinky1": [
+      0.78433,
+      1.49431,
+      0.02671
+    ],
+    "LeftHandRing3": [
+      0.84399,
+      1.46533,
+      0.0456
+    ],
+    "LeftHandRing2": [
+      0.82085,
+      1.46974,
+      0.03458
+    ],
+    "LeftHandRing1": [
+      0.78526,
+      1.47652,
+      0.01763
+    ],
+    "LeftHandThumb3": [
+      0.74684,
+      1.55099,
+      0.02772
+    ],
+    "LeftHandThumb2": [
+      0.74684,
+      1.51899,
+      0.02772
+    ],
+    "LeftHandThumb1": [
+      0.74684,
+      1.46177,
+      0.02772
+    ],
+    "LeftHand": [
+      0.71899,
+      1.48033,
+      -0.01869
+    ],
+    "LeftForeArm": [
+      0.48634,
+      1.48033,
+      -0.01869
+    ],
+    "LeftArm": [
+      0.1909,
+      1.48033,
+      -0.01869
+    ],
+    "LeftShoulder": [
+      0.032,
+      1.48033,
+      -0.01869
+    ],
+    "Head": [
+      -0.0,
+      1.68419,
+      -0.01392
+    ],
+    "Neck": [
+      -0.0,
+      1.55602,
+      -0.03652
+    ],
+    "RightHandEnd": [
+      -0.7886,
+      1.48033,
+      -0.01869
+    ],
+    "RightHandIndex3": [
+      -0.84585,
+      1.42974,
+      0.02744
+    ],
+    "RightHandIndex2": [
+      -0.82272,
+      1.43415,
+      0.01642
+    ],
+    "RightHandIndex1": [
+      -0.78713,
+      1.44093,
+      -0.00053
+    ],
+    "RightHandMiddle3": [
+      -0.84937,
+      1.44669,
+      0.03864
+    ],
+    "RightHandMiddle2": [
+      -0.82445,
+      1.45144,
+      0.02677
+    ],
+    "RightHandMiddle1": [
+      -0.78619,
+      1.45872,
+      0.00855
+    ],
+    "RightHandPinky3": [
+      -0.83237,
+      1.48516,
+      0.04959
+    ],
+    "RightHandPinky2": [
+      -0.81369,
+      1.48872,
+      0.04069
+    ],
+    "RightHandPinky1": [
+      -0.78433,
+      1.49432,
+      0.02671
+    ],
+    "RightHandRing3": [
+      -0.84399,
+      1.46533,
+      0.0456
+    ],
+    "RightHandRing2": [
+      -0.82085,
+      1.46974,
+      0.03458
+    ],
+    "RightHandRing1": [
+      -0.78526,
+      1.47652,
+      0.01763
+    ],
+    "RightHandThumb3": [
+      -0.74684,
+      1.55099,
+      0.02772
+    ],
+    "RightHandThumb2": [
+      -0.74684,
+      1.51899,
+      0.02772
+    ],
+    "RightHandThumb1": [
+      -0.74684,
+      1.46177,
+      0.02772
+    ],
+    "RightHand": [
+      -0.71899,
+      1.48033,
+      -0.01869
+    ],
+    "RightForeArm": [
+      -0.48634,
+      1.48033,
+      -0.01869
+    ],
+    "RightArm": [
+      -0.1909,
+      1.48033,
+      -0.01869
+    ],
+    "RightShoulder": [
+      -0.03199,
+      1.48033,
+      -0.01869
+    ],
+    "Spine3": [
+      0.0,
+      1.30756,
+      -0.07201
+    ],
+    "Spine2": [
+      0.0,
+      1.21291,
+      -0.07201
+    ],
+    "Spine1": [
+      0.0,
+      1.11862,
+      -0.06376
+    ],
+    "Spine": [
+      -0.0,
+      1.0254,
+      -0.04733
+    ],
+    "Hips": [
+      0.0,
+      0.95441,
+      -0.0
+    ]
+  },
+  "grounding": {
+    "left": {
+      "factor": 1.1561,
+      "toe_before_m": 0.1226,
+      "toe_after_m": 0.0,
+      "hip_joint_m": 0.9081,
+      "runs": [
+        "LeftUpLeg->LeftLeg",
+        "LeftLeg->LeftFoot",
+        "LeftFoot->LeftToeBase"
+      ]
+    },
+    "right": {
+      "factor": 1.1561,
+      "toe_before_m": 0.1226,
+      "toe_after_m": 0.0,
+      "hip_joint_m": 0.9081,
+      "runs": [
+        "RightUpLeg->RightLeg",
+        "RightLeg->RightFoot",
+        "RightFoot->RightToeBase"
+      ]
+    }
+  },
+  "motion_scale": 1.0,
+  "min_support": 8.0,
+  "vertices": 21554,
+  "source": "/home/mmy/repos/personal/gamedev/asset-forge/out/skin/scrapyard_scavenger/scrapyard_scavenger_p1.skinned.glb",
+  "profile_dir": "/home/mmy/repos/personal/gamedev/asset-forge/rigs/humanoid",
+  "asymmetry": {
+    "asymmetry_arms": 0.35,
+    "asymmetry_other": 0.2
+  },
+  "problems": [],
+  "warnings": [
+    "LeftArm->LeftForeArm's landmark sits 15.8 cm off the run's frozen axis (the run is 29.5 cm) \u2014 this body does not point where the contract points, and no length can fix a direction",
+    "Hips->LeftUpLeg's landmark sits 6.4 cm off the run's frozen axis (the run is 9.9 cm) \u2014 this body does not point where the contract points, and no length can fix a direction",
+    "Hips->RightUpLeg's landmark sits 6.5 cm off the run's frozen axis (the run is 9.9 cm) \u2014 this body does not point where the contract points, and no length can fix a direction",
+    "LeftFoot->LeftToeBase's landmark sits 9.6 cm off the run's frozen axis (the run is 17.1 cm) \u2014 this body does not point where the contract points, and no length can fix a direction"
+  ]
+}

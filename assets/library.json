@@ -372,6 +372,26 @@
       "tags": []
     },
     {
+      "name": "scrapyard_rusher",
+      "path": "bodies/scrapyard_rusher.glb",
+      "sha256": "sha256:6a7d63a21aa6469aca59d64cca99c7198fdc9cc53dd4541506cf090b7aeecd7e",
+      "motion_scale": 0.9167,
+      "tags": [
+        "scrapyard",
+        "enemy"
+      ]
+    },
+    {
+      "name": "scrapyard_scavenger",
+      "path": "bodies/scrapyard_scavenger.glb",
+      "sha256": "sha256:d03c3be308813606f73e30071e1c402bffb307afed36b64929bb9ac427425e34",
+      "motion_scale": 1.0,
+      "tags": [
+        "scrapyard",
+        "player"
+      ]
+    },
+    {
       "name": "vex_runner",
       "path": "bodies/vex_runner.glb",
       "sha256": "sha256:27f1b0cad645599396a2954651490db0a1bba2a9ee44f6d9b4d34ed4971526f2",
@@ -399,6 +419,48 @@
           0.44467086,
           0.9,
           0.43753165
+        ]
+      ]
+    },
+    {
+      "name": "scrapyard_magnet",
+      "path": "models/scrapyard_magnet.glb",
+      "sha256": "sha256:24b6fc0ecd33e4dbd9cd97113e762fd7dd1cbff7dade34a795cb3c3b5f2fc9b9",
+      "tags": [
+        "scrapyard",
+        "pickup"
+      ],
+      "bounds_m": [
+        [
+          -0.15365738,
+          -0.057224147,
+          -0.17500001
+        ],
+        [
+          0.15365738,
+          0.057224147,
+          0.17500001
+        ]
+      ]
+    },
+    {
+      "name": "scrapyard_rifle",
+      "path": "models/scrapyard_rifle.glb",
+      "sha256": "sha256:6591511b688286ad5d076e8f296f30647ce57c3ae32c5f965b3cd699b2fa784f",
+      "tags": [
+        "scrapyard",
+        "weapon"
+      ],
+      "bounds_m": [
+        [
+          -0.06488586,
+          -0.28,
+          -0.21957687
+        ],
+        [
+          0.06488586,
+          0.57,
+          0.21957687
         ]
       ]
     },
@@ -1174,6 +1236,709 @@
       ]
     },
     {
+      "name": "scrapyard_rifle_aim",
+      "path": "clips/scrapyard_rifle_aim.glb",
+      "sha256": "sha256:c9df81c97b1f6ee9b29157daa37bee7d08cec4b1489f19a303210e3dc76f3677",
+      "duration_s": 3.0,
+      "fps": 20.0,
+      "frames": 61,
+      "looped": true,
+      "tags": [
+        "scrapyard",
+        "aim",
+        "loop"
+      ],
+      "root_motion": {
+        "mode": "strip",
+        "avg_speed_mps": 0.009999246,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            -0.0,
+            0.0
+          ],
+          [
+            -0.001,
+            0.0
+          ],
+          [
+            -0.001,
+            0.0
+          ],
+          [
+            -0.001,
+            0.0
+          ],
+          [
+            -0.001,
+            0.001
+          ],
+          [
+            -0.001,
+            0.001
+          ],
+          [
+            -0.0,
+            0.001
+          ],
+          [
+            0.0,
+            0.001
+          ],
+          [
+            0.001,
+            0.002
+          ],
+          [
+            0.001,
+            0.002
+          ],
+          [
+            0.002,
+            0.002
+          ],
+          [
+            0.002,
+            0.002
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.002
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.004
+          ],
+          [
+            0.003,
+            0.004
+          ],
+          [
+            0.003,
+            0.004
+          ],
+          [
+            0.003,
+            0.004
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.003
+          ],
+          [
+            0.003,
+            0.002
+          ],
+          [
+            0.003,
+            0.001
+          ],
+          [
+            0.003,
+            0.001
+          ],
+          [
+            0.003,
+            0.0
+          ],
+          [
+            0.003,
+            -0.001
+          ],
+          [
+            0.004,
+            -0.002
+          ],
+          [
+            0.004,
+            -0.002
+          ],
+          [
+            0.005,
+            -0.002
+          ],
+          [
+            0.005,
+            -0.003
+          ],
+          [
+            0.006,
+            -0.003
+          ],
+          [
+            0.007,
+            -0.003
+          ],
+          [
+            0.008,
+            -0.003
+          ],
+          [
+            0.008,
+            -0.003
+          ],
+          [
+            0.009,
+            -0.003
+          ],
+          [
+            0.01,
+            -0.004
+          ],
+          [
+            0.01,
+            -0.003
+          ],
+          [
+            0.011,
+            -0.004
+          ],
+          [
+            0.011,
+            -0.004
+          ],
+          [
+            0.011,
+            -0.004
+          ],
+          [
+            0.011,
+            -0.004
+          ],
+          [
+            0.012,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.005
+          ],
+          [
+            0.012,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.006
+          ],
+          [
+            0.011,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.005
+          ],
+          [
+            0.011,
+            -0.006
+          ],
+          [
+            0.01,
+            -0.005
+          ],
+          [
+            0.01,
+            -0.006
+          ],
+          [
+            0.01,
+            -0.006
+          ],
+          [
+            0.01,
+            -0.006
+          ],
+          [
+            0.01,
+            -0.006
+          ],
+          [
+            0.01,
+            -0.006
+          ]
+        ]
+      },
+      "events": []
+    },
+    {
+      "name": "scrapyard_rifle_fire",
+      "path": "clips/scrapyard_rifle_fire.glb",
+      "sha256": "sha256:475bc6bd78291003426934ef11b6d357001f0f12db7807f17bf808e39b4b9d07",
+      "duration_s": 0.55,
+      "fps": 20.0,
+      "frames": 12,
+      "looped": false,
+      "tags": [
+        "scrapyard",
+        "combat"
+      ],
+      "root_motion": {
+        "mode": "strip",
+        "avg_speed_mps": 0.3385322,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            0.004,
+            -0.004
+          ],
+          [
+            -0.013,
+            -0.013
+          ],
+          [
+            -0.032,
+            -0.056
+          ],
+          [
+            -0.058,
+            -0.051
+          ],
+          [
+            -0.062,
+            -0.044
+          ],
+          [
+            -0.061,
+            -0.035
+          ],
+          [
+            -0.058,
+            -0.019
+          ],
+          [
+            -0.052,
+            0.001
+          ],
+          [
+            -0.041,
+            0.012
+          ],
+          [
+            -0.03,
+            0.013
+          ],
+          [
+            -0.023,
+            0.01
+          ]
+        ]
+      },
+      "events": [
+        {
+          "name": "fire",
+          "time_s": 0.08,
+          "audio": null
+        }
+      ]
+    },
+    {
+      "name": "scrapyard_rifle_run",
+      "path": "clips/scrapyard_rifle_run.glb",
+      "sha256": "sha256:6a558b40f664ac75df272c20a884bd7414dfe9c024b9022d7f017d94e7d7e697",
+      "duration_s": 0.8,
+      "fps": 20.0,
+      "frames": 17,
+      "looped": true,
+      "tags": [
+        "scrapyard",
+        "locomotion",
+        "loop"
+      ],
+      "root_motion": {
+        "mode": "strip",
+        "avg_speed_mps": 2.5583997,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            0.011,
+            -0.139
+          ],
+          [
+            0.021,
+            -0.275
+          ],
+          [
+            0.029,
+            -0.405
+          ],
+          [
+            0.039,
+            -0.525
+          ],
+          [
+            0.052,
+            -0.637
+          ],
+          [
+            0.066,
+            -0.748
+          ],
+          [
+            0.083,
+            -0.862
+          ],
+          [
+            0.105,
+            -0.992
+          ],
+          [
+            0.129,
+            -1.129
+          ],
+          [
+            0.155,
+            -1.266
+          ],
+          [
+            0.184,
+            -1.396
+          ],
+          [
+            0.212,
+            -1.52
+          ],
+          [
+            0.235,
+            -1.639
+          ],
+          [
+            0.255,
+            -1.758
+          ],
+          [
+            0.273,
+            -1.885
+          ],
+          [
+            0.294,
+            -2.023
+          ]
+        ]
+      },
+      "events": [
+        {
+          "name": "footstep_l",
+          "time_s": 0.15,
+          "audio": null
+        },
+        {
+          "name": "footstep_r",
+          "time_s": 0.55,
+          "audio": null
+        }
+      ]
+    },
+    {
+      "name": "scrapyard_rusher_attack",
+      "path": "clips/scrapyard_rusher_attack.glb",
+      "sha256": "sha256:a5e8287f281066a3e921c9a366dd541881b68a13ed3c6a01aacbfae513e0a6b3",
+      "duration_s": 0.85,
+      "fps": 20.0,
+      "frames": 18,
+      "looped": false,
+      "tags": [
+        "scrapyard",
+        "combat"
+      ],
+      "root_motion": {
+        "mode": "detrend",
+        "avg_speed_mps": 0.8203133,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            -0.022,
+            -0.01
+          ],
+          [
+            -0.04,
+            -0.025
+          ],
+          [
+            -0.052,
+            -0.049
+          ],
+          [
+            -0.08,
+            -0.078
+          ],
+          [
+            -0.127,
+            -0.113
+          ],
+          [
+            -0.186,
+            -0.16
+          ],
+          [
+            -0.31,
+            -0.27
+          ],
+          [
+            -0.364,
+            -0.321
+          ],
+          [
+            -0.393,
+            -0.354
+          ],
+          [
+            -0.417,
+            -0.389
+          ],
+          [
+            -0.432,
+            -0.399
+          ],
+          [
+            -0.441,
+            -0.387
+          ],
+          [
+            -0.436,
+            -0.374
+          ],
+          [
+            -0.421,
+            -0.362
+          ],
+          [
+            -0.404,
+            -0.35
+          ],
+          [
+            -0.388,
+            -0.339
+          ],
+          [
+            -0.376,
+            -0.329
+          ]
+        ]
+      },
+      "events": [
+        {
+          "name": "footstep_l",
+          "time_s": 0.317,
+          "audio": null
+        },
+        {
+          "name": "attack_contact",
+          "time_s": 0.403,
+          "audio": null
+        },
+        {
+          "name": "footstep_r",
+          "time_s": 0.512,
+          "audio": null
+        },
+        {
+          "name": "footstep_r",
+          "time_s": 0.635,
+          "audio": null
+        }
+      ]
+    },
+    {
+      "name": "scrapyard_rusher_rush",
+      "path": "clips/scrapyard_rusher_rush.glb",
+      "sha256": "sha256:a86c28d0af65d396d1ce1298f0508cd38aaccfeca517781bacddcc8e3a52e492",
+      "duration_s": 1.25,
+      "fps": 20.0,
+      "frames": 26,
+      "looped": true,
+      "tags": [
+        "scrapyard",
+        "locomotion",
+        "loop"
+      ],
+      "root_motion": {
+        "mode": "strip",
+        "avg_speed_mps": 2.6054974,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            0.023,
+            -0.136
+          ],
+          [
+            0.044,
+            -0.278
+          ],
+          [
+            0.065,
+            -0.43
+          ],
+          [
+            0.083,
+            -0.581
+          ],
+          [
+            0.096,
+            -0.72
+          ],
+          [
+            0.108,
+            -0.85
+          ],
+          [
+            0.123,
+            -0.973
+          ],
+          [
+            0.142,
+            -1.095
+          ],
+          [
+            0.167,
+            -1.223
+          ],
+          [
+            0.195,
+            -1.352
+          ],
+          [
+            0.226,
+            -1.477
+          ],
+          [
+            0.254,
+            -1.596
+          ],
+          [
+            0.28,
+            -1.712
+          ],
+          [
+            0.302,
+            -1.829
+          ],
+          [
+            0.323,
+            -1.956
+          ],
+          [
+            0.343,
+            -2.089
+          ],
+          [
+            0.358,
+            -2.217
+          ],
+          [
+            0.37,
+            -2.339
+          ],
+          [
+            0.384,
+            -2.457
+          ],
+          [
+            0.4,
+            -2.574
+          ],
+          [
+            0.419,
+            -2.697
+          ],
+          [
+            0.44,
+            -2.829
+          ],
+          [
+            0.466,
+            -2.962
+          ],
+          [
+            0.493,
+            -3.09
+          ],
+          [
+            0.518,
+            -3.212
+          ]
+        ]
+      },
+      "events": [
+        {
+          "name": "footstep_l",
+          "time_s": 0.25,
+          "audio": null
+        },
+        {
+          "name": "footstep_r",
+          "time_s": 0.6,
+          "audio": null
+        },
+        {
+          "name": "footstep_l",
+          "time_s": 0.9,
+          "audio": null
+        },
+        {
+          "name": "footstep_r",
+          "time_s": 1.2,
+          "audio": null
+        }
+      ]
+    },
+    {
       "name": "sword_chop",
       "path": "clips/sword_chop.glb",
       "sha256": "sha256:b1a0c3d40c7ca6135dc26eda712da7f8750dea57826a7520984400bcdc136a88",
@@ -1670,6 +2435,95 @@
       "duration_s": 2.0,
       "tags": [
         "sample"
+      ]
+    },
+    {
+      "name": "scrapyard_combat_loop",
+      "path": "audio/music/scrapyard_combat_loop.wav",
+      "sha256": "sha256:8d5d25665a0b18f4712e8d260f03836d639948044fabae303a56272f0cc07c7b",
+      "kind": "music",
+      "duration_s": 32.0,
+      "tags": [
+        "scrapyard",
+        "synthesized",
+        "loop"
+      ]
+    },
+    {
+      "name": "scrapyard_dash",
+      "path": "audio/sfx/scrapyard_dash.wav",
+      "sha256": "sha256:8cee7c5c130983920c955a385c18c76edbca67839a215ea34e544a6eac68c84e",
+      "kind": "sfx",
+      "duration_s": 0.28,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_explosion",
+      "path": "audio/sfx/scrapyard_explosion.wav",
+      "sha256": "sha256:c77344fcd819ff943a4ebbef36a6f491a953ffe213d2e1dfa4df32ad57b3bf19",
+      "kind": "sfx",
+      "duration_s": 0.9,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_hit",
+      "path": "audio/sfx/scrapyard_hit.wav",
+      "sha256": "sha256:39fb74f666bcae0af51fd730577519a144e146f2bb4b2cdfcddc54a2706b5529",
+      "kind": "sfx",
+      "duration_s": 0.22,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_pickup",
+      "path": "audio/sfx/scrapyard_pickup.wav",
+      "sha256": "sha256:b9d83827cb0924c68c62ba1591c6b11ecba0ad88bf98afb594d31ebbb47fafd5",
+      "kind": "sfx",
+      "duration_s": 0.42,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_shot",
+      "path": "audio/sfx/scrapyard_shot.wav",
+      "sha256": "sha256:c93b0d1fca209ff3ae94771be3b74238344cd12077f0b08e8b1e7df89f82aee2",
+      "kind": "sfx",
+      "duration_s": 0.24,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_ui",
+      "path": "audio/sfx/scrapyard_ui.wav",
+      "sha256": "sha256:f7b22b83b0fdcb39f68e7e2e7c28064bb8b523a355e96f7bf418f3556682b7c9",
+      "kind": "sfx",
+      "duration_s": 0.085,
+      "tags": [
+        "scrapyard",
+        "synthesized"
+      ]
+    },
+    {
+      "name": "scrapyard_upgrade",
+      "path": "audio/sfx/scrapyard_upgrade.wav",
+      "sha256": "sha256:02dd87f57c5c489dfc72681d0e3a2dab28fb9385e289cce4fd2b9927aa1eb94c",
+      "kind": "sfx",
+      "duration_s": 1.0,
+      "tags": [
+        "scrapyard",
+        "synthesized"
       ]
     },
     {
