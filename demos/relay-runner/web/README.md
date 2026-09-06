@@ -11,6 +11,19 @@ browser-reported graphics adapter. These are live measurements, not an FPS targe
 **[Play Relay Run](https://jedimemo.github.io/asset-forge/)** on GitHub Pages.
 The public repository deploys through GitHub Actions.
 
+If the game runs at only a few FPS, press F3 and check the adapter name.
+`google / swiftshader` means software rendering on the CPU, even if Chrome's
+status page says WebGPU is hardware accelerated. The launcher detects known
+software adapters and shows help before downloading the game; launching anyway
+remains available. Hidden adapter details can prevent detection.
+
+On Linux Chrome, open `chrome://flags/#enable-vulkan`, enable Vulkan and relaunch
+Chrome. Reload the game and check that F3 names your hardware GPU. In the reported
+RTX 4090 case, Chrome exposed NVIDIA only through OpenGL Compatibility Mode,
+while SwiftShader provided the Core WebGPU adapter requested by the game.
+If Vulkan is unavailable or this does not help, inspect Dawn Info / WebGPU Adapter
+Info in `chrome://gpu` and consult [Chrome's troubleshooting guide](https://developer.chrome.com/docs/web-platform/webgpu/troubleshooting-tips).
+
 From a fresh checkout, use the repository's pinned Rust toolchain and Python 3.11
 or later. Install the CLI version from the lockfile so its bindings match the game:
 

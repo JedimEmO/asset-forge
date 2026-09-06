@@ -502,3 +502,13 @@ browser-reported adapter details to make the affected session diagnosable.
 Its local browser check passed display, hide/show and absence of runtime errors.
 Raw profiles and the reproduction scripts are preserved in
 `out/relay-perf-20260906/`; accepted assets and rendering settings are unchanged.
+
+The user's F3 capture subsequently showed `google / swiftshader`, 1 game FPS
+and 2961.6 ms p95. Their Chrome GPU report exposed NVIDIA through OpenGL
+Compatibility Mode, with Vulkan disabled and SwiftShader offering Core features.
+The launcher now warns about known software adapters before any game download,
+expands Linux Vulkan help, and retains an explicit slow-launch option. Hardware,
+unknown and missing-adapter cases were also checked with injected adapter results;
+all four launch states passed. The software warning was visually reviewed.
+This diagnoses the reported software-rendering path; it does not claim that the
+user's Chrome configuration has been changed or their hardware retest passed.

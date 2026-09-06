@@ -1812,3 +1812,14 @@ Python and browser asset metadata. Browser compilation runs explicitly or
 for enabled Pages deployment. Full suites, packaging and render review remain
 available locally; a green hosted check is not a substitute for their evidence.
 No CI workflow installs model weights.
+
+### 2026-09-06 — Browser acceleration labels do not establish the game's adapter
+
+Relay Run's browser smoke check passed on a configured NVIDIA Vulkan adapter,
+but the user's Chrome selected SwiftShader and ran at 1 FPS while chrome://gpu
+still said WebGPU was hardware accelerated. Its NVIDIA adapter was available
+only in OpenGL Compatibility Mode; the Core request selected software rendering.
+Check the browser-reported adapter and actual game frame intervals. Warn before
+loading on known software adapters, provide troubleshooting at the launch screen,
+and preserve an explicit override. A successful functional smoke check is not
+performance acceptance across browser configurations.
