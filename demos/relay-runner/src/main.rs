@@ -1,6 +1,7 @@
 mod art;
 mod audio;
 mod combat_feedback;
+mod gamepad;
 mod lighting;
 mod metadata;
 mod post;
@@ -41,6 +42,7 @@ struct Runtime {
     yaw: f32,
     pitch: f32,
     warm: u32,
+    gamepad: Option<Entity>,
     #[cfg(not(target_arch = "wasm32"))]
     frames: u32,
     #[cfg(not(target_arch = "wasm32"))]
@@ -79,7 +81,7 @@ fn options() -> Options {
     let value = |name: &str| args.windows(2).find(|p| p[0] == name).map(|p| p[1].clone());
     if args.iter().any(|a| a == "--help") {
         println!(
-            "Relay Run\nA/D strafe | mouse aim | LMB fire | RMB focus | Space jump | Shift dodge | Q shockwave | E / MMB plasma blast | R reload | Esc pause | M mute\n--assets DIR --autoplay --frames N --screenshot FILE --report FILE --scenario title|combat|paused|dead|crowded|assets|pickup|burst|reload|blast|focus|threats|feedback --quiet --benchmark --no-post | F6 toggle post effects"
+            "Relay Run\nA/D strafe | mouse aim | LMB fire | RMB focus | Space jump | Shift dodge | Q shockwave | E / MMB plasma blast | R reload | Esc pause | M mute\nGamepad: left stick/D-pad strafe | right stick aim | RT fire | LT focus | A jump | B dodge | X reload | Y shockwave | RB plasma | Start play/pause/resume\n--assets DIR --autoplay --frames N --screenshot FILE --report FILE --scenario title|combat|paused|dead|crowded|assets|pickup|burst|reload|blast|focus|threats|feedback --quiet --benchmark --no-post | F6 toggle post effects"
         );
         std::process::exit(0);
     }
@@ -211,6 +213,8 @@ fn inputs(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
+    time: Res<Time>,
+    gamepads: Query<(Entity, &Gamepad)>,
     #[cfg(not(target_arch = "wasm32"))] mut cursors: Query<&mut CursorOptions>,
     windows: Query<&Window>,
     mut game: ResMut<Game>,
@@ -236,6 +240,30 @@ fn inputs(
             }
         };
         return;
+    }
+    // Keep one controller until it disconnects; other connected pads cannot steer.
+    let disconnected = runtime.gamepad.is_some_and(|id| gamepads.get(id).is_err());
+    if runtime.gamepad.is_none() || disconnected {
+        runtime.gamepad = gamepads.iter().map(|(id, _)| id).min();
+    }
+    let pad = runtime
+        .gamepad
+        .and_then(|id| gamepads.get(id).ok())
+        .map(|(_, pad)| gamepad::read(pad))
+        .unwrap_or_default();
+    let focused = windows.single().is_ok_and(|window| window.focused);
+    if disconnected || (!focused && runtime.focus_seen) {
+        if game.phase == Phase::Playing {
+            game.phase = Phase::Paused;
+        }
+        runtime.aim_active = false;
+    }
+    // Empty window queries are used by the headless input tests.
+    let pad_enabled = !disconnected && (focused || windows.is_empty());
+    let pad = if pad_enabled { pad } else { default() };
+    let pad_pause = pad.start && game.phase == Phase::Playing;
+    if pad_pause {
+        game.phase = Phase::Paused;
     }
     if keys.just_pressed(KeyCode::F8) && options.report.is_some() {
         println!(
@@ -264,7 +292,7 @@ fn inputs(
             p => p,
         };
     }
-    let start = keys.just_pressed(KeyCode::Enter);
+    let start = keys.just_pressed(KeyCode::Enter) || (pad.start && !pad_pause);
     #[cfg(target_arch = "wasm32")]
     let start = start || browser_input & 1 != 0;
     if start && ready.0 {
@@ -301,6 +329,7 @@ fn inputs(
     // Discard that accumulated motion on every transition into aiming.
     let accept_motion = runtime.aim_active && game.phase == Phase::Playing;
     runtime.aim_active = game.phase == Phase::Playing;
+    let accept_stick = accept_motion;
     #[cfg(target_arch = "wasm32")]
     let accept_motion = accept_motion && browser_input & 4 == 0;
     if game.phase != Phase::Playing {
@@ -311,13 +340,19 @@ fn inputs(
         runtime.yaw = (runtime.yaw + motion.delta.x * 0.0021).clamp(-0.72, 0.72);
         runtime.pitch = (runtime.pitch - motion.delta.y * 0.0019).clamp(-0.38, 0.32);
     }
+    if accept_stick {
+        let speed = if pad.focus { 0.8 } else { 1.6 };
+        let delta = pad.look * speed * time.delta_secs().min(1. / 30.);
+        runtime.yaw = (runtime.yaw + delta.x).clamp(-0.72, 0.72);
+        runtime.pitch = (runtime.pitch + delta.y).clamp(-0.38, 0.32);
+    }
     let aim = Vec3::new(
         runtime.yaw.sin() * runtime.pitch.cos(),
         runtime.pitch.sin(),
         -runtime.yaw.cos() * runtime.pitch.cos(),
     );
     controls.0 = Input {
-        strafe: if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
+        strafe: (if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
             1.
         } else {
             0.
@@ -325,14 +360,17 @@ fn inputs(
             1.
         } else {
             0.
-        },
-        fire: mouse.pressed(MouseButton::Left),
-        focus: mouse.pressed(MouseButton::Right),
-        jump: keys.just_pressed(KeyCode::Space),
-        dash: keys.just_pressed(KeyCode::ShiftLeft),
-        nova: keys.just_pressed(KeyCode::KeyQ),
-        secondary: keys.just_pressed(KeyCode::KeyE) || mouse.just_pressed(MouseButton::Middle),
-        reload: keys.just_pressed(KeyCode::KeyR),
+        } + pad.strafe)
+            .clamp(-1., 1.),
+        fire: mouse.pressed(MouseButton::Left) || pad.fire,
+        focus: mouse.pressed(MouseButton::Right) || pad.focus,
+        jump: keys.just_pressed(KeyCode::Space) || pad.jump,
+        dash: keys.just_pressed(KeyCode::ShiftLeft) || pad.dash,
+        nova: keys.just_pressed(KeyCode::KeyQ) || pad.nova,
+        secondary: keys.just_pressed(KeyCode::KeyE)
+            || mouse.just_pressed(MouseButton::Middle)
+            || pad.secondary,
+        reload: keys.just_pressed(KeyCode::KeyR) || pad.reload,
         aim,
     };
     if options.autoplay {
@@ -661,11 +699,11 @@ export function save_best(best) {
 mod input_tests {
     use super::*;
 
-    #[test]
-    fn entering_play_discards_unlocked_motion_and_resume_keeps_aim() {
+    fn input_app() -> App {
         let mut app = App::new();
         app.insert_resource(Game::new())
             .init_resource::<Runtime>()
+            .init_resource::<Time>()
             .init_resource::<Controls>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
@@ -686,6 +724,92 @@ mod input_tests {
                 flat_light: false,
             })
             .add_systems(Update, inputs);
+        app
+    }
+
+    #[test]
+    fn controller_start_pause_resume_disconnect_and_restart() {
+        let mut app = input_app();
+        let mut pad = Gamepad::default();
+        pad.digital_mut().press(GamepadButton::Start);
+        let id = app.world_mut().spawn(pad).id();
+        app.update();
+        assert_eq!(app.world().resource::<Game>().phase, Phase::Playing);
+        app.world_mut().resource_mut::<Game>().time = 1.;
+        app.world_mut()
+            .get_mut::<Gamepad>(id)
+            .unwrap()
+            .digital_mut()
+            .clear();
+        app.update();
+        assert_eq!(app.world().resource::<Game>().phase, Phase::Playing);
+        for expected in [Phase::Paused, Phase::Playing] {
+            app.world_mut()
+                .get_mut::<Gamepad>(id)
+                .unwrap()
+                .digital_mut()
+                .reset(GamepadButton::Start);
+            app.world_mut()
+                .get_mut::<Gamepad>(id)
+                .unwrap()
+                .digital_mut()
+                .press(GamepadButton::Start);
+            app.update();
+            assert_eq!(app.world().resource::<Game>().phase, expected);
+        }
+        app.world_mut().despawn(id);
+        app.update();
+        assert_eq!(app.world().resource::<Game>().phase, Phase::Paused);
+        assert!(!app.world().resource::<Controls>().0.fire);
+        app.world_mut().resource_mut::<Game>().phase = Phase::Dead;
+        let mut pad = Gamepad::default();
+        pad.digital_mut().press(GamepadButton::Start);
+        app.world_mut().spawn(pad);
+        app.update();
+        assert_eq!(app.world().resource::<Game>().phase, Phase::Playing);
+    }
+
+    #[test]
+    fn controller_aim_is_time_scaled_and_unfocused_input_is_ignored() {
+        let mut app = input_app();
+        app.world_mut()
+            .resource_mut::<AccumulatedMouseMotion>()
+            .delta = Vec2::ZERO;
+        app.world_mut().resource_mut::<Game>().start();
+        app.world_mut().resource_mut::<Game>().time = 1.;
+        app.world_mut().resource_mut::<Runtime>().aim_active = true;
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs_f32(1. / 60.));
+        let mut pad = Gamepad::default();
+        pad.analog_mut().set(GamepadAxis::RightStickX, 1.);
+        pad.analog_mut().set(GamepadAxis::LeftStickX, 0.59);
+        pad.digital_mut().press(GamepadButton::RightTrigger2);
+        pad.digital_mut().press(GamepadButton::South);
+        app.world_mut().spawn(pad);
+        let window = app
+            .world_mut()
+            .spawn(Window {
+                focused: true,
+                ..default()
+            })
+            .id();
+        app.update();
+        let input = app.world().resource::<Controls>().0;
+        assert!(input.fire && input.jump);
+        assert!((input.strafe - 0.5).abs() < 0.0001);
+        let yaw = app.world().resource::<Runtime>().yaw;
+        assert!((yaw - 1.6 / 60.).abs() < 0.0001);
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = false;
+        app.update();
+        assert_eq!(app.world().resource::<Game>().phase, Phase::Paused);
+        assert!(!app.world().resource::<Controls>().0.fire);
+        assert_eq!(app.world().resource::<Runtime>().yaw, yaw);
+    }
+
+    #[test]
+    fn entering_play_discards_unlocked_motion_and_resume_keeps_aim() {
+        let mut app = input_app();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::Enter);

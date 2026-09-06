@@ -342,12 +342,12 @@ fn menus(
     p.spawn(text("Relay\nRun",100.,true,&fonts,TEXT));
     p.spawn(text("The station is falling.\nKeep moving.",26.,false,&fonts,CYAN));
     p.spawn(text("Sprint through an orbital firefight. Break their line,\ndodge the crossfire, and see how far you get.",17.,false,&fonts,DIM));
-    menu_button(p,&fonts,"Start run  /  Enter",Action::Start);
-    p.spawn((text("A / D    Strafe freely\nMouse    Aim and fire\nSpace    Jump\nShift    Dodge through incoming fire\nQ        Unleash a shockwave\nE / MMB  Fire a detonating plasma blast",16.,false,&fonts,TEXT),Node{margin:UiRect::top(px(12)),..default()}));
+    menu_button(p,&fonts,"Start run / Enter / Start",Action::Start);
+    p.spawn((text("A/D or left stick / D-pad   Strafe\nMouse or right stick   Aim\nLMB / RT fire    RMB / LT focus\nSpace / A jump    Shift / B dodge\nR / X reload    Q / Y shockwave\nE / MMB / RB plasma    Start pause",16.,false,&fonts,TEXT),Node{margin:UiRect::top(px(12)),..default()}));
     p.spawn((Label::Best,text(format!("Best score  {}",game.best),14.,false,&fonts,DIM)));
    },
-   Phase::Paused=>{p.spawn(text("Take a breath.",54.,true,&fonts,TEXT));p.spawn(text("Your run is paused.",22.,false,&fonts,DIM));menu_button(p,&fonts,"Resume  /  Esc",Action::Resume);menu_button(p,&fonts,"Restart run",Action::Restart);},
-   Phase::Dead=>{p.spawn(text("Signal lost.",64.,true,&fonts,TEXT));p.spawn(text(format!("{} m travelled     {} hostiles eliminated",game.distance as u32,game.kills),24.,false,&fonts,DIM));p.spawn(text(format!("{} points",game.score+game.distance as u32),42.,true,&fonts,CYAN));p.spawn(text("Break line of sight to regenerate shields.\nChain 4 kills for Overdrive. Cyan crates restore ammo, shield and charge.",18.,false,&fonts,DIM));menu_button(p,&fonts,"Run again  /  Enter",Action::Restart);},_=>{}
+   Phase::Paused=>{p.spawn(text("Take a breath.",54.,true,&fonts,TEXT));p.spawn(text("Your run is paused.",22.,false,&fonts,DIM));menu_button(p,&fonts,"Resume / Enter / Start",Action::Resume);menu_button(p,&fonts,"Restart run",Action::Restart);},
+   Phase::Dead=>{p.spawn(text("Signal lost.",64.,true,&fonts,TEXT));p.spawn(text(format!("{} m travelled     {} hostiles eliminated",game.distance as u32,game.kills),24.,false,&fonts,DIM));p.spawn(text(format!("{} points",game.score+game.distance as u32),42.,true,&fonts,CYAN));p.spawn(text("Break line of sight to regenerate shields.\nChain 4 kills for Overdrive. Cyan crates restore ammo, shield and charge.",18.,false,&fonts,DIM));menu_button(p,&fonts,"Run again / Enter / Start",Action::Restart);},_=>{}
   }
  });
 }

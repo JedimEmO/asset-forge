@@ -2,8 +2,9 @@
 
 The browser build uses WebGPU, retaining Hanabi compute particles and the same
 combat simulation as the native demo. It requires a desktop browser with WebGPU,
-hardware acceleration, keyboard and mouse. Click Launch game, wait for assets to load,
-then click the game or press Enter. Escape releases the mouse and pauses. Best
+hardware acceleration, and keyboard/mouse or a gamepad. Click Launch game, wait for assets to load,
+then click the game, press Enter, or press gamepad Start/Menu.
+See the [controller bindings](../README.md); stick aiming works without pointer lock. Escape releases the mouse and pauses. Best
 score uses browser localStorage; blocked storage does not stop play.
 Press F3 to show actual game FPS, frame-time p95, render resolution and the
 browser-reported graphics adapter. These are live measurements, not an FPS target.

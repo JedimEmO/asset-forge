@@ -11,7 +11,9 @@ below. **[Play in your browser](https://jedimemo.github.io/asset-forge/)**.
 
 In a native package, run `./PLAY.sh`, then click **Start run** or press Enter.
 In the browser, click **Launch game**, wait for loading, then click the game
-or press Enter. We require a desktop WebGPU browser, keyboard and mouse.
+or press Enter. Use a desktop WebGPU browser with keyboard/mouse or a gamepad.
+Click **Launch game** first to enable browser audio, then press the controller’s
+Start/Menu button once loading finishes. Stick aiming does not need mouse lock.
 
 | Control | Action |
 | --- | --- |
@@ -27,6 +29,13 @@ or press Enter. We require a desktop WebGPU browser, keyboard and mouse.
 | Escape | Pause and release the mouse; native also resumes |
 | M | Toggle sound |
 | Enter | Start, restart or resume |
+
+Gamepad controls (Xbox labels; PlayStation uses the same button positions):
+left stick or D-pad to strafe, right stick to aim, RT/R2 to fire, LT/L2 to
+focus, A/Cross to jump, B/Circle to dodge, X/Square to reload, Y/Triangle
+for shockwave, and RB/R1 for plasma. Start/Menu/Options starts, pauses,
+resumes or restarts after death. The first connected controller controls the
+run; disconnecting it pauses play. Sticks have a dead zone and analog speed.
 
 Shields regenerate after 3.5 seconds without damage. Health does not.
 Cyan-marked supply crates refill the magazine, restore shields and ability charge.

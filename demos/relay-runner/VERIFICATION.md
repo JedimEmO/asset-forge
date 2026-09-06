@@ -512,3 +512,31 @@ unknown and missing-adapter cases were also checked with injected adapter result
 all four launch states passed. The software warning was visually reviewed.
 This diagnoses the reported software-rendering path; it does not claim that the
 user's Chrome configuration has been changed or their hardware retest passed.
+
+## 2026-09-06 — Gamepad controls
+
+Native and browser builds now share controller input. Verification on this tree:
+44 Rust tests passed, including stick dead zones, held triggers versus button
+edges, controller start/pause/resume/restart, disconnect pause, time-scaled aim
+and window focus loss. Standalone formatting and Clippy with `--all-targets --
+-D warnings` passed, as did native and release WebAssembly builds. Browser
+receipts verified all 58 asset/notice files and embedded metadata.
+
+A bounded native run under Xvfb/llvmpipe loaded the assets and rendered the title;
+the controller hints were visually inspected. The packaged browser build passed
+a Chromium smoke test using an injected standard Gamepad API controller: start
+without pointer lock, stick/trigger input, pause, resume and disconnect pause,
+with no page errors. The combat capture showed changed aim and 18/24 rounds
+remaining after firing. This is simulated input evidence; physical controller
+mapping and feel have not been tested.
+
+Build/test logs are `/tmp/relay-gamepad-{test,clippy,native-build,wasm-build}.log`;
+native evidence is `/tmp/relay-gamepad-title.{png,json}`. The local browser
+package, smoke script and captures are in `out/relay-gamepad/`, with its result
+in `/tmp/relay-gamepad-browser-smoke.log`. Packaging used the existing
+`out/web-toolchain/bin/wasm-bindgen` 0.2.127 matching the lockfile. No assets were
+changed. Before pushing, `just ci` and `just publish-check` both passed; all
+seven publishable crates packaged and built in isolation. Full gate logs are
+`/tmp/relay-gamepad-ci.log` and `/tmp/relay-gamepad-publish-check.log`. The
+optional `/simplify` command was unavailable; the final diff was reviewed.
+No public deployment was performed as part of verification.
