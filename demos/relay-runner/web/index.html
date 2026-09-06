@@ -10,6 +10,7 @@
 <style>
 @font-face{font-family:Lato;src:url('./assets/fonts/Lato-Regular.ttf')}@font-face{font-family:Lato;src:url('./assets/fonts/Lato-Bold.ttf');font-weight:700}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#060c17;color:#eef4fb;font-family:Lato,system-ui,sans-serif}#stage{position:fixed;inset:0}canvas{display:block;width:100%;height:100%;outline:none}#launch{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(ellipse at 75% 20%,#193752 0,transparent 50%),linear-gradient(125deg,#070e1d,#111e30);z-index:10}#launch[hidden]{display:none}.panel{width:min(680px,90vw);padding:32px 0}.eyebrow{font-size:12px;letter-spacing:.25em;color:#64dfff;text-transform:uppercase}h1{font-size:clamp(64px,12vw,108px);letter-spacing:-.065em;line-height:.9;margin:20px 0 24px}h1 span{color:#6bdfff}.intro{font-size:20px;color:#bbccdc;line-height:1.5;max-width:480px}button{font:700 16px Lato,system-ui;border:0;cursor:pointer;padding:16px 30px;border-radius:3px;background:#65dfff;color:#071321;margin:12px 0}button:hover{background:#a1edff}button:disabled{opacity:.55;cursor:wait}button:focus-visible,a:focus-visible{outline:3px solid white;outline-offset:4px}.keys{line-height:1.8;color:#9fb2c5;font-size:14px}.keys b{color:#e2edf7;font-weight:700}#status{min-height:24px;color:#f4c57c;line-height:1.5;max-width:580px}.links{display:flex;gap:20px;margin-top:28px;font-size:13px}a{color:#8fdcf0;text-underline-offset:4px}.compat{color:#7f96aa;font-size:12px;line-height:1.6}#load-hint{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);color:#d7e8f5;background:#101f32ee;padding:12px 22px;border-radius:3px;z-index:9;max-width:90vw;text-align:center}#load-hint[hidden]{display:none}
+#performance{position:fixed;right:16px;top:100px;z-index:20;padding:12px 16px;background:#06101eee;color:#d7e8f5;border:1px solid #31566b;font:13px/1.6 monospace;white-space:pre;pointer-events:none}#performance[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -21,29 +22,43 @@
 <button id="start" disabled>Checking graphics…</button>
 <p id="status" role="status" aria-live="polite"></p>
 <div class="keys"><b>A / D</b> strafe · <b>Mouse</b> aim · <b>Left click</b> fire · <b>Right click</b> focus<br><b>Space</b> jump · <b>Shift</b> dodge · <b>R</b> reload<br><b>Q</b> shockwave · <b>E / Middle click</b> plasma · <b>Esc</b> pause · <b>M</b> mute</div>
-<p class="compat">Desktop keyboard and mouse. Requires WebGPU and hardware acceleration.<br>The first load downloads the game and its generated models. Keep this tab open.</p>
+<p class="compat">Desktop keyboard and mouse. Requires WebGPU and hardware acceleration.<br>The first load downloads the game and its generated models. Keep this tab open. Press F3 for frame rate and graphics details.</p>
 <div class="links"><a href="https://github.com/JedimEmO/asset-forge">About Asset Forge</a><a href="NOTICES.md">Asset notices</a></div>
 </div></section>
+<output id="performance" hidden aria-label="Game performance"></output>
 <div id="load-hint" role="status" hidden>Loading models and preparing shaders…</div>
 <script type="module">
 const start=document.querySelector('#start'), launch=document.querySelector('#launch'), status=document.querySelector('#status'), hint=document.querySelector('#load-hint'), canvas=document.querySelector('canvas');
 let launched=false;
+const performancePanel=document.querySelector('#performance');
+let adapterLabel='Unknown adapter', frameTimes=[], previousFrame=0;
+addEventListener('keydown',event=>{if(event.code==='F3'){event.preventDefault();performancePanel.hidden=!performancePanel.hidden;}});
+setInterval(()=>{
+ const now=performance.now();frameTimes=frameTimes.filter(frame=>now-frame.at<2000);
+ if(performancePanel.hidden)return;
+ const intervals=frameTimes.map(frame=>frame.ms).sort((a,b)=>a-b);
+ const mean=intervals.reduce((a,b)=>a+b,0)/intervals.length;
+ const p95=intervals[Math.floor(intervals.length*.95)];
+ performancePanel.textContent=`${intervals.length?Math.round(1000/mean):0} game FPS · p95 ${p95?.toFixed(1)??'—'} ms\n${canvas.width} × ${canvas.height} · ${canvas.dataset.phase??'Loading'}\n${adapterLabel}\nF3: hide`;
+},500);
 function fail(message){launch.hidden=false;hint.hidden=true;status.textContent=message;start.disabled=false;start.textContent='Reload game';start.onclick=()=>location.reload();}
 addEventListener('error',event=>{if(launched)fail('The game encountered an error. Try reloading, or use a browser with hardware-accelerated WebGPU. '+event.message)});
 addEventListener('unhandledrejection',event=>{if(launched)fail('The game could not continue: '+String(event.reason?.message||event.reason))});
 try {
  if(!navigator.gpu)throw Error('WebGPU is unavailable. Open this page in a WebGPU-enabled desktop browser with hardware acceleration.');
- const adapter=await navigator.gpu.requestAdapter();
+ const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
  if(!adapter)throw Error('No WebGPU graphics adapter is available. Enable hardware acceleration and restart your browser.');
+ const info=adapter.info;adapterLabel=[info?.vendor,info?.architecture,info?.description].filter(Boolean).join(' / ')||'WebGPU (adapter details unavailable)';
  start.disabled=false;start.textContent='Launch game';
  start.onclick=async()=>{
   launched=true;start.disabled=true;launch.hidden=true;hint.hidden=false;
   try{const {default:init}=await import('./relay_run.js');await init();canvas.focus();}
   catch(error){fail('Unable to load the game: '+String(error.message||error));}
  };
- const observer=new MutationObserver(()=>{
+ const observer=new MutationObserver(records=>{
+  if(records.some(record=>record.attributeName==='data-phase')){const now=performance.now();if(previousFrame)frameTimes.push({at:now,ms:now-previousFrame});previousFrame=now;}
   if(canvas.dataset.ready==='true')hint.hidden=true;
- });observer.observe(canvas,{attributes:true,attributeFilter:['data-ready']});
+ });observer.observe(canvas,{attributes:true,attributeFilter:['data-ready','data-phase']});
 } catch(error){status.textContent=error.message;start.textContent='WebGPU required';}
 </script>
 </body>

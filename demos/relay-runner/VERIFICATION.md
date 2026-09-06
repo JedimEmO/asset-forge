@@ -482,3 +482,23 @@ Toolkit `just ci`: 583 Rust tests, two ignored, 297 Python tests, all gates pass
 GitHub packaging run exposed missing Wayland headers; CI prerequisites now
 include libwayland-dev and libxkbcommon-dev. The unavailable /simplify command
 could not be invoked; diff review, tests, lint and packaging were completed.
+
+## Browser performance investigation — 2026-09-06
+
+The user reports poor frame rate in hardware-accelerated Chrome on an RTX 4090
+at 1080p. This is unresolved. Earlier play checks established functionality,
+not acceptable frame pacing in the user's browser session.
+
+A controlled Chromium 145 run using Vulkan on the same machine measured
+56.4 game updates/s at 1920×1080 during a ten-second playing sample, with
+24.7 ms p95 intervals. A separate sustained-fire sample measured 59.3 updates/s
+and 21 ms p95. These are CPU-side game update intervals observed through the
+existing per-frame DOM state bridge, not GPU timestamps. A fresh installed
+Chrome 151 profile exposed no WebGPU adapter; it did not reproduce the user's
+working but slow session. Neither result establishes performance in that session.
+
+The F3 panel reports live game update rate, p95 intervals, render dimensions and
+browser-reported adapter details to make the affected session diagnosable.
+Its local browser check passed display, hide/show and absence of runtime errors.
+Raw profiles and the reproduction scripts are preserved in
+`out/relay-perf-20260906/`; accepted assets and rendering settings are unchanged.
