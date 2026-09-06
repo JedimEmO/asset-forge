@@ -7,9 +7,9 @@
 # pipelines), the headless gate, and publish-check. The toolchain comes
 # from rust-toolchain.toml — the pin
 # lives in one place, and each job reads it from the file rather than
-# repeating it here. Every job that compiles shares one rust-cache key: the
-# workspace is the same in all of them, and a warm cache is the difference
-# between minutes and tens of minutes with Bevy in the graph.
+# repeating it here. Native builds share a cache; clippy and packaging have
+# separate keys so a metadata-only check cannot win the native cache write.
+# Completed dependency builds survive test failures; no model weights are cached.
 #
 # The headless job renders with no display server on mesa's lavapipe
 # (mesa-vulkan-drivers + libvulkan1, WGPU_BACKEND=vulkan, DISPLAY unset):
@@ -77,7 +77,8 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: workspace
+          shared-key: workspace-check
+          cache-on-failure: true
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # The rustdoc build, warnings as errors: nothing else builds the docs,
       # and an unbracketed <placeholder> in a doc comment is invisible until
@@ -100,7 +101,8 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: workspace
+          shared-key: workspace-native
+          cache-on-failure: true
       - uses: taiki-e/install-action@just
       # Install the declared test dependencies; generator runtimes remain separate.
       - uses: actions/setup-python@v5
@@ -155,7 +157,8 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: workspace
+          shared-key: workspace-native
+          cache-on-failure: true
       - uses: taiki-e/install-action@just
       # What the runner has before anything asks for it; informational.
       - run: vulkaninfo --summary || true
@@ -194,7 +197,8 @@ jobs:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: workspace
+          shared-key: workspace-package
+          cache-on-failure: true
       - uses: taiki-e/install-action@just
       # `cargo package` over the seven registry crates in dependency order,
       # each verified in isolation against the .crate files of its siblings;

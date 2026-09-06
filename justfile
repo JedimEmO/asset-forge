@@ -19,6 +19,10 @@
 
 forge := justfile_directory() / "target/debug/forge"
 
+# Rustup discovers toolchains from cwd, not --manifest-path. Keep external-game
+# recipes on this checkout's compiler instead of rebuilding with the user's default.
+export RUSTUP_TOOLCHAIN := shell("sed -n 's/^channel *= *\"\\(.*\\)\"/\\1/p' \"$1/rust-toolchain.toml\"", justfile_directory())
+
 default:
     @just --justfile {{justfile()}} --list
 

@@ -1789,3 +1789,17 @@ within each camera band instead of only neighbors. Different camera angles and
 head close-ups must not count as animation. The threshold and accepted clip stay
 unchanged; slow-motion and static multi-view cases need separate regression checks.
 Preserve each failed sheet's renderer log instead of discarding all output.
+
+## 2026-09-06 — Pin external recipes and cache compatible build outputs
+
+A recipe invoked from a game selected Rust 1.98.1 from that directory while
+the toolkit pinned 1.96.1. Cargo's `--manifest-path` does not select rustup's
+toolchain. Export the pin from the toolkit justfile so external recipes do
+not rebuild Bevy under another compiler. Verified with the recipe runner
+launched from `/tmp`.
+
+CI also shared a cache key between Clippy metadata and native builds. A fast
+check could save first, leaving later jobs to recompile native dependencies.
+Separate check/package caches from the native cache, and retain completed
+dependency builds after a test failure. This needs an initial cache fill; it
+is not a measured warm-run speedup yet. No CI workflow installs model weights.
