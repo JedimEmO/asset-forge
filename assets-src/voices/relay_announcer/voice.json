@@ -1,0 +1,48 @@
+{
+  "forge_record": 2,
+  "kind": "voice",
+  "tool": "moss_voice_generator",
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "backend": {
+    "name": "moss_tts",
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "model_revision": null,
+    "executor": "comfy",
+    "comfyui_commit": "169fcf35a2fc163fec31338b816503ddac0d3fcf",
+    "workflow_sha256": "sha256:1da8a66870bbdad2db35cb83114a12a8e869f2f37fb20dd17b03db19751137bb",
+    "packs": {
+      "https://github.com/diodiogod/TTS-Audio-Suite": "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+    }
+  },
+  "inputs": [],
+  "params": {
+    "audio_repetition_penalty": 1.1,
+    "audio_temperature": 1.5,
+    "audio_top_k": 50,
+    "audio_top_p": 0.6,
+    "instruction": "A mature male English arena announcer with a deep resonant bass, bold gravelly texture, crisp American diction and explosive triumphant delivery. Powerful sustained vowels and thunderous emphatic calls, excited and commanding, never conversational.",
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "name": "relay_announcer",
+    "seed": 41,
+    "text": "Prepare for total destruction! Unleash your power! Free fire! Nothing can stop you now!",
+    "workflow": "voice.api.json"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/voices/relay_announcer/ref.wav",
+      "sha256": "sha256:28fe17396a969227bc6b61ea7e73768aac7bde178d27f29baa057531f77c21b0",
+      "bytes": 583758
+    }
+  ],
+  "measured": {
+    "channels": 1,
+    "duration_s": 12.16,
+    "sample_rate": 24000
+  },
+  "fake": false,
+  "note": null
+}

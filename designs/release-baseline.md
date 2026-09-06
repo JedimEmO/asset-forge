@@ -394,3 +394,21 @@ clean installation and final packaging remain release work.
 
 Current evidence, export hashes and a complete project archive are indexed in
 out/idle-diagnosis-20260906/result.json. Earlier results remain intact.
+
+## 2026-09-06 — External consumer stage 1
+
+The handoff's local consumer slice passed using a staged Forge installation and
+a standalone Bevy workspace outside the toolkit. The accepted rusher export
+rebuilt to its preserved hash. The armed scavenger supplies the pose-specific
+weapon check; the rusher's guard receives no rifle-pose claim.
+
+Six named animations, native manifest events, body scale, runtime socket following,
+independent flat-floor skinning checks and companion audio loading passed.
+Four final frames were reviewed by Codex. The earlier black capture remains
+recorded, and the workflow now warms the renderer before advancing animations.
+Full `just ci`: 583 Rust tests passed, two ignored, 290 Python tests passed.
+
+Commands and scope are in `designs/consumer-contract.md`; evidence and a hashed
+external-consumer archive are indexed in `out/consumer-contract-20260906/result.json`.
+This does not change the original frozen baseline scores, attempt budgets,
+accepted idle advisory, or remaining stage 2–6 release gates.

@@ -1506,3 +1506,21 @@ without a crash. One complete rerun then passed all 277 Python tests and the
 remaining CI gates. The native cause is unresolved; these passes do not establish
 a fix. Both failed CI logs and the control results are retained under
 `out/release-quality-20260905/`. A fresh-machine qualification remains required.
+
+
+## 2026-09-06 — Isolated Pixal3D trial and bounded memory
+
+The Pixal3D evaluation lives outside the supported backend environment at
+`/home/mmy/forge-demos/pixal3d-trial-20260906`. Building NATTEN with four workers
+alongside inference preceded a host reboot with journal memory-pressure notices;
+the root cause remains unresolved. Serialize heavy jobs and bound host memory.
+The user-systemd cgroup limit was verified with a deliberate small allocation test.
+
+An official NATTEN 0.17.5 wheel matches the existing Torch 2.6 / CUDA 12.4 stack
+and NAF supports its legacy API, avoiding the source build. At full resolution,
+legacy attention exceeded our 75% Torch cap. An experimental value-channel
+streaming adapter passed a numerical smoke comparison and allowed one full
+Pixal3D run to complete under the same GPU cap, 36 GiB cgroup RAM limit and zero
+swap allowance. The alternative fused adapter failed comparison and was rejected.
+This is not a supported backend replacement. Pin, guard, adaptation, measurement
+and visual rejection details are in `designs/pixal3d-evaluation.md`.

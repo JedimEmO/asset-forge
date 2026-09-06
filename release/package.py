@@ -17,6 +17,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = (
+    "release/consumer/*.py", "release/consumer/*.md", "release/consumer/Cargo.toml", "release/consumer/Cargo.lock", "release/consumer/src/*.rs",
+    "designs/consumer-contract.md",
     "LICENSE-MIT", "LICENSE-APACHE", "release/README.md",
     "python/pyproject.toml", "python/README.md", "python/forge_gen/**/*.py",
     "rigs/humanoid/*.toml", "rigs/humanoid/*.json", "rigs/humanoid/*.glb", "rigs/humanoid/*.blend",

@@ -1643,3 +1643,123 @@ Twenty fresh-process runs of the exact previously crashing placeholder voice
 test passed, followed by full CI. The native Python crash remains unexplained;
 these passes are evidence of non-reproduction, not a fix. Evidence and the
 hashed project archive are indexed in out/idle-diagnosis-20260906/result.json.
+
+## 2026-09-06 — Consumer grounding belongs to the delivered bundle
+
+The batch grounding script measured a raw clip against a body. That works at
+identity scale, but a fitted body's bundle has already scaled Hips translation.
+The maintained consumer recipe now measures each animation in the exported
+bundle, then applies its positive correction to a separate visual root.
+Bevy independently skins foot vertices from its live joint transforms and checks
+the floor, so the runtime test can catch a wrong clock or transform order.
+
+This is a sampled flat-floor contract. Blending separate correction scalars does
+not prove contact for a blended skeleton, and terrain IK needs a separate check.
+The rifle's batch-02 quaternion remains specific to the scavenger's left-handed
+poses. None of those placement choices becomes a universal rig correction.
+
+The first early screenshot was black despite passing runtime checks. The fixture
+now warms render pipelines with animation clocks paused, then starts playback
+together and captures the short shot before it finishes. The failed capture stays
+in the stage-1 evidence; successful later images do not turn it into a pass.
+
+
+## 2026-09-06 — Separate generation quality from export-budget damage
+
+A controlled Pixal3D drone experiment exported the same generated sample at
+6,000, 60,000 and 240,000 targets, with texture resolution and other export
+settings fixed. At 6,000 the rear and barrels appeared torn apart; at 60,000
+those structures were coherent in four views with culling both on and off.
+The 240,000 export offered only minor additional improvement at sheet scale.
+Do not diagnose a failed generator from an aggressively simplified mesh alone.
+Preserve the pre-export sample and compare budgets before changing references
+or models. Budgets are targets, not measured exported counts; UV seams change
+vertex counts. This is evidence for this drone, not a universal 60,000 minimum.
+See `designs/pixal3d-evaluation.md` and the preserved `pixal-budget1` experiment.
+
+
+## 2026-09-06 — Floor-prop pitch belongs before scale and placement
+
+Pixal3D's raw cargo and station shapes were tilted in their own frames. The
+CLI prop normalizer now takes an explicit finite --pitch-deg about world+X
+(the same X in glTF), applied after yaw and before sizing and floor placement.
+It is forwarded into Blender and written into the prop recipe. This avoids
+consumer corrections leaving floor pivots or collision bounds inconsistent.
+Do not rewrite earlier records to add a guessed value. Selected station/cargo
+used visually reviewed -20-degree corrections; that is a chosen parameter,
+not a claim of a measured intended orientation. Existing drone consumer
+placement remains unchanged because its reviewed hover already works.
+
+Cargo trials with the same estimated camera retained detached fragments across
+two seeds; a recorded manual FOV0.2 trial removed them in the reviewed output.
+Keep that manual camera value labeled as an assumption. This is one asset's
+successful diagnostic, not a global replacement for camera estimation.
+
+### 2026-09-06 — final prop heading follows leveling
+
+The Relay cargo and station still faced about 27 degrees off the road after
+pitch leveling. A final recorded `--heading-deg` now turns around up after
+yaw and pitch, before sizing and placement. Cargo uses +27.5 and station -27.
+Panel-normal estimates guided visual review; these are selected correction
+parameters, not claims about known authored poses. Re-normalize original
+selected exports and promote through Forge; retain earlier records and meshes.
+
+### 2026-09-06 — grade the dark scene without crushing it
+
+Relay's camera contrast is applied to linear scene colors before tonemapping.
+A small-looking contrast increase clipped dark space and accelerator panels.
+The on/off screenshots exposed it; replace that adjustment with a gentle
+gamma curve and preserve the rejected screenshots. Camera effect-stack
+shaders keep the HUD outside the lens effects, with the distortion centered
+on the aiming ray. F6 gives the user a live comparison.
+
+### 2026-09-06 — reload choreography needs authored hand constraints
+
+Eight text-only ARDY rifle reloads moved their arms but missed the belt-to-
+weapon action. Sparse hand/hip keys based on the accepted rifle aim produced
+a readable upper-body reload in Relay. Keep STATIC as a full-body activity
+advisory; review the actual body and weapon, preserve running legs through
+a consumer mask, and synchronize the overlay to gameplay reload time.
+No finger choreography or separate magazine was generated. The bake remains
+reproducible from the promoted take and explicit recipe.
+
+The user rejected the first Free Fire voice as insufficiently deep/explosive.
+Louder voice sources repeatedly ended mid-phrase; preserve and reject those
+rather than repairing their WAVs. A clean waveform still cannot establish
+correct words or an epic delivery; label provisional listening candidates.
+
+
+### 2026-09-06 — voice processing belongs to the consumer mixer
+
+The user accepted Relay's Free Fire recording and asked for darker EQ, then
+explicitly asked for in-game EQ and reverb. Preserve the source audio and its
+Forge sidecar. Relay processes samples in a custom playback source, retaining
+centered dry diction and adding a damped stereo tail. F7 compares live dry and
+processed output. An offline EQ trial stays as rejected evidence; it does not
+replace a shipped source or impersonate a generator record.
+
+### 2026-09-06 — particle motion needs a particle system
+
+The user rejected Relay's solid rings and box debris as placeholders. Hanabi
+now supplies GPU emitters with textured opacity, independent lifetimes,
+velocity, drag and color/size curves. Apply causeway scrolling in the particle
+update so trails detach from their emitters without drifting out of the world
+frame. Preserve the opaque trial and judge the replacement across time.
+A crowded fixture that revives twenty drones every tick becomes a synthetic
+kill/recharge loop when automated plasma is enabled. Use its passive firing
+variant for stable twenty-drone timing; retain the automated run as overload
+evidence and report its dropped emitter requests.
+
+
+### 2026-09-06 — cinematic contrast starts with light separation
+
+Relay looked flat under a high ambient level and a broad bright fill. A lower
+ambient level, grazing warm key and cool rim expose the existing mesh detail
+without modifying generated assets. Small fixture and combat lights let
+emissive objects affect the surfaces around them. Review this before adding
+more grading contrast: grading previously crushed Relay's shadows.
+
+Depth of field uses a broad normal focus and a smooth aimed focus, with a
+small pixel blur cap. Motion blur drops during aiming and stops in menus;
+transparent GPU particles keep their own trails. Preserve an effects-off
+comparison and benchmark the final packaged renderer, not just the simulation.

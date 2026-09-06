@@ -21,6 +21,10 @@ def test_unpacked_toolkit_initializes_and_generates_for_two_games(tmp_path):
     manifest = json.loads((install / "distribution.json").read_text())
     assert (install / "rigs/humanoid/profile.toml").is_file()
     assert (install / "backends/trellis2/install_runtime.py").is_file()
+    for relative in ("release/consumer/stage.py", "release/consumer/Cargo.lock",
+                     "release/consumer/src/main.rs", "release/consumer/run_review.py",
+                     "designs/consumer-contract.md"):
+        assert (install / relative).is_file(), relative
     assert not (install / "forge.toml").exists()
     assert not (install / "assets").exists()
     assert not any("installed.json" in name or ".env" in name or ".toolchain" in name or "__pycache__" in name
