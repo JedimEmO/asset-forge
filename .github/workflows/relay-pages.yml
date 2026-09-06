@@ -3,8 +3,6 @@ on:
   push:
     branches: [main]
     paths: ['demos/relay-runner/**', '.github/workflows/relay-pages.yml', 'rust-toolchain.toml']
-  pull_request:
-    paths: ['demos/relay-runner/**', '.github/workflows/relay-pages.yml', 'rust-toolchain.toml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser-build:
+    if: github.event_name == 'workflow_dispatch' || vars.RELAY_PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

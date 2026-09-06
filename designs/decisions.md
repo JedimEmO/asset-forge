@@ -1798,15 +1798,17 @@ toolchain. Export the pin from the toolkit justfile so external recipes do
 not rebuild Bevy under another compiler. Verified with the recipe runner
 launched from `/tmp`.
 
-CI also shared a cache key between Clippy metadata and native builds. A fast
-check could save first, leaving later jobs to recompile native dependencies.
-Separate check/package caches from the native cache, and retain completed
-dependency builds after a test failure. This needs an initial cache fill; it
-is not a measured warm-run speedup yet. No CI workflow installs model weights.
+The heavy CI configuration also shared a cache key between Clippy metadata
+and native builds. A fast check could save first, leaving later jobs to
+recompile native dependencies. Separate cache types when running such jobs;
+a metadata cache is not a native build cache.
 
-The earlier GitHub run spent 35m 39s compiling test executables; its first
+The measured GitHub run spent 35m 39s compiling test executables; its first
 test groups then ran in 0.02s, 2.69s and 5.78s. Full library sheets added
-about 19 minutes of software rendering. CI now shows compilation separately
-from test execution and offers full sheets through manual `full_review`.
-Ordinary PRs retain every `just ci` gate, renderer tests and the fixture view
-check. Full sheets remain a hard failure whenever explicitly requested.
+about 19 minutes of software rendering. The project now keeps those expensive
+checks local: agents must run `just ci` and `just publish-check` before opening
+or updating a PR and include actual results. Hosted CI checks formatting,
+Python and browser asset metadata. Browser compilation runs explicitly or
+for enabled Pages deployment. Full suites, packaging and render review remain
+available locally; a green hosted check is not a substitute for their evidence.
+No CI workflow installs model weights.

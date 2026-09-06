@@ -122,8 +122,8 @@ typed rather than given.
 
 - `just ci` is the gate: fmt, clippy + rustdoc (warnings as errors), Rust
   tests, pytest, headless smoke, audit, check-bodies, manifest-check,
-  verify, mcp-check, mcp-session, ci-fake — the same list GitHub Actions
-  runs. It
+  verify, mcp-check, mcp-session, ci-fake. This full suite runs locally,
+  not in the lightweight hosted pipeline. It
   excludes eye-renders (not byte-stable across GPUs), every real generator,
   every Blender step and anything that rewrites `assets/`; ci-fake runs the
   generate pipelines on placeholders in a throwaway project, and
@@ -133,7 +133,7 @@ typed rather than given.
   write branded placeholders through the same doors and validators (a fake
   refuses to overwrite a real file); `just ci-fake` is that, end to end.
 - Headless sheets and views need a wgpu adapter — llvmpipe is enough — and
-  no window. `env -u DISPLAY -u WAYLAND_DISPLAY` is how CI runs them.
+  no window. Use `env -u DISPLAY -u WAYLAND_DISPLAY` for local headless checks.
 - To drive the studio window for real: Xvfb plus python-xlib XTest. Call
   `set_input_focus` on the window first or every key is dropped; leave ~1 s
   between keys under llvmpipe (one frame per second: press and release in
@@ -142,6 +142,23 @@ typed rather than given.
 - `pkill -f <pattern>` matches the shell running the pkill when the pattern
   appears in the same command line, and kills it. Record the PID at launch
   and kill by PID.
+
+## Before opening or updating a pull request
+
+- Run `just ci` and `just publish-check` locally on the final tree before
+  opening or updating a PR. Fix failures before marking the work ready.
+  Retain the logs and state actual passes, skips and limitations in the PR.
+- Hosted CI is deliberately limited to formatting, Python checks and browser
+  asset metadata. A green hosted run does **not** establish full verification.
+  Do not replace the local gate with the hosted result or silently skip it.
+- For Relay Run changes, also run its standalone formatting, tests and Clippy;
+  build the WASM target and check browser asset receipts when its code or assets
+  change. Check runtime changes in the relevant native/browser build.
+- Review changed assets and rendering behavior through the relevant local
+  sheets/views and human inspection. `just sheets` remains available for full
+  library review. Real generation and licence acceptance remain separate doors.
+- If the local suite cannot run, report the concrete blocker and missing
+  evidence. Do not claim the PR is ready or merge it on the lightweight CI alone.
 
 ## Commits
 

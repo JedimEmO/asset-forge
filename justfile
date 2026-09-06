@@ -764,13 +764,13 @@ verify *flags: _build
 # documented `just --justfile … --working-directory …` form.
 #
 # What it deliberately leaves out, and why:
-#   publish-check   `cargo package` runs in isolation; only a release can
-#                   break it, and only a release cares.
+#   publish-check   `cargo package` runs in isolation; run it separately
+#                   alongside this suite before opening or updating a PR.
 #   views, sheet, sheets, body-sheets, audio-plots, studio, play
 #                   renders for a human to look at. Not byte-stable across
 #                   GPUs, so there is no pass/fail in them — though `sheets`
 #                   does exit non-zero on a clip that binds to nothing or
-#                   never moves, and GitHub Actions runs it for that.
+#                   never moves. Run those reviews locally when relevant.
 #   bones, check-mesh
 #                   one asset at a time; `check-bodies` and `audit` run the
 #                   same checks over the whole library.

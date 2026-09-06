@@ -33,9 +33,9 @@ needed to build. Generated asset bytes are preserved from accepted v16; see
 [NOTICES.md](NOTICES.md) for provenance and non-commercial texture restrictions.
 
 The [Relay Run Pages workflow](../../../.github/workflows/relay-pages.yml) builds
-pull requests and main. Its deployment job is conditional on the repository
-variable `RELAY_PAGES_ENABLED` being `true`; this condition alone does not make
-the repository eligible for Pages.
+on manual dispatch, or on relevant main pushes when `RELAY_PAGES_ENABLED` is
+`true`. It does not compile the game on every PR. Deployment additionally
+requires main; the variable alone does not make the repository eligible for Pages.
 The repository's Pages source must be GitHub Actions. Keep deployment disabled
 when publishing the verified artifact through a separate demo repository. The hosted
 payload contains the game, its selected assets and notices; full local audition

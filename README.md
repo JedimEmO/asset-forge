@@ -176,13 +176,19 @@ PATH="$PWD/python/.venv/bin:$PATH" just ci
 just publish-check
 ```
 
-`just ci` checks formatting, Clippy, rustdoc, Rust and Python tests, headless
-smoke, asset integrity, clip reproduction, manifests, MCP sessions and fake
-production pipelines. Compilation and execution have separate CI steps.
-Full library contact sheets run with `just sheets`, or the CI workflow's manual
-`full_review` option; ordinary PRs keep the rendering smoke, renderer tests and
-byte/pose audit. Real generation, Blender authoring and human review are separate checks. `just publish-check` packages seven library crates and
-builds them in isolation; it does not publish them. Crates are currently used
+Before opening or updating a PR, run both commands above locally and record
+the results in the PR. `just ci` covers formatting, Clippy, rustdoc, Rust and
+Python tests, headless smoke, asset integrity, clip reproduction, manifests,
+MCP sessions and fake production pipelines. `just publish-check` packages seven
+library crates and builds them in isolation; it does not publish them.
+
+Hosted CI deliberately keeps only formatting, Python checks and browser asset
+metadata validation. Native-CLI and optional-image tests may skip there; the
+local full suite is mandatory. Relay Run also needs its standalone checks when
+changed. Full library contact sheets run locally with `just sheets`; real
+generation, Blender authoring and human review remain separate checks.
+Browser compilation is an explicit Pages workflow run, or part of an enabled
+Pages deployment, rather than a check on every PR. Crates are currently used
 through Git or path dependencies.
 
 Checkout recipes build `target/debug/forge`. To run a production recipe from
