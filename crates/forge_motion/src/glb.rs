@@ -37,11 +37,7 @@ impl Builder {
         data: &[u8],
         target: Option<json::buffer::Target>,
     ) -> Index<json::buffer::View> {
-        while !self.bin.len().is_multiple_of(4) {
-            self.bin.push(0);
-        }
-        let offset = self.bin.len();
-        self.bin.extend_from_slice(data);
+        let offset = append_view(&mut self.bin, data);
         self.root.push(json::buffer::View {
             buffer: Index::new(0),
             byte_length: USize64::from(data.len()),
@@ -128,6 +124,22 @@ impl Builder {
     }
 }
 
+/// Append `data` to a binary chunk as a new buffer view's payload, four-byte
+/// aligned, and say where it landed.
+///
+/// The one place the alignment rule lives: [`Builder::view`] writes accessors
+/// through it, and so does the bundle merge, which copies a clip's views into
+/// a body's chunk without ever building a [`json::Root`]. Two writers padding
+/// differently is exactly the drift this module exists to prevent.
+pub(crate) fn append_view(bin: &mut Vec<u8>, data: &[u8]) -> usize {
+    while !bin.len().is_multiple_of(4) {
+        bin.push(0);
+    }
+    let offset = bin.len();
+    bin.extend_from_slice(data);
+    offset
+}
+
 /// A node with every optional field empty; the callers state what they mean.
 pub(crate) fn default_node() -> json::Node {
     json::Node {
@@ -153,7 +165,7 @@ pub(crate) fn f32_bytes(values: &[f32]) -> Vec<u8> {
 /// Frame JSON and binary chunks as a GLB: 12-byte header, then each chunk as
 /// length + tag + payload, JSON padded to four bytes with spaces and BIN with
 /// zeros, total length in the header.
-fn container(json: &[u8], bin: &[u8]) -> Vec<u8> {
+pub(crate) fn container(json: &[u8], bin: &[u8]) -> Vec<u8> {
     let json_padded = json.len().next_multiple_of(4);
     let bin_padded = bin.len().next_multiple_of(4);
     let total = 12 + 8 + json_padded + 8 + bin_padded;
@@ -173,6 +185,72 @@ fn container(json: &[u8], bin: &[u8]) -> Vec<u8> {
     out.extend_from_slice(bin);
     out.resize(out.len() + (bin_padded - bin.len()), 0);
     out
+}
+
+/// Take a GLB apart into its two chunks, the inverse of [`container`].
+///
+/// `gltf::Gltf::from_slice` parses a document; this hands back the JSON
+/// chunk's *bytes*, because the merge edits a body's document as generic
+/// JSON and re-emits it — a typed round trip would quietly drop any
+/// extension `gltf-json` does not model, and the body carries materials and
+/// textures somebody else wrote.
+///
+/// # Errors
+///
+/// Not a glTF 2.0 binary container, or missing either chunk. A second JSON
+/// or BIN chunk is refused rather than ignored: two chunks of one kind is a
+/// file whose meaning depends on which one the reader picked.
+pub(crate) fn split(bytes: &[u8]) -> Result<(&[u8], &[u8])> {
+    let read_u32 = |at: usize| -> Result<usize> {
+        bytes
+            .get(at..at + 4)
+            .and_then(|b| b.try_into().ok())
+            .map(|b| u32::from_le_bytes(b) as usize)
+            .ok_or_else(|| BakeError::Glb(String::from("truncated: not 12 bytes of header")))
+    };
+    if bytes.len() < 12 || &bytes[..4] != b"glTF" {
+        return Err(BakeError::Glb(String::from("no glTF magic")));
+    }
+    let version = read_u32(4)?;
+    if version != 2 {
+        return Err(BakeError::Glb(format!(
+            "container version {version}, not 2"
+        )));
+    }
+    let total = read_u32(8)?.min(bytes.len());
+
+    let (mut json, mut bin) = (None, None);
+    let mut at = 12;
+    while at + 8 <= total {
+        let length = read_u32(at)?;
+        let tag = &bytes[at + 4..at + 8];
+        let end = at + 8 + length;
+        let payload = bytes.get(at + 8..end).ok_or_else(|| {
+            BakeError::Glb(format!("chunk at {at} runs past the end of the file"))
+        })?;
+        let slot = match tag {
+            b"JSON" => &mut json,
+            b"BIN\0" => &mut bin,
+            // Unknown chunk types are skipped by the spec's own rule.
+            _ => {
+                at = end;
+                continue;
+            }
+        };
+        if slot.is_some() {
+            return Err(BakeError::Glb(format!(
+                "two {} chunks",
+                String::from_utf8_lossy(tag).trim_end_matches('\0')
+            )));
+        }
+        *slot = Some(payload);
+        at = end;
+    }
+    match (json, bin) {
+        (Some(json), Some(bin)) => Ok((json, bin)),
+        (None, _) => Err(BakeError::Glb(String::from("no JSON chunk"))),
+        (_, None) => Err(BakeError::Glb(String::from("no binary chunk"))),
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +279,17 @@ mod tests {
         assert_eq!(views[0].byte_offset.expect("offset").0, 0);
         assert_eq!(views[1].byte_offset.expect("offset").0, 4);
         assert_eq!(b.bin, [1, 2, 3, 0, 4, 5]);
+    }
+
+    #[test]
+    fn split_is_the_inverse_of_container() {
+        let glb = container(b"{\"a\":1}", &[1, 2, 3, 4, 5]);
+        let (json, bin) = split(&glb).expect("split");
+        // The chunks come back padded, as they are stored; the document's
+        // own buffer length is what says where the payload ends.
+        assert_eq!(&json[..7], b"{\"a\":1}");
+        assert_eq!(&bin[..5], [1, 2, 3, 4, 5]);
+        assert!(split(b"not a glb at all").is_err());
+        assert!(split(&glb[..20]).is_err(), "a truncated chunk is refused");
     }
 }

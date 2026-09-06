@@ -1,0 +1,510 @@
+{
+  "schema": 2,
+  "kind": "body",
+  "name": "ember_knight",
+  "prompt": null,
+  "tags": [],
+  "created": "2026-08-30",
+  "created_by": "human",
+  "provenance": "recorded",
+  "rig": "humanoid",
+  "generator": {
+    "tool": "trellis2",
+    "model": "microsoft/TRELLIS.2-4B",
+    "trellis_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "resolution": 1024,
+    "pipeline_type": "1024_cascade",
+    "seed": 7,
+    "decimation_target_vertices": 25000,
+    "texture_size": 1024,
+    "remesh": true,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "image": "assets-src/refs/characters/ember_knight.png",
+    "image_sha256": "sha256:7a3bd0e9354fa45d6a1e45d46b04e78eaef705b741ecbc491822dcc6715befba",
+    "lift_sha256": "sha256:c81c47132bd657a8fc9edc871f4d9e32f9f34efacc08aec39c9d01b929877115",
+    "post": {
+      "tool": "blender",
+      "script": "rig+export",
+      "version": "Khronos glTF Blender I/O v5.2.40"
+    }
+  },
+  "source": {
+    "path": "assets-src/blender/ember_knight.blend",
+    "sha256": "sha256:4dd0958e3002dbd265211068661a409fac0e7be4e039209ecf1edd965410f699",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 23207,
+      "triangles": 24438,
+      "bones_skinned": 55,
+      "lowest_y": -6.0618014e-8,
+      "bounds": [
+        [
+          -0.9174658,
+          -6.0618014e-8,
+          -0.25390047
+        ],
+        [
+          0.9174657,
+          1.7999998,
+          0.25390056
+        ]
+      ]
+    }
+  },
+  "body": {
+    "motion_scale": 1.0,
+    "bones": [
+      {
+        "name": "LeftToeBase",
+        "rest_translation": [
+          0.0,
+          0.147255,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftFoot",
+        "rest_translation": [
+          0.0,
+          0.45527,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftLeg",
+        "rest_translation": [
+          0.0,
+          0.400084,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftUpLeg",
+        "rest_translation": [
+          0.166761,
+          -0.01519,
+          -0.046288
+        ]
+      },
+      {
+        "name": "RightToeBase",
+        "rest_translation": [
+          -0.0,
+          0.147255,
+          0.0
+        ]
+      },
+      {
+        "name": "RightFoot",
+        "rest_translation": [
+          0.0,
+          0.45527,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightLeg",
+        "rest_translation": [
+          0.0,
+          0.400084,
+          0.0
+        ]
+      },
+      {
+        "name": "RightUpLeg",
+        "rest_translation": [
+          -0.166761,
+          -0.01519,
+          -0.046288
+        ]
+      },
+      {
+        "name": "LeftHandEnd",
+        "rest_translation": [
+          0.00348,
+          0.066319,
+          -0.033835
+        ]
+      },
+      {
+        "name": "LeftHandIndex3",
+        "rest_translation": [
+          -0.0,
+          0.027838,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex2",
+        "rest_translation": [
+          0.0,
+          0.042828,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex1",
+        "rest_translation": [
+          0.032121,
+          0.080302,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle3",
+        "rest_translation": [
+          0.0,
+          0.02998,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle2",
+        "rest_translation": [
+          -0.0,
+          0.04604,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle1",
+        "rest_translation": [
+          0.010707,
+          0.080302,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky3",
+        "rest_translation": [
+          -0.0,
+          0.022485,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky2",
+        "rest_translation": [
+          0.0,
+          0.035333,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky1",
+        "rest_translation": [
+          -0.032121,
+          0.080302,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing3",
+        "rest_translation": [
+          -0.0,
+          0.027838,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing2",
+        "rest_translation": [
+          0.0,
+          0.042828,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing1",
+        "rest_translation": [
+          -0.010707,
+          0.080302,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb3",
+        "rest_translation": [
+          0.0,
+          0.034262,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb2",
+        "rest_translation": [
+          0.0,
+          0.061261,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb1",
+        "rest_translation": [
+          -0.00348,
+          0.050951,
+          0.033835
+        ]
+      },
+      {
+        "name": "LeftHand",
+        "rest_translation": [
+          -0.0,
+          0.2491,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftForeArm",
+        "rest_translation": [
+          -0.0,
+          0.174219,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftArm",
+        "rest_translation": [
+          0.0,
+          0.206231,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftShoulder",
+        "rest_translation": [
+          0.041523,
+          0.234173,
+          0.015122
+        ]
+      },
+      {
+        "name": "Head",
+        "rest_translation": [
+          0.0,
+          0.130473,
+          -0.0
+        ]
+      },
+      {
+        "name": "Neck",
+        "rest_translation": [
+          0.0,
+          0.250525,
+          -0.023363
+        ]
+      },
+      {
+        "name": "RightHandEnd",
+        "rest_translation": [
+          -0.00348,
+          0.06632,
+          -0.033835
+        ]
+      },
+      {
+        "name": "RightHandIndex3",
+        "rest_translation": [
+          0.0,
+          0.027838,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex2",
+        "rest_translation": [
+          -0.0,
+          0.042828,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex1",
+        "rest_translation": [
+          -0.032121,
+          0.080303,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle3",
+        "rest_translation": [
+          0.0,
+          0.02998,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle2",
+        "rest_translation": [
+          -0.0,
+          0.04604,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle1",
+        "rest_translation": [
+          -0.010707,
+          0.080303,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky3",
+        "rest_translation": [
+          -0.0,
+          0.022485,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky2",
+        "rest_translation": [
+          0.0,
+          0.035333,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky1",
+        "rest_translation": [
+          0.032121,
+          0.080303,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandRing3",
+        "rest_translation": [
+          -0.0,
+          0.027838,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing2",
+        "rest_translation": [
+          -0.0,
+          0.042828,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing1",
+        "rest_translation": [
+          0.010707,
+          0.080303,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb3",
+        "rest_translation": [
+          0.0,
+          0.034263,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb2",
+        "rest_translation": [
+          0.0,
+          0.061261,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb1",
+        "rest_translation": [
+          0.00348,
+          0.050951,
+          0.033835
+        ]
+      },
+      {
+        "name": "RightHand",
+        "rest_translation": [
+          0.0,
+          0.249101,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightForeArm",
+        "rest_translation": [
+          0.0,
+          0.174219,
+          0.0
+        ]
+      },
+      {
+        "name": "RightArm",
+        "rest_translation": [
+          -0.0,
+          0.206231,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightShoulder",
+        "rest_translation": [
+          -0.041523,
+          0.234173,
+          0.015122
+        ]
+      },
+      {
+        "name": "Spine3",
+        "rest_translation": [
+          -0.0,
+          0.094889,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine2",
+        "rest_translation": [
+          -0.0,
+          0.094889,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine1",
+        "rest_translation": [
+          -0.0,
+          0.094889,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine",
+        "rest_translation": [
+          -0.0,
+          0.067269,
+          0.052825
+        ]
+      },
+      {
+        "name": "Hips",
+        "rest_translation": [
+          0.0,
+          0.95441,
+          0.0
+        ]
+      }
+    ]
+  },
+  "events": null,
+  "content_hash": "sha256:249bb65f0071d11572a2adb624fbf6168ab673f85336fdee0f70fc3ccf8ff6ee",
+  "note": null
+}

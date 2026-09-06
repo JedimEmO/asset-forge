@@ -1,103 +1,59 @@
 #!/usr/bin/env bash
-# backends/moss_sfx/install.sh — MOSS-SoundEffect v2 in its own venv.
+# Check that the ComfyUI host can run `forge gen sfx`. It installs nothing.
 #
-#   bash backends/moss_sfx/install.sh [--prefix DIR] [--no-models] [--yes]
-#   bash backends/moss_sfx/install.sh --adopt-env ~/src/MOSS-TTS/moss_soundeffect_v2/.venv \
-#       --adopt-checkout ~/src/MOSS-TTS/moss_soundeffect_v2
+#   bash backends/moss_sfx/install.sh
 #
-# One clone, two venvs (designs/hosting.md, MOSS): the sound-effect model
-# lives in moss_soundeffect_v2/ of the MOSS-TTS repository with its own
-# pins — torch 2.9.0+cu128, transformers 4.57.1, numpy 1.26 — that the TTS
-# model's 2.9.1 / 5.0.0 contradict. The clone goes to $PREFIX/../moss-tts,
-# where backends/moss_tts/install.sh finds the same one; this backend's
-# .checkout link points at the subdirectory, because that is where the
-# inner module runs from and what `pip install -e` is pointed at.
+# There is no environment here to make. MOSS-SoundEffect v2 runs inside the
+# host through the TTS-Audio-Suite pack, which `backends/comfy/install.sh`
+# clones at its pin, and the weights (~11 GB) are downloaded by the node
+# itself on its first run, into the same HF cache every other backend fills.
+# So this script's whole job is to say whether the host is there, whether the
+# pack is at the pin this backend names, and whether the node class the
+# tracked graph needs is registered — and to name the fix when it is not.
 #
-# Leaves behind: .env -> the venv, .checkout -> <clone>/moss_soundeffect_v2,
-# installed.json. Idempotent; re-running re-links, re-probes, and pip is a
-# no-op on a finished env. Weights (~11 GB on disk, Apache-2.0) go to the Hugging
-# Face cache unless --no-models, in which case the first `forge gen sfx`
-# downloads them and doctor says "partial" until then.
+# What this replaced, and why it is not here any more: a python 3.12 venv
+# with its own torch pin, a clone of OpenMOSS/MOSS-TTS shared with moss_tts,
+# and TORCHDYNAMO_DISABLE=1 to stop the DiT compiling itself for minutes on
+# every one-shot call. The first two are the host's now. The third is a
+# choice the host has to make in forge-comfy.service, and until it does the
+# first effect of a ComfyUI session pays the compile — the pack says the
+# artifact is cached across sessions, which the old venv could not do.
+# The old path is in git history at the commit before this one.
+
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_NAME="moss_sfx"
 BACKEND_DIR="$here"
+# shellcheck source=../_lib/common.sh
 . "$here/../_lib/common.sh"
 parse_common_flags "$@"
 
-UPSTREAM="https://github.com/OpenMOSS/MOSS-TTS.git"
-COMMIT="58b20a0d5fcc6766658d50967a90a9d890009a46"
-SUBDIR="moss_soundeffect_v2"
-PYVER="3.12"
-MODEL_ID="OpenMOSS-Team/MOSS-SoundEffect-v2.0"
-TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+HOST_DIR="$here/../comfy"
+[ -d "$HOST_DIR" ] || die "backends/comfy is not here: moss_sfx runs on that host and nothing else"
+[ -e "$HOST_DIR/.env" ] || die "the ComfyUI host is not installed — bash $HOST_DIR/install.sh first (moss_sfx has no environment of its own)"
 
-# pip_install_with_torch_index PREFIX ARGS... — as common.sh's pip_install,
-# with the cu128 wheel index beside PyPI. uv's default index strategy takes
-# a package from the first index that lists it at all, and PyPI lists torch
-# without the +cu128 builds; unsafe-best-match lets the local-version pin
-# find its wheel. pip merges indexes by itself.
-pip_install_with_torch_index() {
-    local prefix="$1"; shift
-    if command -v uv >/dev/null 2>&1; then
-        PYTHONNOUSERSITE=1 uv pip install -q --python "$prefix/bin/python" \
-            --index-strategy unsafe-best-match --extra-index-url "$TORCH_INDEX" "$@"
-    else
-        PYTHONNOUSERSITE=1 "$prefix/bin/python" -m pip install -q --extra-index-url "$TORCH_INDEX" "$@"
-    fi
-}
+PACK_DIR_NAME="TTS-Audio-Suite"
+PACK_COMMIT="fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+HOST_PREFIX="$(dirname "$(readlink -f "$HOST_DIR/.env")")"
+DATA="${FORGE_COMFY_DATA:-$HOST_PREFIX/data}"
+PACK="$DATA/custom_nodes/$PACK_DIR_NAME"
 
-# ---------------------------------------------------------------- checkout --
-if [ -n "$ADOPT_CHECKOUT" ]; then
-    # The adopted path is the subdirectory itself (README: --adopt-checkout
-    # ~/src/MOSS-TTS/moss_soundeffect_v2); accept the repository root too.
-    if [ -f "$ADOPT_CHECKOUT/pipeline_moss_soundeffect.py" ]; then
-        CHECKOUT="$ADOPT_CHECKOUT"
-    elif [ -f "$ADOPT_CHECKOUT/$SUBDIR/pipeline_moss_soundeffect.py" ]; then
-        CHECKOUT="$ADOPT_CHECKOUT/$SUBDIR"
-    else
-        die "--adopt-checkout $ADOPT_CHECKOUT is neither MOSS-TTS nor its $SUBDIR/ subdirectory"
-    fi
-    head="$(git -C "$CHECKOUT" rev-parse --verify HEAD 2>/dev/null || echo '?')"
-    [ "$head" = "$COMMIT" ] || warn "adopted checkout is at ${head:0:12}, pinned is ${COMMIT:0:12} — doctor will say so"
-else
-    REPO_DIR="$(dirname "$PREFIX")/moss-tts"
-    clone_pinned "$UPSTREAM" "$COMMIT" "$REPO_DIR"
-    CHECKOUT="$REPO_DIR/$SUBDIR"
-    [ -f "$CHECKOUT/pipeline_moss_soundeffect.py" ] || die "$CHECKOUT has no pipeline_moss_soundeffect.py — the clone is not at $COMMIT"
+if [ ! -d "$PACK/.git" ]; then
+    die "$PACK_DIR_NAME is not in the host's custom_nodes — bash $HOST_DIR/install.sh clones it at its pin"
 fi
-link_checkout "$CHECKOUT"
-
-# --------------------------------------------------------------------- env --
-if [ -n "$ADOPT_ENV" ]; then
-    link_env "$ADOPT_ENV"
-    ENV_DIR="$(readlink -f "$BACKEND_DIR/.env")"
-    log "adopted env $ENV_DIR; installing nothing into it"
-else
-    ENV_DIR="$PREFIX/venv"
-    make_venv "$ENV_DIR" "$PYVER"
-    # The package's own extras carry the pins: [torch-cu128] is torch 2.9.0,
-    # torchaudio, torchvision, torchcodec from the cu128 index; the base
-    # dependencies pin transformers 4.57.1, numpy 1.26.4 and soundfile.
-    # Editable, from the subdirectory: its pyproject maps the package to ".".
-    log "pip install -e $CHECKOUT[torch-cu128] (torch 2.9.0+cu128, transformers 4.57.1, numpy<2)"
-    pip_install_with_torch_index "$ENV_DIR" -e "$CHECKOUT[torch-cu128]" soundfile
-    link_env "$ENV_DIR"
+have="$(git -C "$PACK" rev-parse --verify HEAD 2>/dev/null || echo unknown)"
+if [ "$have" != "$PACK_COMMIT" ]; then
+    warn "$PACK_DIR_NAME is at ${have:0:12}, not the pinned ${PACK_COMMIT:0:12} — the tracked graph was captured against the pin"
 fi
+log "$PACK_DIR_NAME at ${have:0:12} in $DATA/custom_nodes"
 
-# ------------------------------------------------------------------ models --
-if [ "$NO_MODELS" = 1 ]; then
-    log "--no-models: $MODEL_ID is fetched by the first \`forge gen sfx\`; doctor says partial until then"
+# The node the tracked graph loads the model with. A class the host does not
+# have is a doctor line and not a POST /prompt failure in front of a stranger.
+URL="${FORGE_COMFY_URL:-http://127.0.0.1:8188}"
+if curl -fsS --max-time 60 "$URL/object_info/MossSoundEffectV2EngineNode" 2>/dev/null | grep -q MossSoundEffectV2EngineNode; then
+    log "the host registers MossSoundEffectV2EngineNode"
 else
-    log "downloading $MODEL_ID into the Hugging Face cache (~11 GB, Apache-2.0)"
-    if [ -x "$ENV_DIR/bin/hf" ]; then
-        PYTHONNOUSERSITE=1 "$ENV_DIR/bin/hf" download "$MODEL_ID" >/dev/null
-    else
-        PYTHONNOUSERSITE=1 "$(env_python)" -c "from huggingface_hub import snapshot_download; snapshot_download('$MODEL_ID')" >/dev/null
-    fi
+    warn "the host does not answer for MossSoundEffectV2EngineNode at $URL — systemctl --user status forge-comfy, and packs are scanned once at startup"
 fi
-
-# ------------------------------------------------------------------- probe --
-run_probe
-write_installed_json
-log "done — \`forge doctor\` for the table; \`forge gen sfx --prompt \"a wooden door slamming\" --out out/audio/door.wav\` for a sound"
+command -v ffmpeg >/dev/null 2>&1 || warn "ffmpeg is not on PATH: the host saves FLAC and every audio verb transcodes it here (exit 6 without it)"
+log "done — the weights come down on the first render; just doctor says what the host can run"

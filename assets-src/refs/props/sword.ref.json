@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/sword.png",
+      "sha256": "sha256:5afdf0f7191894b1e2068583b7dbc807cc662ccae9652d8305b9c9c27897159b",
+      "source": "xAI grok, image_edit chained from the same style board; painted and lifted 2026-08-22",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "prop",
+    "long_side_px": 1024,
+    "stated_source": "xAI grok, image_edit chained from the same style board; painted and lifted 2026-08-22"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/props/sword.png",
+      "sha256": "sha256:5afdf0f7191894b1e2068583b7dbc807cc662ccae9652d8305b9c9c27897159b",
+      "bytes": 500457
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.1847,
+    "arm_line_fraction": null,
+    "backdrop_rgb": [
+      183,
+      183,
+      182
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 160,
+    "heads": null,
+    "height": 1024,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 3,
+    "keyer_tolerance": 28,
+    "span_over_height": 0.944,
+    "subject_fill": 0.837,
+    "width": 1024
+  },
+  "fake": false,
+  "note": null
+}

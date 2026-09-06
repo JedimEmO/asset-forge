@@ -54,6 +54,7 @@ pub fn build(project: &Project, catalog: &Catalog) -> Result<Manifest> {
                 name: record.name.clone(),
                 path: record.rel_path.clone(),
                 sha256,
+                motion_scale: motion_scale(record),
                 tags: record.tags(),
             }),
             Kind::Model => models.push(model_entry(record, sha256)),
@@ -234,6 +235,22 @@ fn clip_entry(record: &AssetRecord, sha256: String) -> ClipEntry {
             })
             .unwrap_or_default(),
     }
+}
+
+/// A body's stride scale, out of its own record.
+///
+/// `1.0` when the record has no body block, and that is not a default
+/// standing in for a measurement: the manifest's field is not an `Option`
+/// because a consumer cannot act on "unknown" here — it either multiplies a
+/// root track or it does not — and `1.0` is the arithmetic identity, which
+/// leaves every clip byte exactly as the library holds it. The record's own
+/// silence is where the unknown lives, and `verify` says so on the body.
+fn motion_scale(record: &AssetRecord) -> f32 {
+    record
+        .sidecar
+        .as_ref()
+        .and_then(|sidecar| sidecar.body.as_ref())
+        .map_or(1.0, |body| body.motion_scale)
 }
 
 /// One model, projected: its bounds come from the measured block, and stay

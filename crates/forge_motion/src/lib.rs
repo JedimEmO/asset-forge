@@ -73,6 +73,7 @@
 //! the `Hips` translation rather than byte equality.
 
 pub mod bake;
+pub mod bundle;
 pub mod channels;
 pub mod edit;
 pub mod events;
@@ -83,6 +84,7 @@ pub mod skeleton;
 pub mod take;
 
 pub use bake::bake;
+pub use bundle::{Bundled, ClipSource};
 pub use channels::ClipChannels;
 pub use edit::{Edit, InPlace, YMode};
 pub use rig::RigDef;
@@ -176,6 +178,37 @@ pub enum BakeError {
         /// Its rest rotation, `[x, y, z, w]`.
         rotation: [f32; 4],
     },
+    /// A file handed to the bundle merge points at its buffer by `uri`.
+    /// There is nothing to merge into a self-contained container but bytes
+    /// that are in the file.
+    NotSelfContained(String),
+    /// A clip handed to the bundle merge could not be read far enough to
+    /// merge: no animation, an accessor with no buffer view, a JSON chunk
+    /// that does not parse.
+    Bundle {
+        /// The clip, as the caller named it.
+        clip: String,
+        /// What is wrong with it.
+        detail: String,
+    },
+    /// A clip drives a bone the body does not have. Re-pointing the channel
+    /// is the whole of a bundle, so there is nothing to point it at.
+    BundleMissingBone {
+        /// The clip, as the caller named it.
+        clip: String,
+        /// The bone its channel targets.
+        bone: String,
+    },
+    /// Two clips would land in the bundle under one animation name, and an
+    /// engine binds an animation by name.
+    BundleDuplicateAnimation {
+        /// The name both would carry.
+        name: String,
+        /// The clip that would have taken it second.
+        clip: String,
+    },
+    /// A motion scale that cannot multiply a root track.
+    BadMotionScale(f32),
 }
 
 impl fmt::Display for BakeError {
@@ -246,6 +279,26 @@ impl fmt::Display for BakeError {
                 "{bone} rests at rotation {rotation:?}, which is not a unit \
                  quaternion"
             ),
+            Self::NotSelfContained(what) => write!(
+                f,
+                "{what} names its buffer by uri; a bundle merges files that \
+                 carry their own bytes"
+            ),
+            Self::Bundle { clip, detail } => write!(f, "clip {clip}: {detail}"),
+            Self::BundleMissingBone { clip, bone } => write!(
+                f,
+                "clip {clip} drives {bone}, and the body has no node called \
+                 {bone} — a bundle re-points channels by bone name, so there \
+                 is nothing to point this one at"
+            ),
+            Self::BundleDuplicateAnimation { name, clip } => write!(
+                f,
+                "two clips would be animation {name:?} in one bundle ({clip} \
+                 is the second); an engine binds an animation by its name"
+            ),
+            Self::BadMotionScale(scale) => {
+                write!(f, "cannot scale root travel by {scale}")
+            }
         }
     }
 }

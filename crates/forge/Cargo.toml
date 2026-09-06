@@ -30,6 +30,12 @@ forge_studio = { workspace = true }
 # The MCP server, as a library: a `Config` and a `serve`. Every rmcp type
 # stays behind that door, so the SDK's pin is forge_mcp's problem alone.
 forge_mcp = { workspace = true }
+# The queue every generate goes through, and the daemon `forge serve` runs.
+# The binary composes it with forge_mcp: forge_mcp depends on forge_serve
+# and not the other way round, which is the only direction with no cycle.
+forge_serve = { workspace = true }
+# The daemon's router, nested with the MCP service at /mcp.
+axum = { workspace = true }
 # The runtime `serve` is awaited on. Multi-threaded because a tool that
 # blocks on a bake must not stop the server answering the next frame.
 tokio = { workspace = true }
@@ -40,6 +46,23 @@ serde_json = { workspace = true }
 # the library — the fixture mannequin, an export under out/ — is staged
 # beside its clip in a scratch root that removes itself.
 tempfile = { workspace = true }
+
+[dev-dependencies]
+# The session draws its own reference PNG. `import_reference` needs no card,
+# so on tier `fake` it keys and measures for real wherever the keyer's
+# libraries are there, and a one-pixel stand-in would be refused for its long
+# side — the picture has to be a picture. This is the toolkit's own canvas,
+# which every sheet is already drawn on.
+forge_raster = { workspace = true }
+# The `mcp-session` gate drives this binary's own MCP server with rmcp's own
+# client, over both transports: a second protocol implementation in CI would
+# be a second thing to keep current. The SDK's pin is the workspace's; only
+# the client-side features are added here, and only for tests.
+rmcp = { workspace = true, features = [
+    "client",
+    "transport-async-rw",
+    "transport-streamable-http-client-reqwest",
+] }
 
 [lints]
 workspace = true

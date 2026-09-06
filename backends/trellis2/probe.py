@@ -4,7 +4,7 @@
 Run by ``forge doctor`` (and by ``install.sh`` at the end) *inside* the
 backend's interpreter, from the upstream checkout, with ``backend.toml``'s
 ``[env]`` exported. It imports what the inner module imports — the
-``trellis2`` package, ``o_voxel`` (the exporter), the compiled extensions
+``trellis2.pipelines`` module, ``o_voxel`` (the exporter), the compiled extensions
 it calls into (``nvdiffrast``, ``cumesh``, ``flex_gemm``) — and reports
 torch's version and whether it sees a CUDA device. ``flash_attn`` is
 optional: its absence is ``extras.attn_backend = "sdpa"``, slower and
@@ -17,7 +17,7 @@ proof the weights are there.
 The last stdout line is the JSON object doctor reads::
 
     {"ok": true, "python": "3.11.15", "torch": "2.6.0+cu124", "torch_cuda": "12.4",
-     "cuda_available": true, "imports": {"trellis2": true, ...},
+     "cuda_available": true, "imports": {"trellis2.pipelines": true, ...},
      "extras": {"attn_backend": "flash_attn", "nvcc": "12.4", "nvdiffrast": "0.4.0"},
      "notices": [], "hints": [...]}
 
@@ -36,7 +36,7 @@ import subprocess
 import sys
 
 #: What the inner module cannot run without.
-MUST_IMPORT = ("trellis2", "o_voxel", "nvdiffrast", "cumesh", "flex_gemm", "PIL", "cv2", "trimesh")
+MUST_IMPORT = ("trellis2.pipelines", "o_voxel", "nvdiffrast", "cumesh", "flex_gemm", "PIL", "cv2", "trimesh")
 
 #: Nice to have; the launcher falls back without it.
 OPTIONAL = ("flash_attn",)
@@ -144,7 +144,8 @@ def main() -> int:
     if nvcc:
         report["extras"]["nvcc"] = nvcc
     else:
-        report["hints"].append("no nvcc under $CUDA_HOME — nvdiffrast cannot JIT its kernels on first use")
+        report["errors"]["cuda_toolchain"] = "no working nvcc under $CUDA_HOME"
+        report["hints"].append("no nvcc under $CUDA_HOME — rerun the TRELLIS installer to restore its CUDA toolchain link")
 
     # backend.toml's [[notices]] carries the non-commercial warning doctor
     # prints while nvdiffrast is installed; the probe only adds the version
@@ -154,11 +155,14 @@ def main() -> int:
     else:
         report["hints"].append(NVDIFFRAST_HINT)
 
-    gcc = os.environ.get("CC")
-    if gcc and not os.path.exists(gcc):
-        report["hints"].append(f"CC={gcc} does not exist; install gcc_linux-64=13 gxx_linux-64=13 into the env")
+    for key in ("CC", "CXX"):
+        compiler = os.environ.get(key)
+        if not compiler or not os.path.isfile(compiler) or not os.access(compiler, os.X_OK):
+            report["errors"][key] = f"{key}={compiler!r} is not an executable compiler"
+            report["hints"].append(f"restore the TRELLIS toolchain: {key} must name its conda compiler")
 
-    report["ok"] = all(report["imports"].get(name, False) for name in ("torch", *MUST_IMPORT))
+    report["ok"] = (all(report["imports"].get(name, False) for name in ("torch", *MUST_IMPORT))
+                    and nvcc is not None and not any(key in report["errors"] for key in ("CC", "CXX")))
     print(json.dumps(report))
     return 0 if report["ok"] else 1
 

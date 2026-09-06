@@ -1,7 +1,7 @@
 """Normalize a lifted .glb into a shipped prop, via headless Blender.
 
     forge-gen prop <lift.glb> --out <prop.glb> --record <prop.json>
-                   (--height <m> | --length <m>) [--yaw-deg 0]
+                   (--height <m> | --length <m>) [--yaw-deg 0] [--pitch-deg 0] [--heading-deg 0]
                    [--hang | --held | --grip <m> --long-axis ±x|±y|±z [--roll-deg 0]]
                    [--socket NAME] [--budget N] [--profile DIR] [--created-by WHO]
 
@@ -12,7 +12,8 @@ prop in this library is a narrower promise — real metres, feet on the origin
 tool is the distance between the two.
 
 What it does, in order: joins every imported mesh into one object, merges
-coincident vertices and drops loose geometry, turns ``--yaw-deg``, scales
+coincident vertices and drops loose geometry, turns ``--yaw-deg`` then
+``--pitch-deg`` (world +X, shared with glTF), scales
 uniformly until the chosen dimension reads ``--height`` (Blender +Z) or
 ``--length`` (the longest extent), then places the result. A ground prop
 sits with its lowest vertex at Z=0, centred in X and Y, because that is
@@ -53,6 +54,7 @@ measurement a consumer will trust.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 from pathlib import Path
@@ -86,6 +88,8 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
     size.add_argument("--height", type=float, metavar="M", help="scale until the Blender +Z extent is this many metres")
     size.add_argument("--length", type=float, metavar="M", help="scale until the longest extent is this many metres")
     parser.add_argument("--yaw-deg", type=float, default=0.0, metavar="DEG", help="turn about +Z before anything else")
+    parser.add_argument("--pitch-deg", type=float, default=0.0, metavar="DEG", help="turn about world +X after yaw, before sizing and placement (same +X in glTF)")
+    parser.add_argument("--heading-deg", type=float, default=0.0, metavar="DEG", help="final turn about up after yaw/pitch leveling, before sizing and placement")
     place = parser.add_mutually_exclusive_group()
     place.add_argument("--hang", action="store_true", help="origin at the top: a hanging prop")
     place.add_argument("--held", action="store_true", help="origin at the bounding-box centre: a socketed prop")
@@ -120,6 +124,9 @@ def _spec(args) -> dict:
     milliseconds, and the inner re-derives the same numbers from the same
     profile so nothing is carried across the process boundary as a guess.
     """
+    for name in ("pitch", "heading"):
+        if not math.isfinite(getattr(args, f"{name}_deg")):
+            raise UsageError(f"--{name}-deg must be finite")
     if (args.height is None) == (args.length is None):
         raise UsageError("give exactly one of --height/--length")
     if args.grip is not None:
@@ -174,6 +181,8 @@ def _spec(args) -> dict:
         "height": args.height,
         "length": args.length,
         "yaw_deg": float(args.yaw_deg),
+        "pitch_deg": float(args.pitch_deg),
+        "heading_deg": float(args.heading_deg),
         "grip": args.grip,
         "long_axis": long_axis,
         "roll_deg": float(args.roll_deg) if args.grip is not None else None,
@@ -192,6 +201,8 @@ def _params(spec: dict) -> dict:
         "height_m": spec["height"],
         "length_m": spec["length"],
         "yaw_deg": spec["yaw_deg"],
+        "pitch_deg": spec["pitch_deg"],
+        "heading_deg": spec["heading_deg"],
         "placement": spec["placement"],
         "grip_m": spec["grip"],
         "long_axis": spec["long_axis"],
@@ -216,6 +227,8 @@ def run(args) -> dict:
         "--out", os.fspath(out),
         "--record", os.fspath(record),
         f"--yaw-deg={spec['yaw_deg']}",
+        f"--pitch-deg={spec['pitch_deg']}",
+        f"--heading-deg={spec['heading_deg']}",
         "--budget", str(spec["budget"]),
         "--profile", os.fspath(spec["profile"].dir),
     ]
@@ -361,6 +374,10 @@ def _place(prop, spec: dict) -> None:
     from mathutils import Matrix, Vector
 
     _common.yaw(prop, spec["yaw_deg"])
+    if spec["pitch_deg"]:
+        prop.matrix_world = Matrix.Rotation(math.radians(spec["pitch_deg"]), 4, "X") @ prop.matrix_world
+        _common.apply_transforms(prop)
+    _common.yaw(prop, spec["heading_deg"])
 
     long_axis_blender = Vector(_common.gltf_axis_to_blender(spec["long_axis_gltf"]))
     front_blender = Vector(_common.gltf_axis_to_blender(spec["front_gltf"]))

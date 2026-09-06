@@ -1,0 +1,49 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "relay_drone",
+  "prompt": null,
+  "tags": [
+    "experimental"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "reconstructed",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 57274,
+      "triangles": 57282,
+      "bones_skinned": 0,
+      "lowest_y": -0.47312373,
+      "bounds": [
+        [
+          -0.74999994,
+          -0.47312373,
+          -0.7314251
+        ],
+        [
+          0.74999994,
+          0.47312373,
+          0.7314251
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:3e0f49c3c70564729a0341286739bd77f1b4139c232eb8aa0abd89dd27e6bf92",
+  "note": "Pixal3D single-view budget comparison pixal-budget1, 60000 target. Experimental adapter and source receipt retained in provenance/pixal3d. No TRELLIS lift record claimed. Texture baker nvdiffrast 0.4.0 is non-commercial."
+}

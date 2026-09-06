@@ -11,7 +11,7 @@ from forge_gen import records
 
 #: The lift record transcribed in generator_record.rs's unit test, byte for byte.
 GOLDEN = """{
-  "forge_record": 1,
+  "forge_record": 2,
   "kind": "lift",
   "tool": "trellis2",
   "created": "2026-08-23",
@@ -22,7 +22,11 @@ GOLDEN = """{
     "python": "3.11.9",
     "torch": "2.6.0+cu124",
     "model": "microsoft/TRELLIS.2-4B",
-    "model_revision": null
+    "model_revision": null,
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
   },
   "inputs": [
     {
@@ -143,9 +147,178 @@ def test_actor_and_today():
 
 def test_load_refuses_other_schemas(tmp_path):
     path = tmp_path / "r.json"
-    path.write_text('{"forge_record": 2}')
-    with pytest.raises(ValueError, match="forge_record 2"):
+    path.write_text('{"forge_record": 3}')
+    with pytest.raises(ValueError, match="forge_record 3"):
+        records.load(path)
+    path.write_text('{"forge_record": 0}')
+    with pytest.raises(ValueError, match="forge_record 0"):
         records.load(path)
     path.write_text('{"kind": "lift"}')
     with pytest.raises(ValueError, match="no forge_record"):
         records.load(path)
+
+
+def test_record_v2_reads_v1_and_writes_v2(tmp_path):
+    """Both schemas read; only 2 is written; the four new keys come last.
+
+    Nothing under ``assets/`` was migrated when the schema went to 2, so a
+    reader that refused a 1 would refuse every record this repository has
+    ever shipped. A 1 read here stays a 1 — a reader that promoted one would
+    be claiming the four keys were absent on purpose.
+    """
+    assert records.SCHEMA == 2 and records.SCHEMA_MIN == 1
+    assert records.BACKEND_KEYS[:6] == ("name", "commit", "python", "torch", "model", "model_revision")
+    assert records.BACKEND_KEYS[6:] == ("executor", "comfyui_commit", "workflow_sha256", "packs")
+
+    v1 = tmp_path / "old.json"
+    v1.write_text(
+        '{"forge_record": 1, "kind": "lift", "tool": "trellis2", "created": "2026-08-23",\n'
+        ' "created_by": "human",\n'
+        ' "backend": {"name": "trellis2", "commit": "75fbf018", "python": "3.11.9",\n'
+        '             "torch": "2.6.0+cu124", "model": "microsoft/TRELLIS.2-4B", "model_revision": null},\n'
+        ' "inputs": [], "params": {"seed": 42}, "outputs": [], "measured": {}, "fake": false, "note": null}\n'
+    )
+    old = records.load(v1)
+    assert old["forge_record"] == 1, "read, not promoted in place"
+    assert "executor" not in old["backend"], "a v1 record predates the question"
+    assert old["params"]["seed"] == 42
+
+    # The writer only ever writes 2, and the block is complete either way.
+    fresh = records.new_record("lift", "trellis2", created="2026-08-23")
+    assert fresh["forge_record"] == 2
+    assert list(fresh["backend"]) == list(records.BACKEND_KEYS)
+    assert fresh["backend"]["executor"] == "env", "written for every record, env ones included"
+    old["forge_record"] = 1
+    with pytest.raises(ValueError, match="this writer is 2"):
+        records.dumps(old)
+
+
+def test_a_comfy_backend_block_says_what_ran_and_sorts_its_packs():
+    rec = records.new_record("sfx", "moss_sound_effect", created="2026-08-30")
+    rec["backend"] = records.backend_block(
+        "moss_sfx", None, model="OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+        executor="comfy", comfyui_commit="169fcf35", workflow_sha256="sha256:9f1c",
+        packs={"https://b": "2", "https://a": "1"},
+    )
+    rec["params"] = {"workflow": "sfx.api.json", "seed": 815273}
+    written = json.loads(records.dumps(rec))
+    assert written["backend"]["commit"] is None, "a comfy backend has no checkout of its own"
+    assert written["backend"]["executor"] == "comfy"
+    assert list(written["backend"]["packs"]) == ["https://a", "https://b"], "free-form maps are sorted"
+    assert written["params"]["workflow"] == "sfx.api.json", "the patch is knobs; knobs live in params"
+
+
+#: A ``prepare`` record, byte for byte, as ``generator_record.rs``'s unit test
+#: transcribes it. The two writers are held to one string on purpose: the
+#: Rust reader holds ``params`` and ``measured`` in sorted maps and re-emits
+#: them that way, so a record round-tripped through Rust must come back
+#: identical or some consumer is reading a file neither half wrote.
+PREPARE_GOLDEN = """{
+  "forge_record": 2,
+  "kind": "prepare",
+  "tool": "blender",
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": "blender",
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "mesh",
+      "path": "out/lifts/vex_runner.glb",
+      "sha256": "sha256:beef",
+      "source": null,
+      "prompt": null
+    },
+    {
+      "role": "reference",
+      "path": "rigs/humanoid/rig.blend",
+      "sha256": "sha256:cafe",
+      "source": "profile:humanoid",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "dust_diagonal_m": 0.025,
+    "profile": "humanoid",
+    "skeleton": "rigs/humanoid/rig.blend",
+    "stature_m": 1.8,
+    "tri_budget": 60000,
+    "yaw_deg": 0.0
+  },
+  "outputs": [
+    {
+      "path": "out/prepare/vex_runner.glb",
+      "sha256": "sha256:f00d",
+      "bytes": 2599380
+    }
+  ],
+  "measured": {
+    "arm_tip_y_m": 1.3619,
+    "dust_islands_dropped": 3,
+    "limb_radius": {
+      "LeftArm->LeftForeArm": {
+        "off_axis_m": 0.0241,
+        "ratio": 0.2391,
+        "stations": [
+          0.3874,
+          0.2391,
+          0.0686
+        ]
+      }
+    },
+    "shoulder_line_y_m": 1.3619,
+    "triangles": 48000,
+    "vertices": 24100
+  },
+  "fake": false,
+  "note": null
+}
+"""
+
+
+def test_the_prepare_kind_writes_the_same_bytes_the_rust_reader_re_emits():
+    rec = records.new_record("prepare", "blender", created_by="claude", created="2026-08-30")
+    rec["backend"] = records.backend_block(name="blender")
+    rec["inputs"].append({"role": "mesh", "path": "out/lifts/vex_runner.glb", "sha256": "sha256:beef", "source": None, "prompt": None})
+    rec["inputs"].append(
+        {"role": "reference", "path": "rigs/humanoid/rig.blend", "sha256": "sha256:cafe", "source": "profile:humanoid", "prompt": None}
+    )
+    # Deliberately unsorted, and nested: the writer sorts every level of
+    # params and measured, because the Rust reader does.
+    rec["params"] = {
+        "yaw_deg": 0.0,
+        "tri_budget": 60000,
+        "stature_m": 1.8,
+        "skeleton": "rigs/humanoid/rig.blend",
+        "profile": "humanoid",
+        "dust_diagonal_m": 0.025,
+    }
+    rec["measured"] = {
+        "vertices": 24100,
+        "triangles": 48000,
+        "shoulder_line_y_m": 1.3619,
+        "arm_tip_y_m": 1.3619,
+        "dust_islands_dropped": 3,
+        "limb_radius": {"LeftArm->LeftForeArm": {"ratio": 0.2391, "stations": [0.3874, 0.2391, 0.0686], "off_axis_m": 0.0241}},
+    }
+    rec["outputs"].append({"path": "out/prepare/vex_runner.glb", "sha256": "sha256:f00d", "bytes": 2599380})
+    assert records.dumps(rec) == PREPARE_GOLDEN
+    assert list(json.loads(records.dumps(rec))) == list(records.KEYS)
+
+
+def test_prepare_sits_between_prop_and_rig_in_the_kind_table():
+    """The order a body is made in: a lift, prepared, then skinned."""
+    assert records.KINDS.index("prepare") == records.KINDS.index("prop") + 1
+    assert records.KINDS.index("rig") == records.KINDS.index("prepare") + 1
+    with pytest.raises(ValueError, match="prepare"):
+        records.new_record("prepared", "blender")

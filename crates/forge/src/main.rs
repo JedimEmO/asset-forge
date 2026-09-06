@@ -24,8 +24,12 @@
 //! forge views <name|path.glb>               one mesh from every angle, culling off for a lift
 //! forge turntable <body>                    every view of a body, posed on the reference clip
 //! forge bones <clip> [--body]               which bones a clip drives, no GPU
+//! forge bundle <body> --clips a,b --out P   one glb: the body's skin and every clip as a named animation
 //! forge studio [--model] [--audio] …        the viewer window
 //! forge mcp                                 serve the MCP tools over stdio, for an agent
+//! forge serve [--foreground] [--port N]      the queue for this project, MCP at /mcp
+//! forge jobs | job show|log|cancel <id>      what the queue holds, and one row of it
+//! forge stop                                 end the daemon serving this project
 //! ```
 //!
 //! # Exit codes
@@ -77,6 +81,12 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Outcome {
     match &cli.command {
         Command::Init(args) => commands::init::run(cli.project.as_deref(), args),
+        Command::AgentConfig => commands::init::agent_config(&project(cli)?),
+        Command::Guide => {
+            print!("{}", forge_mcp::workflow_guide());
+            Ok(())
+        }
+        Command::Setup(args) => commands::setup::run(&project(cli)?, args),
         Command::Catalog(args) => commands::catalog::run(&project(cli)?, args),
         Command::Manifest(args) => commands::manifest::run(&project(cli)?, args),
         Command::Verify => commands::checks::verify(&project(cli)?),
@@ -86,21 +96,28 @@ fn run(cli: &Cli) -> Outcome {
         Command::Promote(door) => commands::promote::run(&project(cli)?, door),
         Command::Audio(args) => commands::audio::run(cli, args),
         Command::Rig(args) => commands::rig::run(cli, args),
-        Command::Gen(args) => match project(cli) {
-            Ok(project) => commands::generate::run(&project, args),
-            // `--help` needs no library: print the Python layer's help from
-            // anywhere rather than refusing over a missing forge.toml.
-            Err(_) if commands::generate::wants_help(args) => commands::generate::help(args),
-            Err(refusal) => Err(refusal),
-        },
+        Command::Ref(args) => commands::reference::run(&project(cli)?, args),
+        Command::Gen(args) if commands::generate::wants_help(args) => {
+            commands::generate::help(args)
+        }
+        Command::Gen(args) => commands::generate::run(&project(cli)?, args),
         Command::Doctor(args) => commands::doctor::run(&project(cli)?, args),
         Command::Gpu(args) => commands::gpu::run(&project(cli)?, args),
         Command::Sheet(args) => commands::look::sheet(&project(cli)?, args),
         Command::Views(args) => commands::look::views(&project(cli)?, args),
         Command::Turntable(args) => commands::look::turntable(&project(cli)?, args),
         Command::Bones(args) => commands::look::bones(&project(cli)?, args),
+        Command::Bundle(args) => commands::bundle::run(&project(cli)?, args),
         Command::Studio(args) => commands::studio::run(&project(cli)?, args),
         Command::Mcp => commands::mcp::run(cli),
+        Command::Serve(args) => commands::serve::run(&project(cli)?, args),
+        Command::Jobs(args) => commands::jobs::list(&project(cli)?, args),
+        Command::Job { what } => match what {
+            cli::JobCommand::Show(args) => commands::jobs::show(&project(cli)?, args),
+            cli::JobCommand::Log(args) => commands::jobs::log(&project(cli)?, args),
+            cli::JobCommand::Cancel(args) => commands::jobs::cancel(&project(cli)?, args),
+        },
+        Command::Stop => commands::serve::stop(&project(cli)?),
     }
 }
 

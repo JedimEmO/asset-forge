@@ -35,19 +35,31 @@ use forge_library::GeneratorRecord;
 use forge_library::generator_record::{RECORD_SCHEMA, RecordKind};
 use forge_motion::Take;
 
-/// One fixture per kind, plus the fake lift.
-const RECORDS: [(&str, RecordKind); 10] = [
+/// One fixture per kind, plus the fake lift and one comfy run.
+///
+/// **Only `forge_record: 2` fixtures are held to byte equality.** A v1
+/// fixture is a read-only case ([`a_v1_record_still_reads_and_is_not_promoted`]):
+/// `Option` serialises as `null`, so a v1 record round-tripped through the
+/// Rust writer would grow the four keys the schema added and the comparison
+/// would be a test of the writer's opinion rather than of the two writers
+/// agreeing.
+const RECORDS: [(&str, RecordKind); 11] = [
     ("lift.json", RecordKind::Lift),
     ("prop.json", RecordKind::Prop),
     ("rig.json", RecordKind::Rig),
     ("export.json", RecordKind::Export),
     ("take.json", RecordKind::Take),
     ("sfx.json", RecordKind::Sfx),
+    ("sfx_comfy.json", RecordKind::Sfx),
     ("music.json", RecordKind::Music),
     ("speech.json", RecordKind::Speech),
     ("voice.json", RecordKind::Voice),
     ("fake_lift.json", RecordKind::Lift),
 ];
+
+/// A record shipped before the schema went to 2, kept by hand rather than
+/// captured: `records.py` cannot write a 1 any more, which is the point.
+const V1: &str = "v1_lift.json";
 
 /// `sha256:` of the five bytes `probe`, which every stand-in file is made of.
 const PROBE_SHA: &str = "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095";
@@ -119,6 +131,87 @@ fn every_record_parses_and_round_trips_byte_for_byte() {
             "{file}: field order and formatting are the byte contract with records.py"
         );
     }
+}
+
+#[test]
+fn every_v2_record_says_which_executor_ran_and_a_comfy_one_says_what_it_ran() {
+    maybe_bless();
+    for (file, _) in RECORDS {
+        let record = GeneratorRecord::load(&fixtures().join(file)).expect("reads");
+        assert!(
+            matches!(record.backend.executor.as_deref(), Some("env" | "comfy")),
+            "{file}: forge_record 2 says which executor ran, env ones included"
+        );
+    }
+    // An env run has no workflow and no host, and says so with nulls rather
+    // than with a default that would read as a measurement.
+    let env = GeneratorRecord::load(&fixtures().join("sfx.json")).expect("sfx");
+    assert_eq!(env.backend.executor.as_deref(), Some("env"));
+    assert_eq!(env.backend.workflow_sha256, None);
+    assert_eq!(env.backend.comfyui_commit, None);
+    assert_eq!(env.backend.packs, None);
+
+    let comfy = GeneratorRecord::load(&fixtures().join("sfx_comfy.json")).expect("sfx_comfy");
+    assert_eq!(comfy.backend.executor.as_deref(), Some("comfy"));
+    assert_eq!(
+        comfy.backend.commit, None,
+        "a comfy backend has no checkout of its own"
+    );
+    assert_eq!(
+        comfy.backend.comfyui_commit.as_deref(),
+        Some("169fcf35a2fc163fec31338b816503ddac0d3fcf")
+    );
+    assert!(
+        comfy
+            .backend
+            .workflow_sha256
+            .as_deref()
+            .is_some_and(|h| h.starts_with("sha256:")),
+        "the tracked template file is hashed"
+    );
+    assert_eq!(
+        comfy
+            .backend
+            .packs
+            .as_ref()
+            .expect("packs")
+            .get("https://github.com/diodiogod/TTS-Audio-Suite")
+            .map(String::as_str),
+        Some("b7e41a2c")
+    );
+    assert_eq!(
+        comfy.param_str("workflow").as_deref(),
+        Some("sfx.api.json"),
+        "the patch is knobs, and knobs live in params"
+    );
+    let sound = comfy.sound_effect_params();
+    assert_eq!(
+        sound.model.as_deref(),
+        Some("OpenMOSS-Team/MOSS-SoundEffect-v2.0"),
+        "the same projection reads both executors"
+    );
+    assert_eq!(sound.seed, Some(815_273));
+}
+
+#[test]
+fn a_v1_record_still_reads_and_is_not_promoted() {
+    let path = fixtures().join(V1);
+    let record = GeneratorRecord::load(&path).expect("a shipped v1 record still reads");
+    assert_eq!(record.forge_record, 1, "read, never promoted in place");
+    assert_eq!(
+        record.backend.executor, None,
+        "v1 predates the question; null means unknown"
+    );
+    assert_eq!(record.backend.packs, None);
+    // Everything a v1 record did say, it still says.
+    let params = record.lift_params();
+    assert_eq!(params.seed, Some(42));
+    assert_eq!(params.resolution, Some(1024));
+    assert_eq!(
+        params.texture_baker.as_deref(),
+        Some("nvdiffrast (non-commercial)")
+    );
+    assert_eq!(record.prompt(), None);
 }
 
 #[test]

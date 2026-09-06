@@ -1,0 +1,513 @@
+{
+  "schema": 2,
+  "kind": "body",
+  "name": "scrapyard_rusher",
+  "prompt": null,
+  "tags": [
+    "scrapyard",
+    "enemy"
+  ],
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "provenance": "recorded",
+  "rig": "humanoid",
+  "generator": {
+    "tool": "trellis2",
+    "model": "microsoft/TRELLIS.2-4B",
+    "trellis_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "resolution": 1024,
+    "pipeline_type": "1024_cascade",
+    "seed": 42,
+    "decimation_target_vertices": 25000,
+    "texture_size": 1024,
+    "remesh": true,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "image": "assets-src/refs/characters/scrapyard_rusher.png",
+    "image_sha256": "sha256:af5fcae05e3a7cf7ee3b0c36678510b56e56e393b61412e7594dd1f21654d596",
+    "lift_sha256": "sha256:5d2e848b6e361e62590d4fcab8fb76f4451ee989d1390b6af550926e9080a47c",
+    "post": {
+      "tool": "blender",
+      "script": "rig+export",
+      "version": "Khronos glTF Blender I/O v5.2.40"
+    }
+  },
+  "source": {
+    "path": "assets-src/blender/scrapyard_rusher.blend",
+    "sha256": "sha256:07ec20fa896cac7a876415937afc08c94d40f1d94be1c51b6cdd1eff183237b5",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 25336,
+      "triangles": 23658,
+      "bones_skinned": 55,
+      "lowest_y": -1.8471809e-9,
+      "bounds": [
+        [
+          -1.1179779,
+          -1.8471809e-9,
+          -0.26507393
+        ],
+        [
+          1.1179779,
+          1.8,
+          0.26507398
+        ]
+      ]
+    }
+  },
+  "body": {
+    "motion_scale": 0.9167,
+    "bones": [
+      {
+        "name": "LeftToeBase",
+        "rest_translation": [
+          0.0,
+          0.19246,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftFoot",
+        "rest_translation": [
+          0.0,
+          0.445099,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftLeg",
+        "rest_translation": [
+          0.0,
+          0.337978,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftUpLeg",
+        "rest_translation": [
+          0.088824,
+          -0.008091,
+          -0.024655
+        ]
+      },
+      {
+        "name": "RightToeBase",
+        "rest_translation": [
+          0.0,
+          0.192459,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightFoot",
+        "rest_translation": [
+          -0.0,
+          0.445099,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightLeg",
+        "rest_translation": [
+          0.0,
+          0.337978,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightUpLeg",
+        "rest_translation": [
+          -0.088824,
+          -0.008091,
+          -0.024655
+        ]
+      },
+      {
+        "name": "LeftHandEnd",
+        "rest_translation": [
+          0.004838,
+          0.092191,
+          -0.047034
+        ]
+      },
+      {
+        "name": "LeftHandIndex3",
+        "rest_translation": [
+          -0.0,
+          0.038698,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex2",
+        "rest_translation": [
+          -0.0,
+          0.059536,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandIndex1",
+        "rest_translation": [
+          0.044652,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle3",
+        "rest_translation": [
+          0.0,
+          0.041675,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle2",
+        "rest_translation": [
+          -0.0,
+          0.064001,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandMiddle1",
+        "rest_translation": [
+          0.014884,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky3",
+        "rest_translation": [
+          -0.0,
+          0.031256,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky2",
+        "rest_translation": [
+          -0.0,
+          0.049117,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandPinky1",
+        "rest_translation": [
+          -0.044652,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing3",
+        "rest_translation": [
+          0.0,
+          0.038698,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing2",
+        "rest_translation": [
+          -0.0,
+          0.059536,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftHandRing1",
+        "rest_translation": [
+          -0.014884,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb3",
+        "rest_translation": [
+          -0.0,
+          0.047629,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb2",
+        "rest_translation": [
+          -0.0,
+          0.08516,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftHandThumb1",
+        "rest_translation": [
+          -0.004837,
+          0.070828,
+          0.047035
+        ]
+      },
+      {
+        "name": "LeftHand",
+        "rest_translation": [
+          -0.0,
+          0.346279,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftForeArm",
+        "rest_translation": [
+          -0.0,
+          0.264415,
+          -0.0
+        ]
+      },
+      {
+        "name": "LeftArm",
+        "rest_translation": [
+          0.0,
+          0.142223,
+          0.0
+        ]
+      },
+      {
+        "name": "LeftShoulder",
+        "rest_translation": [
+          0.028636,
+          0.161492,
+          0.010429
+        ]
+      },
+      {
+        "name": "Head",
+        "rest_translation": [
+          0.0,
+          0.119449,
+          0.0
+        ]
+      },
+      {
+        "name": "Neck",
+        "rest_translation": [
+          0.0,
+          0.229358,
+          -0.021389
+        ]
+      },
+      {
+        "name": "RightHandEnd",
+        "rest_translation": [
+          -0.004837,
+          0.092193,
+          -0.047035
+        ]
+      },
+      {
+        "name": "RightHandIndex3",
+        "rest_translation": [
+          0.0,
+          0.038698,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex2",
+        "rest_translation": [
+          0.0,
+          0.059536,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandIndex1",
+        "rest_translation": [
+          -0.044652,
+          0.11163,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle3",
+        "rest_translation": [
+          -0.0,
+          0.041675,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle2",
+        "rest_translation": [
+          -0.0,
+          0.064001,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandMiddle1",
+        "rest_translation": [
+          -0.014884,
+          0.11163,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky3",
+        "rest_translation": [
+          0.0,
+          0.031256,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky2",
+        "rest_translation": [
+          0.0,
+          0.049117,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandPinky1",
+        "rest_translation": [
+          0.044652,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandRing3",
+        "rest_translation": [
+          -0.0,
+          0.038698,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing2",
+        "rest_translation": [
+          -0.0,
+          0.059536,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandRing1",
+        "rest_translation": [
+          0.014884,
+          0.11163,
+          0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb3",
+        "rest_translation": [
+          0.0,
+          0.047629,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb2",
+        "rest_translation": [
+          0.0,
+          0.08516,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightHandThumb1",
+        "rest_translation": [
+          0.004837,
+          0.070828,
+          0.047035
+        ]
+      },
+      {
+        "name": "RightHand",
+        "rest_translation": [
+          0.0,
+          0.346279,
+          0.0
+        ]
+      },
+      {
+        "name": "RightForeArm",
+        "rest_translation": [
+          0.0,
+          0.264415,
+          0.0
+        ]
+      },
+      {
+        "name": "RightArm",
+        "rest_translation": [
+          -0.0,
+          0.158638,
+          -0.0
+        ]
+      },
+      {
+        "name": "RightShoulder",
+        "rest_translation": [
+          -0.031941,
+          0.180131,
+          0.011632
+        ]
+      },
+      {
+        "name": "Spine3",
+        "rest_translation": [
+          0.0,
+          0.086872,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine2",
+        "rest_translation": [
+          0.0,
+          0.086872,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine1",
+        "rest_translation": [
+          0.0,
+          0.086872,
+          0.0
+        ]
+      },
+      {
+        "name": "Spine",
+        "rest_translation": [
+          -0.0,
+          0.061586,
+          0.048362
+        ]
+      },
+      {
+        "name": "Hips",
+        "rest_translation": [
+          0.0,
+          0.87488,
+          0.0
+        ]
+      }
+    ]
+  },
+  "events": null,
+  "content_hash": "sha256:6a7d63a21aa6469aca59d64cca99c7198fdc9cc53dd4541506cf090b7aeecd7e",
+  "note": "Solid sensor-head revision; inspected on all seven sample clips. Exported stature is 1.80 m; preparation requested 1.65 m. Sample clips are compatibility previews, not final rusher combat animations. Non-commercial texture baker."
+}

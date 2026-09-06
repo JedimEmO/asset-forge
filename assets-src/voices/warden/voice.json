@@ -1,0 +1,48 @@
+{
+  "forge_record": 2,
+  "kind": "voice",
+  "tool": "moss_voice_generator",
+  "created": "2026-08-30",
+  "created_by": "unknown",
+  "backend": {
+    "name": "moss_tts",
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "model_revision": null,
+    "executor": "comfy",
+    "comfyui_commit": "169fcf35a2fc163fec31338b816503ddac0d3fcf",
+    "workflow_sha256": "sha256:1da8a66870bbdad2db35cb83114a12a8e869f2f37fb20dd17b03db19751137bb",
+    "packs": {
+      "https://github.com/diodiogod/TTS-Audio-Suite": "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+    }
+  },
+  "inputs": [],
+  "params": {
+    "audio_repetition_penalty": 1.1,
+    "audio_temperature": 1.5,
+    "audio_top_k": 50,
+    "audio_top_p": 0.6,
+    "instruction": "gravel-voiced, sixties, unhurried, dry",
+    "model": "OpenMOSS-Team/MOSS-VoiceGenerator",
+    "name": "warden",
+    "seed": 1357188160,
+    "text": "The river runs past the old mill at dawn, and the bells across the valley ring twice before the market opens.",
+    "workflow": "voice.api.json"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/voices/warden/ref.wav",
+      "sha256": "sha256:fce52b3fe2573afee37ede31996ccf4db86c086ac874248c387c959c2078edc9",
+      "bytes": 291918
+    }
+  ],
+  "measured": {
+    "channels": 1,
+    "duration_s": 6.08,
+    "sample_rate": 24000
+  },
+  "fake": false,
+  "note": null
+}

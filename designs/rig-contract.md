@@ -9,6 +9,19 @@ to hold a file to it. The shipped profile is `rigs/humanoid/`
 ([its README](../rigs/humanoid/README.md) has the skeleton drawn out and the
 numbers explained); this document is the contract any profile has to meet.
 
+
+**Lengths are the body's; names, hierarchy and rest rotations are not
+(2026-08-30).** `forge gen skin` fits the skeleton to what the skinner's own
+weights say this body's bones are, so a shipped body's local rest
+*translations* are its own and its sidecar records all 55 of them plus a
+`motion_scale`. What stays frozen is everything a clip binds through: the
+names, the hierarchy, and the rest **rotations** — so every clip in the
+library still binds by name path with no retarget and nothing under
+`assets/` was rebaked. The exporter therefore checks a rest translation's
+**direction** (within `[export] rest_direction_tolerance_deg = 1.0°`) and
+its length **ratio** (0.4–2.5), never its length. `designs/skin.md` is the
+design; `designs/decisions.md` carries the reasons.
+
 ## What a profile is
 
 A directory, named in `forge.toml` by `rig = "<name>"` under `[paths] rigs`
@@ -17,11 +30,11 @@ A directory, named in `forge.toml` by `rig = "<name>"` under `[paths] rigs`
 
 | Entry | What it is | Who reads it |
 |---|---|---|
-| `contract.json` | every bone in `rig.glb` node order: `name`, `parent` (index or `null`), `driven`, `rest_translation`, `rest_rotation`; plus `root`, `front`, `stature_m {reference, min, max}`, `foot_tolerance_m`, `rest_rotation_tolerance`, `driven_layout`, `reference_clip`, and `sources {glb sha256, blend sha256}`. **Generated** by `forge rig export-contract`, never typed | `forge_rig`, `forge rig check`, `forge promote body`, a game through the manifest |
+| `contract.json` | every bone in `rig.glb` node order: `name`, `parent` (index or `null`), `driven`, `rest_translation`, `rest_rotation`; plus `root`, `front`, `stature_m {reference, min, max}`, `foot_tolerance_m`, `rest_rotation_tolerance`, the four a fitted skeleton is held to — `rest_direction_tolerance_deg` 1.0, `length_ratio_min` 0.4, `length_ratio_max` 2.5, `contact_foot_tolerance_m` 0.05 — `driven_layout`, `reference_clip`, and `sources {glb sha256, blend sha256}`. **Generated** by `forge rig export-contract`, never typed | `forge_rig`, `forge rig check`, `forge promote body`, a game through the manifest |
 | `sockets.json` | named offsets from contract bones (translation in the bone's space, a rotation carrying the prop's authoring frame in) and the `authoring_frame` a prop is built in | `forge_rig`, `forge gen prop --grip/--socket`, the manifest |
 | `motion_skeleton.json` | the driven layout: the joints a motion take writes, in take order, with parents, feet, hands and the contact-column order the review reads | `forge_motion` (asserted equal to its own constants by a test), `forge gen motion review` |
 | `profile.toml` | every scalar a gate uses — `[bones]` stature band, foot tolerance, rest tolerance, reference clip; `[fit]` the T-pose gate; `[rig]` budget, dust, shell and abort fractions; `[prop]` budget and frame; `[material]` matte; `[export]` tolerances and influences; `[fingers]` layout; `[review]` thresholds — each with what it gates | `forge_gen.profile` (Python), `forge doctor` |
-| `rig.glb`, `rig.blend`, `fixture/<clip>.glb` | the skeleton as an artifact (the contract is derived from the `.glb` and carries its hash), the same skeleton as the Blender file the auto-rig opens to skin every body, and a driven-only clip carrying the rest pose so `forge gen rig-build` can rebuild the `.blend` from nothing | `forge_rig::derive_from_glb`, `forge gen rig`, `forge gen rig-build` |
+| `rig.glb`, `rig.blend`, `fixture/<clip>.glb` | the skeleton as an artifact (the contract is derived from the `.glb` and carries its hash), the same skeleton as the Blender file `forge gen prepare` opens to insert into every body, and a driven-only clip carrying the rest pose so `forge gen rig-build` can rebuild the `.blend` from nothing | `forge_rig::derive_from_glb`, `forge gen prepare`, `forge gen rig-build` |
 
 `RigProfile::load` holds the files to each other: every socket sits on a
 contract bone, the driven bones are exactly the layout's joints, and the

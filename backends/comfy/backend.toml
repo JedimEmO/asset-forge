@@ -1,0 +1,121 @@
+# ComfyUI — the host the "comfy" executor drives over HTTP. Not a generator:
+# it runs no forge module, holds no weights of its own and is not execed by
+# the launcher. `forge serve`'s comfy executor (Phase 1) posts a workflow to
+# 127.0.0.1:8188 and reads the result back; until then this directory exists
+# so `forge doctor` lists the host beside the generators, with its pin and
+# its licence. Every model on this card's tree is named by the backend that
+# runs it — acestep, moss_sfx, moss_tts — never by the host; the image-model
+# group that used to sit here left with the reference door
+# (designs/decisions.md, "The reference image stays brought", 2026-08-30).
+#
+# Described like Blender — a host program, env_kind "none", probed from the
+# outside — with one difference: ComfyUI *is* a pinned checkout, so `commit`
+# names it and probe.py holds the running service to it. The venv, the clone
+# and the models live under $PREFIX (${FORGE_BACKENDS_HOME:-~/.cache/
+# asset-forge/backends}/comfy); this directory holds the .env and .checkout
+# links, the unit file, the paths config and the Manager snapshot.
+#
+# Install traps, dated: designs/hosting.md, "ComfyUI".
+
+name = "comfy"
+role = "host"                              # not "tool": Blender is a binary a module execs; this is a service a client calls
+executor = "tool"                          # forge2.md's second-form field; today's parser keeps it in `extra`
+upstream = "https://github.com/comfyanonymous/ComfyUI"
+commit = "169fcf35a2fc163fec31338b816503ddac0d3fcf"   # v0.34.2, 2026-08-27
+license = "GPL-3.0-or-later (ComfyUI; driven over HTTP from a separate process, so nothing of it is linked into the toolkit)"
+env_kind = "none"                          # doctor probes the service, not an interpreter; .env still points at the venv the unit runs
+python = "3.12"                            # the venv the systemd unit execs
+cuda = "13.0"                              # torch 2.13.0+cu130 in that venv
+vram_gb = 0.4                              # what the idle service holds (CUDA context); the models it hosts carry their own numbers
+entry = "forge_gen.comfy"                  # where Phase 1's HTTP client will live; nothing execs a host backend's entry
+cwd = "none"
+resident = true                            # a systemd --user unit: up across calls, unlike every other backend
+
+[env]
+PYTHONNOUSERSITE = "1"
+# Every node pack that downloads from the hub reuses the cache the other
+# backends already filled; the unit sets the same value.
+HF_HOME = "${HOME}/.cache/huggingface"
+
+[server]
+host = "127.0.0.1"
+port = 8188
+health = "/system_stats"
+unit = "forge-comfy.service"               # systemctl --user; probe.py names it in its hints
+ready_timeout_s = 120
+
+[comfy]
+# The Manager is a pip package now, not a clone: ComfyUI pins it in
+# manager_requirements.txt and `--enable-manager` turns it on.
+manager_package = "comfyui_manager"
+manager_version = "4.2.2"
+frontend = "1.49.6"                        # comfyui-frontend-package, pinned by requirements.txt
+snapshot = "snapshot.json"                 # `GET /api/manager/snapshot/get_current`, committed beside this file
+base_directory = "data"                    # relative to $PREFIX: models/, input/, output/, user/, custom_nodes/
+# One custom node pack. Everything ACE-Step 1.5 needs is native to v0.34.2;
+# the three MOSS models come through TTS-Audio-Suite. The entry is
+# { repo, commit, dir, pips, nodes }: `dir` is the directory name under
+# $PREFIX/data/custom_nodes/, `pips` what the pack needs in the comfy venv
+# beyond ComfyUI's own requirements. A pack lives in four places or nowhere
+# — here, in install.sh (cloned at its pin *before* the unit starts, because
+# packs are scanned once at startup), in snapshot.json (re-fetched from the
+# Manager, never hand-edited) and in hosting.md's pins row.
+#
+# `city96/ComfyUI-GGUF` was the second, and it was here for one node:
+# `UnetLoaderGGUF`, which loaded the lean tier's Q4_K_M Qwen-Image. Nothing
+# in ACE-Step or the MOSS pack reads a .gguf, so it left with the image
+# models. What is still on a machine that installed it is named in
+# install.sh's closing summary — a fact, not an action.
+[[comfy.packs]]
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # v5.8.7, 2026-08-28
+dir = "TTS-Audio-Suite"
+license = "MIT"
+# Ten, and measured so — this row said `pips = []` until a sound was
+# actually asked for. Registration is free: all 58 classes come up with the
+# venv untouched, which is what "no pips" measured, and the Manager's
+# allow_pip_install is False, so dropping the clone in cannot run the pack's
+# install.py behind anyone's back. But MOSS-SoundEffect v2 does not *load*
+# without diffusers (AutoencoderOobleck, ConfigMixin, ModelMixin), ftfy (the
+# WAN prompter) and audiotools (the DAC VAE), each a hard import that failed
+# at POST /prompt with the card already leased (2026-08-30). Two things may
+# not come in with them: the pack's own requirements.txt (numpy<2.3.0 would
+# downgrade the host's 2.5.2) and descript-audiotools' dependencies
+# (protobuf<3.20 would downgrade the host's, which tensorboard and
+# transformers both want above it) — so audiotools alone goes in with
+# --no-deps and the seven modules its import chain reaches follow it one by
+# one. With those two avoided nothing moved: torch 2.13.0+cu130, torchaudio
+# 2.11.0, transformers 5.16.1, numpy 2.5.2 and protobuf 7.36.0 are what they
+# were. This is the same list backends/moss_sfx and backends/moss_tts carry,
+# install.sh installs and snapshot.json records: a pack lives in four places
+# or nowhere, and this was the fourth saying something else.
+pips = [
+    "diffusers", "ftfy",
+    "descript-audiotools",   # --no-deps
+    "flatten-dict", "julius", "soundfile", "ffmpy", "importlib-resources",
+    "tensorboard", "randomname",
+]
+# The six the three audio templates use, of the 58 it registers.
+nodes = [
+    "MossSoundEffectV2EngineNode",
+    "UnifiedSoundEffectsNode",
+    "MossTTSEngineNode",
+    "UnifiedTTSTextNode",
+    "UnifiedVoiceDesignerNode",
+    "CharacterVoicesNode",
+]
+note = "the three MOSS models — SoundEffect v2, TTS and VoiceGenerator — behind moss_sfx and moss_tts, downloaded into models/TTS/{moss_soundeffect_v2,moss_tts}/ and not into the HF cache. It registers no unload node at this pin AND POST /free does not unload what it loaded (22.85 -> 15.07 GB free across an sfx job; 5.4 GB resident after a voice, 7.3 GB after a speech), so `systemctl --user restart forge-comfy` is the only lever that returns the card — 4.4 s, measured 2026-08-30."
+
+# No `[[models]]` rows. The host holds no weights on its own account: the
+# ACE-Step checkpoint is `backends/acestep`'s one download, the three MOSS
+# models are fetched by the node pack on first run, and each of those rows
+# carries `store = "comfy:models/<dir>"` so doctor reads every weight on
+# this card's tree out of one list — the backend's own, never the host's.
+
+[[notices]]
+title = "ComfyUI"
+text = "GPL-3.0-or-later. It runs as its own systemd --user service and is driven over HTTP; nothing of it is imported into the toolkit, and what it writes is the project's own. Started with --disable-api-nodes, so no node in it can call a paid API or reach the internet from the graph."
+
+[[notices]]
+title = "resident service"
+text = "the unit is up across calls and holds ~0.4 GB of the card for its CUDA context even with no model loaded; a model a graph loaded stays resident until the workflow's unload node or POST /free, and the MOSS pack has neither — `systemctl --user restart forge-comfy` is the only lever that returns what it loaded. Stop it (systemctl --user stop forge-comfy) before a 1024-cubed lift."

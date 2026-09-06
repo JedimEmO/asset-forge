@@ -52,6 +52,13 @@ pub const SCHEMA: u32 = 1;
 /// edit.
 pub const DRIFT_TOLERANCE: f32 = 1e-5;
 
+/// Below this a rest translation has no direction to compare: parent and
+/// child sit in the same place, and the angle between two arrows of length
+/// zero is not a measurement. Mirrors `rest_zero_length_m` in
+/// `rigs/humanoid/profile.toml`; it is not in the contract because it is a
+/// property of floating point, not of a body plan.
+pub const REST_ZERO_LENGTH_M: f32 = 1e-4;
+
 /// The contract file inside a profile directory.
 pub const CONTRACT_FILE: &str = "contract.json";
 /// The sockets file inside a profile directory.
@@ -197,6 +204,27 @@ pub struct Contract {
     pub foot_tolerance_m: f32,
     /// Per-component quaternion gap above which a rest rotation is a re-pose.
     pub rest_rotation_tolerance: f32,
+    /// How far a bone's local rest translation may point off the contract's,
+    /// in degrees.
+    ///
+    /// **Lengths are per body; directions are not.** A fitted skeleton takes
+    /// each bone's length from the mesh it is skinned to and keeps the frozen
+    /// direction, so this is the rule that replaced the exporter's millimetre
+    /// translation check: the arrow may get longer or shorter, it may not
+    /// turn.
+    pub rest_direction_tolerance_deg: f32,
+    /// The shortest a bone may be as a fraction of the contract's length for
+    /// it. Below it the fit did not measure a body, it collapsed a limb.
+    pub length_ratio_min: f32,
+    /// The longest a bone may be as a fraction of the contract's length.
+    pub length_ratio_max: f32,
+    /// How far the planted foot's own lowest vertex may sit from `y = 0` on
+    /// a contact frame of the reference clip.
+    ///
+    /// Not [`Contract::foot_tolerance_m`], which measures the rest pose's
+    /// lowest vertex anywhere in the mesh: these are different questions and
+    /// the spike measured them 8 cm apart on one body.
+    pub contact_foot_tolerance_m: f32,
     /// The driven layout's name; must equal [`MotionSkeleton::name`].
     pub driven_layout: String,
     /// The library clip a rig check binds to a subject: it drives every
@@ -455,15 +483,52 @@ pub struct DerivedRig {
     pub bones: Vec<DerivedBone>,
 }
 
-/// Re-derive the bone table from a rig `.glb`, with the rules the exporter
-/// uses: the file's single scene has a single root node, the armature; bones
-/// are every remaining non-mesh node, kept in glb node order; parents are
-/// re-indexed into that list, with the armature parent becoming `None`.
+impl DerivedRig {
+    /// Index of a derived bone by exact name.
+    #[must_use]
+    pub fn find(&self, name: &str) -> Option<usize> {
+        self.bones.iter().position(|bone| bone.name == name)
+    }
+
+    /// A bone's rest transform in armature space, by chaining every parent up
+    /// to the root — the same arithmetic [`Contract::rest_world`] does, on
+    /// the artifact instead of the file.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is not a valid index into [`DerivedRig::bones`], or
+    /// the table holds a parent cycle, which [`derive_from_glb`] cannot
+    /// produce from a glb node tree.
+    #[must_use]
+    pub fn rest_world(&self, index: usize) -> (Vec3, Quat) {
+        let bone = &self.bones[index];
+        let local_t = Vec3::from_array(bone.rest_translation);
+        let local_r = Quat::from_array(bone.rest_rotation);
+        match bone.parent {
+            None => (local_t, local_r),
+            Some(parent) => {
+                let (pt, pr) = self.rest_world(parent);
+                (pt + pr * local_t, pr * local_r)
+            }
+        }
+    }
+}
+
+/// Re-derive the bone table from a rig or body `.glb`: bones are every
+/// non-mesh node under the armature, kept in glb node order, with parents
+/// re-indexed into that list and the armature parent becoming `None`.
+///
+/// **A rig artifact and a body are both read here.** The profile's `rig.glb`
+/// holds the armature alone; a skinned body holds a mesh node beside it, and
+/// glTF exporters put that node where they like — beside the armature in the
+/// scene, or under it. So the armature is found rather than assumed: it is
+/// the one scene root that carries no mesh of its own and has children. A
+/// file with no such root, or with two, is not a rig and says so.
 ///
 /// # Errors
 ///
-/// The bytes are not a glb; the scene or root is not lone; a bone hangs
-/// outside the armature; a node is unnamed.
+/// The bytes are not a glb; the file has no lone scene; no single armature
+/// root; a bone hangs outside the armature; a node is unnamed.
 pub fn derive_from_glb(bytes: &[u8]) -> Result<DerivedRig> {
     let gltf::Gltf { document, .. } =
         gltf::Gltf::from_slice(bytes).map_err(|e| RigError::Glb(e.to_string()))?;
@@ -476,10 +541,21 @@ pub fn derive_from_glb(bytes: &[u8]) -> Result<DerivedRig> {
         )));
     };
     let roots: Vec<gltf::Node<'_>> = scene.nodes().collect();
-    let [root] = roots.as_slice() else {
+    let armatures: Vec<&gltf::Node<'_>> = roots
+        .iter()
+        .filter(|node| node.mesh().is_none() && node.children().len() > 0)
+        .collect();
+    let [root] = armatures.as_slice() else {
         return Err(RigError::Hierarchy(format!(
-            "{} scene roots; a rig's scene holds exactly one, the armature",
-            roots.len()
+            "{} of the scene's {} root node(s) could be the armature; a rig has exactly one \
+             root that carries no mesh and has children (roots: {})",
+            armatures.len(),
+            roots.len(),
+            roots
+                .iter()
+                .map(|node| node.name().unwrap_or("<unnamed>"))
+                .collect::<Vec<_>>()
+                .join(", ")
         )));
     };
     let armature = root.index();
@@ -594,6 +670,126 @@ pub fn check_drift(contract: &Contract, derived: &[DerivedBone]) -> Vec<String> 
         }
     }
     drift
+}
+
+/// How one bone's local rest translation compares to the contract's.
+///
+/// Two numbers, because a fitted skeleton is allowed exactly one of them:
+/// the **direction** is frozen — every clip's rotation curves were authored
+/// against it — and the **length** belongs to the body. A comparison that
+/// collapsed the two into one distance would refuse a shorter thigh for the
+/// same reason it refuses a rotated one, which is the rule this replaced.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RestComparison {
+    /// Both translations are shorter than [`REST_ZERO_LENGTH_M`]: parent and
+    /// child sit in the same place in both, so there is no direction to
+    /// compare and no ratio to take. Two bones at one point agree.
+    BothZero {
+        /// The contract's length, metres.
+        reference_m: f32,
+        /// The body's length, metres.
+        found_m: f32,
+    },
+    /// Exactly one of them is shorter than [`REST_ZERO_LENGTH_M`]. A bone
+    /// that had a length and lost it, or the other way about, is not a fit —
+    /// it is a different skeleton, and no angle or ratio describes it.
+    OneZero {
+        /// The contract's length, metres.
+        reference_m: f32,
+        /// The body's length, metres.
+        found_m: f32,
+    },
+    /// Both are long enough to have a direction.
+    Measured {
+        /// Angle between the two arrows, degrees.
+        direction_deg: f32,
+        /// The body's length over the contract's.
+        ratio: f32,
+        /// The contract's length, metres.
+        reference_m: f32,
+        /// The body's length, metres.
+        found_m: f32,
+    },
+}
+
+impl RestComparison {
+    /// The angle between the two, when both had one.
+    #[must_use]
+    pub const fn direction_deg(self) -> Option<f32> {
+        match self {
+            Self::Measured { direction_deg, .. } => Some(direction_deg),
+            Self::BothZero { .. } | Self::OneZero { .. } => None,
+        }
+    }
+
+    /// The length ratio, when both had one.
+    #[must_use]
+    pub const fn ratio(self) -> Option<f32> {
+        match self {
+            Self::Measured { ratio, .. } => Some(ratio),
+            Self::BothZero { .. } | Self::OneZero { .. } => None,
+        }
+    }
+
+    /// The body's length, metres — known in every case.
+    #[must_use]
+    pub const fn found_m(self) -> f32 {
+        match self {
+            Self::BothZero { found_m, .. }
+            | Self::OneZero { found_m, .. }
+            | Self::Measured { found_m, .. } => found_m,
+        }
+    }
+
+    /// The contract's length, metres — known in every case.
+    #[must_use]
+    pub const fn reference_m(self) -> f32 {
+        match self {
+            Self::BothZero { reference_m, .. }
+            | Self::OneZero { reference_m, .. }
+            | Self::Measured { reference_m, .. } => reference_m,
+        }
+    }
+}
+
+/// Compare a bone's local rest translation against the contract's.
+///
+/// Pure arithmetic on two vectors, so the export gate, `rig check` and
+/// `verify` all ask one question in one place and phrase the answer the same
+/// way.
+#[must_use]
+pub fn compare_rest_translation(reference: [f32; 3], found: [f32; 3]) -> RestComparison {
+    let a = Vec3::from_array(reference);
+    let b = Vec3::from_array(found);
+    let reference_m = a.length();
+    let found_m = b.length();
+    match (
+        reference_m < REST_ZERO_LENGTH_M,
+        found_m < REST_ZERO_LENGTH_M,
+    ) {
+        (true, true) => RestComparison::BothZero {
+            reference_m,
+            found_m,
+        },
+        (true, false) | (false, true) => RestComparison::OneZero {
+            reference_m,
+            found_m,
+        },
+        (false, false) => RestComparison::Measured {
+            // Clamped before the acos: a dot product of 1.0000001 out of
+            // float noise would otherwise come back NaN and read as a bone
+            // pointing nowhere.
+            direction_deg: a
+                .normalize()
+                .dot(b.normalize())
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees(),
+            ratio: found_m / reference_m,
+            reference_m,
+            found_m,
+        },
+    }
 }
 
 /// The contract bones a file does not carry, in contract order. `present` is
@@ -1156,6 +1352,10 @@ mod tests {
             },
             foot_tolerance_m: 0.05,
             rest_rotation_tolerance: 1e-3,
+            rest_direction_tolerance_deg: 1.0,
+            length_ratio_min: 0.4,
+            length_ratio_max: 2.5,
+            contact_foot_tolerance_m: 0.05,
             driven_layout: String::from("two"),
             reference_clip: String::from("walk"),
             sources: Sources {
@@ -1269,5 +1469,85 @@ mod tests {
             sha256_hex(b""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    /// The whole of the fitted-skeleton rule, as arithmetic: a bone that got
+    /// shorter is a fit, a bone that turned is a different skeleton, and two
+    /// bones at one point are neither.
+    #[test]
+    fn a_bone_may_change_length_but_not_direction() {
+        // Half as long, pointing exactly where it did.
+        let shorter = compare_rest_translation([0.0, 0.4, 0.0], [0.0, 0.2, 0.0]);
+        assert_eq!(shorter.direction_deg(), Some(0.0));
+        assert!((shorter.ratio().expect("a ratio") - 0.5).abs() < 1e-6);
+
+        // Ten degrees off, same length: the thing the direction rule exists
+        // to refuse.
+        let turned = compare_rest_translation(
+            [0.0, 0.4, 0.0],
+            [
+                0.4 * 10f32.to_radians().sin(),
+                0.4 * 10f32.to_radians().cos(),
+                0.0,
+            ],
+        );
+        let deg = turned.direction_deg().expect("an angle");
+        assert!((deg - 10.0).abs() < 1e-3, "{deg}");
+        assert!((turned.ratio().expect("a ratio") - 1.0).abs() < 1e-4);
+
+        // Float noise on an identical pair must not read as a turn, and must
+        // never come back NaN through the acos.
+        let noise = compare_rest_translation([0.0, 0.170_968_77, 0.0], [0.0, 0.170_968_77, 0.0]);
+        let deg = noise.direction_deg().expect("an angle");
+        assert!(deg.is_finite() && deg < 1e-3, "{deg}");
+    }
+
+    /// The zero-length case, which has no angle and no ratio: saying `0.0`
+    /// for either would be a measurement nobody made.
+    #[test]
+    fn two_bones_at_one_point_have_no_direction_and_no_ratio() {
+        let both = compare_rest_translation([0.0, 0.0, 0.0], [0.0, 1e-9, 0.0]);
+        assert!(matches!(both, RestComparison::BothZero { .. }), "{both:?}");
+        assert_eq!(both.direction_deg(), None);
+        assert_eq!(both.ratio(), None);
+
+        let one = compare_rest_translation([0.0, 0.0, 0.0], [0.0, 0.2, 0.0]);
+        assert!(matches!(one, RestComparison::OneZero { .. }), "{one:?}");
+        assert_eq!(one.direction_deg(), None);
+        assert_eq!(one.ratio(), None);
+        assert!((one.found_m() - 0.2).abs() < 1e-6);
+        assert!(one.reference_m() < REST_ZERO_LENGTH_M);
+    }
+
+    /// [`derive_from_glb`] reads both shapes a rig comes in: the profile's
+    /// `rig.glb`, which is an armature alone, and a skinned body, which
+    /// carries a mesh node beside it. The second is what a `promote body`
+    /// re-derives the sidecar's bone table from, so it cannot be the shape
+    /// that refuses.
+    #[test]
+    fn a_rig_and_a_skinned_body_both_derive() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../rigs/humanoid");
+        let profile = RigProfile::load(&dir).expect("the humanoid profile");
+
+        let rig = fs::read(profile.glb_path()).expect("rig.glb");
+        let bare = derive_from_glb(&rig).expect("the armature alone derives");
+        assert_eq!(bare.armature, fixture::ARMATURE_NODE);
+        assert_eq!(bare.bones.len(), profile.contract.bones.len());
+
+        // The mannequin is a body: an armature plus a skinned mesh.
+        let body = fixture::mannequin_glb(&profile.contract).expect("the mannequin");
+        let derived = derive_from_glb(&body).expect("a body with a mesh beside the armature");
+        assert_eq!(derived.armature, fixture::ARMATURE_NODE);
+        assert_eq!(derived.bones.len(), profile.contract.bones.len());
+        for (found, spec) in derived.bones.iter().zip(&profile.contract.bones) {
+            assert_eq!(found.name, spec.name, "bone order is glb node order");
+        }
+
+        // And the world arithmetic agrees with the contract's own, which is
+        // what `motion_scale` is a ratio of.
+        let hips = derived.find(&profile.contract.root).expect("Hips");
+        let (found, _) = derived.rest_world(hips);
+        let (spec, _) = profile.contract.rest_world(profile.contract.root_index());
+        assert!((found.y - spec.y).abs() < 1e-5, "{found:?} vs {spec:?}");
     }
 }

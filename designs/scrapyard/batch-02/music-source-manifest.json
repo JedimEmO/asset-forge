@@ -1,0 +1,17 @@
+{
+  "source": "/home/mmy/repos/personal/gamedev/asset-forge/assets-src/audio/scrapyard_music.py",
+  "source_sha256": "d3c0e99ccddaa7d7ac3c7502f23b3f392601c3b87cf473bfdd6e2b69ead8b8c3",
+  "method": "Original analytic synthesis; circular event mixing; no audio inputs.",
+  "output": "out/audio/synth/scrapyard_combat_loop.wav",
+  "sha256": "8d5d25665a0b18f4712e8d260f03836d639948044fabae303a56272f0cc07c7b",
+  "bpm": 120,
+  "bars": 16,
+  "duration_s": 32.0,
+  "sample_rate": 48000,
+  "channels": 2,
+  "loop": true,
+  "boundary_step_linear": [
+    3.0517578125e-05,
+    9.1552734375e-05
+  ]
+}

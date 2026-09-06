@@ -1,0 +1,86 @@
+{
+  "1": {
+    "class_type": "MossTTSEngineNode",
+    "_meta": {
+      "title": "MOSS-TTS Local 1.7B: PATCH:language PATCH:temperature PATCH:top_p PATCH:top_k PATCH:repetition_penalty PATCH:max_new_tokens — sampler_preset Custom, so the knobs the record names are the knobs that ran; the 8B Delay model OOMs on 24 GB (hosting.md)"
+    },
+    "inputs": {
+      "model_variant": "1.7B",
+      "multi_speaker_mode": "Custom Character Switching",
+      "device": "auto",
+      "language": "Auto",
+      "duration_tokens": 0,
+      "sampler_preset": "Custom",
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "top_k": 50,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 4096,
+      "chunk_minutes": 0
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "PATCH:reference=audio — the voice's ref.wav, by the name POST /upload/image filed it under, never a path"
+    },
+    "inputs": {
+      "audio": ""
+    }
+  },
+  "3": {
+    "class_type": "CharacterVoicesNode",
+    "_meta": {
+      "title": "PATCH:voice_text=reference_text \u2014 the transcript the cloner asks for; a designed voice records it under voice.json params.text. The reference itself travels as an uploaded file, decoded in the host's own venv (av, not torchcodec)"
+    },
+    "inputs": {
+      "voice_name": "none",
+      "reference_text": "",
+      "trim_start": 0.0,
+      "trim_end": 0.0,
+      "customized": false,
+      "opt_audio_input": [
+        "2",
+        0
+      ]
+    }
+  },
+  "4": {
+    "class_type": "UnifiedTTSTextNode",
+    "_meta": {
+      "title": "PATCH:text PATCH:seed — enable_audio_cache is off on purpose: the pack's own cache would hand back an earlier render as a re-roll"
+    },
+    "inputs": {
+      "TTS_engine": [
+        "1",
+        0
+      ],
+      "text": "",
+      "narrator_voice": "none",
+      "seed": 0,
+      "opt_narrator": [
+        "3",
+        0
+      ],
+      "enable_chunking": true,
+      "max_chars_per_chunk": 400,
+      "chunk_combination_method": "auto",
+      "silence_between_chunks_ms": 100,
+      "enable_audio_cache": false,
+      "batch_size": 0
+    }
+  },
+  "5": {
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "PATCH:filename_prefix — SaveAudio writes FLAC; the client transcodes to the PCM WAV the record measures"
+    },
+    "inputs": {
+      "audio": [
+        "4",
+        0
+      ],
+      "filename_prefix": "audio/forge"
+    }
+  }
+}

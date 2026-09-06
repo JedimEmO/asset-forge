@@ -957,3 +957,247 @@ fn two_concurrent_promotes_of_one_name_cannot_both_land() {
         "the lock is released"
     );
 }
+
+// ------------------------------------------------------------- schema 2 ---
+
+/// A body's record now carries the body's own skeleton, and it is read out
+/// of the `.glb` being filed rather than out of anything that describes it.
+/// The round trip is byte-stable and the reader refuses a key it does not
+/// know, which is what makes the block a claim rather than a note.
+#[test]
+fn a_body_records_its_own_skeleton_and_the_reader_refuses_an_unknown_key() {
+    let (dir, project) = temp_project();
+    let glb = mannequin(&project, dir.path());
+    let promoted = promote_body(&project, &body_request("mannequin", &glb)).expect("promote");
+
+    let body = promoted.record.body.as_ref().expect("a body block");
+    let profile = project.profile().expect("profile");
+    assert_eq!(body.bones.len(), 55);
+    for (stated, spec) in body.bones.iter().zip(&profile.contract.bones) {
+        assert_eq!(stated.name, spec.name, "bones are in contract order");
+    }
+    assert!(
+        (body.motion_scale - 1.0).abs() < 1e-6,
+        "the mannequin is the profile's own skeleton: {}",
+        body.motion_scale
+    );
+
+    let path = sidecar::path_for(&promoted.asset);
+    let on_disk = std::fs::read(&path).expect("read");
+    let reloaded = sidecar::load(&path).expect("reload");
+    assert_eq!(reloaded, promoted.record);
+    assert_eq!(reloaded.to_bytes().expect("bytes"), on_disk);
+    assert!(
+        String::from_utf8_lossy(&on_disk).contains("\"schema\": 2"),
+        "the record declares the schema it was written at"
+    );
+
+    let mut value: serde_json::Value = serde_json::from_slice(&on_disk).expect("json");
+    value["body"]["legs"] = serde_json::json!(2);
+    let bytes = serde_json::to_vec(&value).expect("bytes");
+    let error = forge_library::schema::Sidecar::from_slice(&bytes, &path)
+        .expect_err("an unknown key is refused");
+    assert!(error.to_string().contains("legs"), "{error}");
+}
+
+/// A skeleton belongs to a body and to nothing else. A clip that claims one
+/// is refused at the reader *and* at the writer, because a hand-typed
+/// sidecar giving a barrel bone lengths would reach a game as a manifest row
+/// it tries to animate.
+#[test]
+fn a_body_block_on_any_other_kind_is_refused() {
+    let (dir, project) = temp_project();
+    let glb = mannequin(&project, dir.path());
+    let promoted = promote_body(&project, &body_request("mannequin", &glb)).expect("promote");
+    let skeleton = promoted.record.body.clone().expect("a body block");
+
+    let mut clip = forge_library::schema::Sidecar::new(Kind::Clip, "walk");
+    clip.content_hash = String::from("sha256:00");
+    clip.body = Some(skeleton);
+    let path = dir.path().join("walk.json");
+    let error = sidecar::save(&path, &clip).expect_err("the writer refuses it");
+    assert!(error.to_string().contains("body block"), "{error}");
+    assert!(!path.exists(), "and nothing was written");
+
+    let bytes = serde_json::to_vec(&clip).expect("bytes");
+    let error =
+        forge_library::schema::Sidecar::from_slice(&bytes, &path).expect_err("the reader too");
+    assert!(error.to_string().contains("body block"), "{error}");
+}
+
+/// The migration measures rather than assumes: it re-derives all 55 rest
+/// translations from the shipped `.glb` and leaves everything the record
+/// already said alone, provenance included. Then it does nothing on the
+/// second run, which is what makes it safe in a recipe a human runs twice.
+#[test]
+fn migrating_a_schema_one_body_measures_its_skeleton_and_touches_nothing_else() {
+    let (dir, project) = temp_project();
+    let glb = mannequin(&project, dir.path());
+    let promoted = promote_body(&project, &body_request("mannequin", &glb)).expect("promote");
+    let path = sidecar::path_for(&promoted.asset);
+
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("json");
+    value["schema"] = serde_json::json!(1);
+    value["provenance"] = serde_json::json!("reconstructed");
+    value.as_object_mut().expect("object").remove("body");
+    std::fs::write(&path, serde_json::to_vec_pretty(&value).expect("bytes")).expect("write");
+
+    let report = migrate::run(&project, false).expect("migrate");
+    assert!(report.ok(), "{}", report.render(false));
+    assert_eq!(report.count(migrate::Outcome::Migrated), 1);
+
+    let migrated = sidecar::load(&path).expect("reload");
+    assert_eq!(migrated.schema, forge_library::schema::SCHEMA);
+    assert_eq!(migrated.provenance, Provenance::Reconstructed);
+    let body = migrated.body.as_ref().expect("a measured skeleton");
+    assert_eq!(body.bones.len(), 55);
+    assert!(
+        (body.motion_scale - 1.0).abs() < f32::EPSILON,
+        "a schema-1 body was scaled to the profile, which is what 1.0 means"
+    );
+    assert_eq!(Some(body), promoted.record.body.as_ref());
+
+    let again = migrate::run(&project, false).expect("migrate");
+    assert!(!again.changed(), "{}", again.render(false));
+}
+
+/// Verify re-derives the claim on every run. Two millimetres of drift
+/// between the record and the file is a failure, and so is a motion scale
+/// nobody measured — the same shape of claim `content_hash` already makes.
+#[test]
+fn verify_re_derives_a_body_skeleton_and_fails_on_drift() {
+    let (dir, project) = temp_project();
+    let glb = mannequin(&project, dir.path());
+    let promoted = promote_body(&project, &body_request("mannequin", &glb)).expect("promote");
+    assert!(verify::library(&project).ok());
+
+    let path = sidecar::path_for(&promoted.asset);
+    let mut record = promoted.record.clone();
+    let bone = record
+        .body
+        .as_mut()
+        .expect("a body block")
+        .bones
+        .iter_mut()
+        .find(|bone| bone.name == "LeftFoot")
+        .expect("LeftFoot");
+    bone.rest_translation[1] += 0.002;
+    sidecar::save(&path, &record).expect("save");
+    let report = verify::library(&project);
+    assert!(!report.ok(), "{report}");
+    assert!(
+        report.to_string().contains("LeftFoot: rest translation"),
+        "{report}"
+    );
+
+    let mut record = promoted.record.clone();
+    record.body.as_mut().expect("a body block").motion_scale = 0.9;
+    sidecar::save(&path, &record).expect("save");
+    let report = verify::library(&project);
+    assert!(!report.ok(), "{report}");
+    assert!(report.to_string().contains("motion_scale"), "{report}");
+}
+
+/// The manifest publishes the scale a consumer applies, and `bundle` reads
+/// it from the body's own record when the caller states none — a default of
+/// 1.0 there would have walked every fitted body at the profile's stride
+/// with nothing to say it had.
+#[test]
+fn a_bundle_takes_its_motion_scale_from_the_body_when_no_flag_states_one() {
+    let (dir, project) = temp_project();
+    let glb = mannequin(&project, dir.path());
+    let promoted = promote_body(&project, &body_request("mannequin", &glb)).expect("promote");
+
+    let mut fitted = promoted.record.clone();
+    fitted.body.as_mut().expect("a body block").motion_scale = 0.978;
+    sidecar::save(&sidecar::path_for(&promoted.asset), &fitted).expect("save");
+    manifest::write(&project).expect("manifest");
+
+    let bytes = std::fs::read(project.manifest_path()).expect("manifest");
+    let manifest = forge_manifest::Manifest::from_slice(&bytes).expect("parses");
+    assert!(
+        (manifest.body("mannequin").expect("listed").motion_scale - 0.978).abs() < 1e-6,
+        "the manifest carries what the record measured"
+    );
+
+    let clip = promote_clip(&project, &clip_request("roll", roll_recipe(), false))
+        .expect("a clip to bundle");
+    let out = dir.path().join("hand_off.glb");
+    let bundled = forge_library::bundle::write(
+        &project,
+        &forge_library::bundle::BundleRequest {
+            body: String::from("mannequin"),
+            clips: vec![String::from("roll")],
+            out: out.clone(),
+            motion_scale: None,
+            created_by: Actor::Human,
+        },
+    )
+    .expect("the bundle");
+    assert!(
+        (bundled.record.motion_scale - 0.978).abs() < 1e-6,
+        "{}",
+        bundled.record.motion_scale
+    );
+    assert!(
+        bundled
+            .record
+            .motion_scale_source
+            .contains("mannequin.json"),
+        "the record says where the number came from: {}",
+        bundled.record.motion_scale_source
+    );
+    assert!(clip.asset.is_file());
+
+    let stated = forge_library::bundle::write(
+        &project,
+        &forge_library::bundle::BundleRequest {
+            body: String::from("mannequin"),
+            clips: vec![String::from("roll")],
+            out,
+            motion_scale: Some(1.5),
+            created_by: Actor::Human,
+        },
+    )
+    .expect("the bundle");
+    assert!((stated.record.motion_scale - 1.5).abs() < 1e-9);
+    assert_eq!(stated.record.motion_scale_source, "stated by the caller");
+}
+
+#[test]
+fn music_loop_recipe_and_source_survive_promotion() {
+    let (dir, project) = temp_project();
+    let wav = dir.path().join("loop.wav");
+    let source = dir.path().join("source.wav");
+    write_sine_wav(&wav, 0.25);
+    write_sine_wav(&source, 1.0);
+    let source_sha = forge_library::hash::sha256_file(&source).expect("hash");
+    let recipe = serde_json::json!({"start_s": 0.1, "duration_s": 0.25, "crossfade_s": 0.05, "algorithm": "linear_wrap_pcm16_v1", "applied": true});
+    let value = serde_json::json!({"forge_record": 2, "kind": "music", "tool": "ace_step", "created": "2026-09-05", "created_by": "human",
+        "inputs": [{"role": "loop_source", "path": "source.wav", "sha256": source_sha}],
+        "params": {"duration_s": 1.0, "gain_db": -6, "thinking": false, "format": "wav", "loop": recipe}});
+    let run = GeneratorRecord::from_slice(
+        &serde_json::to_vec(&value).expect("json"),
+        Path::new("loop.json"),
+    )
+    .expect("record");
+    let mut request = audio_request(Kind::Music, "loop", &wav, false);
+    request.record = Some(run);
+    let promoted = promote_audio(&project, &request).expect("promote");
+    assert_eq!(promoted.record.source.path.as_deref(), Some("source.wav"));
+    assert_eq!(
+        promoted.record.source.sha256.as_deref(),
+        Some(source_sha.as_str())
+    );
+    let Generator::AceStep(params) = promoted.record.generator.expect("generator") else {
+        panic!("music");
+    };
+    assert_eq!(params.gain_db, Some(-6));
+    assert_eq!(params.thinking, Some(false));
+    assert_eq!(params.duration_s, Some(1.0));
+    assert_eq!(
+        serde_json::to_value(params.r#loop.expect("loop")).expect("json"),
+        recipe
+    );
+}

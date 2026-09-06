@@ -1,0 +1,37 @@
+{
+  "schema": 2,
+  "kind": "sfx",
+  "name": "relay_plasma",
+  "prompt": "A single massive science fiction plasma detonation, immediate cracking electric impact, deep sub bass boom, sizzling electrical debris dispersing into a short clean tail. No music or voices.",
+  "tags": [],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_sound_effect",
+    "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+    "seed": 81,
+    "duration_s": 2.0,
+    "steps": 100,
+    "cfg": 4.0
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 2.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:00b9263d970696fdf38d7553abbbd1c8ae0e2c0143a0aa90c9d4286a1d0bc725",
+  "note": "Signal and plot reviewed for attack, tail and clipping. New playable audio candidate; semantic and performance judgment remains with the user."
+}

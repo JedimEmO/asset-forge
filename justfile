@@ -19,6 +19,10 @@
 
 forge := justfile_directory() / "target/debug/forge"
 
+# Rustup discovers toolchains from cwd, not --manifest-path. Keep external-game
+# recipes on this checkout's compiler instead of rebuilding with the user's default.
+export RUSTUP_TOOLCHAIN := shell("sed -n 's/^channel *= *\"\\(.*\\)\"/\\1/p' \"$1/rust-toolchain.toml\"", justfile_directory())
+
 default:
     @just --justfile {{justfile()}} --list
 
@@ -33,6 +37,13 @@ _build:
 
 # ------------------------------------------------------------------ setup --
 
+# The kind-shaped front door is `forge setup [kind…]`: it prints one screen —
+# per chosen kind the backends, their disk, the total and every licence fact
+# in full — before a byte downloads, asks once, records what you accepted in
+# $FORGE_BACKENDS_HOME/licences.json, and skips every backend doctor already
+# calls ok. This recipe is the backend-shaped door under it, for installing
+# or adopting one at a time.
+#
 # `--adopt-env DIR --adopt-checkout DIR` onboard an install that already
 # exists; `--no-models` leaves the weights to the first run; `--yes` accepts
 # every licence prompt without a TTY (nvdiffrast's non-commercial one is
@@ -41,36 +52,32 @@ _build:
 # the bill first and refuses to start without `--yes`.
 #
 # Install one backend under backends/<name>/: `just setup trellis2 --yes`
-setup backend="all" *flags:
+setup backend="all" *flags: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
     if [ "{{backend}}" = all ]; then
-        # The bill, before anything is fetched. Weight sizes are the measured
-        # ones from backends/README.md and the backend.toml notes; the env and
-        # clone trees on top are estimates. Everything heavy goes under
-        # ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends} and the HF cache.
-        cat <<'BILL'
-    `just setup` installs all five backends. Disk, before you start:
-
-      trellis2   conda env (CUDA 12.4, torch cu124) + TRELLIS.2-4B + DINOv3      ~20 GB
-      ardy       venv + clone + text encoder (~16 GB downloaded, ~31 GB written) ~35 GB
-      acestep    venv + patched clone + the minimal model set (~7.3 GB)          ~10 GB
-      moss_sfx   venv + MOSS-SoundEffect-v2.0 (~11 GB)                           ~12 GB
-      moss_tts   venv + MOSS-TTS 4B (~8 GB) + the voice designer (~4 GB)         ~13 GB
-
-      total      ~80 GB and change, under ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends}
-                 and the Hugging Face cache. `--no-models` defers each backend's
-                 weights to its first generate.
-
-    BILL
+        # The bill, before anything is fetched — printed by the door that
+        # knows it. A heredoc here said `acestep ~10 GB, moss_sfx venv +
+        # ~11 GB, moss_tts 4B ~8 GB` long after none of those was true, and
+        # a bill nobody can re-derive is exactly the drift `forge setup`
+        # exists to stop: every weights figure it prints is the sum of that
+        # backend's own `[[models]] gb`.
+        "{{forge}}" setup props characters clips sfx music voice --dry-run || true
+        echo
+        echo "That screen is 'forge setup''s own, for all six kinds. This recipe is the" >&2
+        echo "backend-shaped door under it: it runs each backends/*/install.sh in turn with" >&2
+        echo "the flags you passed, which is NOT what 'forge setup' does — that one installs" >&2
+        echo "only what your project's [make] chose, tells the comfy host which model group" >&2
+        echo "to fetch, and hands an installer --yes only for licences you named." >&2
         case " {{flags}} " in
             *" --yes "*|*" -y "*) ;;
             *)
-                echo "setup all fetches the ~80 GB above and accepts licence prompts along the way." >&2
-                echo "Re-run as \`just setup all --yes\` after reading the bill (add --no-models to" >&2
+                echo >&2
+                echo "Re-run as 'just setup all --yes' after reading the bill (add --no-models to" >&2
                 echo "make the envs now and download weights on first use), or take one backend at" >&2
-                echo "a time: \`just setup trellis2 --yes\`." >&2
+                echo "a time: 'just setup trellis2 --yes'. 'forge setup' is the kind-shaped door," >&2
+                echo "and the one that asks about each licence by name." >&2
                 exit 2 ;;
         esac
         for script in backends/*/install.sh; do
@@ -91,10 +98,15 @@ setup backend="all" *flags:
 install:
     cargo install --path {{justfile_directory()}}/crates/forge --locked
 
-# ok | partial | missing | broken per backend; exits 1 if any is not ok —
-# partial means the env runs but a weight is not cached, and the first
-# generate through it would download for minutes. `--json` for a machine,
-# `--quick` to skip the in-env probes (seconds each).
+# Five words per backend: ok | partial | missing | broken | off. `partial`
+# means the env runs but a weight is not cached, and the first generate
+# through it would download for minutes. `off` is not a probe result — it is
+# `[make]` in forge.toml not having chosen the kind, so the row is never
+# probed (which is what makes this fast on a props-only project), is printed
+# with the line that turned it off, and never votes on the exit code.
+# **Exits 1 only while a CHOSEN backend is not ok**; a project at tier
+# `fake`, or with nothing chosen, reads all-off and exits 0.
+# `--json` for a machine, `--quick` to skip the in-env probes (seconds each).
 #
 # Every backend, Blender, ffmpeg, the GPU and the rig profile in one table.
 [no-exit-message]
@@ -102,9 +114,12 @@ doctor *flags: _build
     {{forge}} doctor {{flags}}
 
 # Look before you spend: the generators do not share 24 GB, and a second one
-# started blind ends in an OOM, not a queue. Exits 1 when the largest backend
-# (TRELLIS.2 at 1024³, 22 GB) would not fit in what is free, naming who holds
-# the rest — `forge gen music --stop-server` is the usual answer.
+# started blind ends in an OOM, not a queue. Exits 1 when the largest chosen
+# backend would not fit in what is free, naming who holds the rest.
+# `forge gpu --free` is the door — and for anything TTS-Audio-Suite loaded
+# it is not enough: the pack has no unload node at this pin and POST /free
+# does not touch its models, so `systemctl --user restart forge-comfy` (4.4 s,
+# measured) is the lever. Native ACE-Step gives the card back by itself.
 #
 # Who holds the GPU right now.
 [no-exit-message]
@@ -125,6 +140,45 @@ rig: _build
     cargo run -q --manifest-path {{justfile_directory()}}/Cargo.toml -p forge_rig --example export_contract -- {{justfile_directory()}}/rigs/humanoid
     {{forge}} rig fixture out/fixture/mannequin.glb
 
+# ------------------------------------------------------------------ serve --
+
+# One process that is the agent's door and the human's monitor: the queue,
+# the card lock, the job table and both executors. The CLI is a client of it
+# when one is up and runs in-process otherwise, so `just sfx` at a terminal
+# and an agent's `generate_audio` go through one queue and cannot race for
+# the card. It writes out/serve/daemon.json — the port and the token a
+# client needs — and serves MCP over streamable HTTP at /mcp.
+#
+# `just serve` starts it in its own process group, waits for it to write
+# out/serve/daemon.json, prints the port and comes back to the shell;
+# `just serve --foreground` is the only mode that stays in this terminal.
+#
+# Start the daemon: `just serve` (add --foreground to keep it in this shell).
+serve *flags: _build
+    {{forge}} serve {{flags}}
+
+# A job in flight is CANCELLED, not drained: the daemon may not exit with a
+# generator still on the card, because the card lock goes with it and the
+# next door would take the lease against a running generate. The row says
+# `cancelled` with the note, and partial outputs under out/ are left.
+#
+# Stop the daemon.
+stop *flags: _build
+    {{forge}} stop {{flags}}
+
+# Queued, running, done, failed, with what each one made and how long it took.
+#
+# Every job the daemon knows.
+jobs *flags: _build
+    {{forge}} jobs {{flags}}
+
+# The last thing a generate said before it stopped saying anything is
+# usually the answer.
+#
+# One job's log, tailed: `just job-log j-20260830-141207-3f9a`
+job-log job *flags: _build
+    {{forge}} job log {{job}} {{flags}}
+
 # --------------------------------------------------------------- generate --
 
 # Every recipe here is `forge gen <cmd>`: the Python launcher resolves the
@@ -132,6 +186,31 @@ rig: _build
 # where --out says plus a forge_record beside it, and never touches assets/.
 # `FORGE_FAKE=1` in front of any of them writes placeholders that pass the
 # same validators, with no backend and no Blender — what `ci-fake` runs.
+
+# The one way a PNG gets under assets-src/refs/. Format, then mesh.py's own
+# keyer, then the four keyer pre-checks the 2026-08-30 spike proved ride all
+# the way to a lift (a drawn floor, a contact shadow, a flood-through hole, a
+# key that kept the backdrop), then the geometry pre-checks — all of it before
+# a GPU minute, because a lift is four minutes and a redraw is a sentence. The
+# PNG stored is the file you drew, byte for byte; the record and the
+# SOURCES.md row are written by the door and never by hand.
+# `just ref-import out/refs_grok/ember_knight_v3.png ember_knight_v3 character "xAI Grok, image_edit"`
+#
+# A drawn PNG -> a checked, recorded reference under assets-src/refs/.
+ref-import image name kind source *flags: _build
+    {{forge}} gen ref-import {{image}} --name {{name}} --kind {{kind}} --source "{{source}}" {{flags}}
+
+# The reference format text has ONE home — FORMAT and FORMAT_AMENDMENT in
+# python/forge_gen/reference.py — and every other copy is generated from it:
+# `markdown` writes the block the forge-character skill includes, and the MCP
+# tool's description is generated at build time by crates/forge_mcp/build.rs,
+# which reads the same two constants. Three hand-maintained copies held to
+# byte equality is a test that fails on a rewrap and teaches people to edit
+# the fixture.
+#
+# Print the reference format: `just ref-format`, `just ref-format markdown`
+ref-format kind="text": _build
+    {{forge}} gen ref-import --print-format {{kind}}
 
 # The seed is a real knob: one front view underdetermines the back of a
 # shape, and a seed can leave the rear of a skull absent. Look with `views`
@@ -155,15 +234,51 @@ prop name *flags: _build
     {{forge}} gen mesh assets-src/refs/props/{{name}}.png --preset prop \
         --out out/lifts/{{name}}.glb --record assets-src/refs/props/{{name}}.lift.json {{flags}}
 
-# Refuses a mesh that is not near the T-pose; the fix is always the reference
-# image, never the weights. Writes assets-src/blender/<name>.blend and its
-# rig record beside it. Then `just promote-mesh <name>`.
+# Metres, matte, dust dropped, the profile's skeleton inserted and NO weights
+# — the skinner wants a bare mesh. Two gates, both about the picture and not
+# about the weights: the arm tips level with THIS BODY'S OWN shoulder line
+# ([fit] arm_height_tolerance_m 0.15, a budget), and every arm run's median
+# cross-section at or above [fit] limb_radius_min_fraction 0.22 of its own
+# length (measured: the sliver that walked with a 2.8 m arm read 0.20-0.21,
+# and vex_runner's thinnest arm reads 0.245). The leg ratios are measured,
+# printed and never refused — a T-pose isolates an arm and does not isolate a
+# leg. A refusal names the reference PNG because that is where the fix is.
 #
-# Lifted glb -> rigged .blend + rig record in headless Blender.
-rig-mesh name *flags: _build
-    mkdir -p assets-src/blender
-    {{forge}} gen rig out/lifts/{{name}}.glb --out assets-src/blender/{{name}}.blend \
+# Lifted glb -> normalised mesh + a skeleton, no weights: `just prepare vex_runner`
+prepare name *flags: _build
+    mkdir -p out/prepare
+    {{forge}} gen prepare out/lifts/{{name}}.glb --out out/prepare/{{name}}.glb \
+        --record out/prepare/{{name}}.prepare.json {{flags}}
+
+# SkinTokens' weights, then the skeleton fitted to what those weights say this
+# body's bones are, then a second prepare and skin against the fitted skeleton,
+# then the re-attach — five steps, one door, no options about the number of
+# passes (a second fit walks the torso downhill by 74 mm a time). Names,
+# hierarchy and rest ROTATIONS stay frozen, so every clip still binds by name
+# with nothing rebaked; lengths become a fact of this body that the sidecar
+# records. Refuses a raw L/R gap over [fit] asymmetry_arms 0.35 on the arms or
+# [fit] asymmetry_other 0.20 elsewhere, and a run fitted outside 0.4-2.5.
+#
+# Prepared glb -> weights on a skeleton fitted to this body: `just skin vex_runner`
+skin name *flags: _build
+    mkdir -p out/skin assets-src/blender
+    {{forge}} gen skin out/prepare/{{name}}.glb --blend assets-src/blender/{{name}}.blend \
         --record assets-src/blender/{{name}}.rig.json --name {{name}} {{flags}}
+
+# Dies by name, for one release, the same courtesy promote-mesh gets: the
+# rename is not a deletion and an old command line deserves to be told so.
+[private]
+rig-mesh name="" *flags="":
+    @echo "rig-mesh became prepare + skin when the skinner changed: bone heat is gone, SkinTokens makes the weights, and the skeleton is fitted to the body (just prepare <name> && just skin <name>, or just body <name>). See designs/skin.md." >&2
+    @exit 1
+
+# The whole loop on one lift, in the order the gates run. Needs the card:
+# SkinTokens is 3.3-4.4 GB and runs twice. `just gpu` first.
+#
+# Lifted glb -> rigged .blend: prepare then skin. `just body vex_runner`
+body name *flags: _build
+    just --justfile {{justfile()}} --working-directory {{invocation_directory()}} prepare {{name}} {{flags}}
+    just --justfile {{justfile()}} --working-directory {{invocation_directory()}} skin {{name}}
 
 # Metres; floor, ceiling or grip at the origin; matte — then straight into
 # the library as a model with both records. `--height`/`--length` is the one
@@ -223,8 +338,11 @@ sfx name prompt *flags: _build
     {{forge}} gen sfx --prompt "{{prompt}}" --out out/audio/sfx/{{name}}.wav \
         --record out/audio/sfx/{{name}}.json {{flags}}
 
-# The ACE-Step server stays resident (~8 GB) until `--stop-server`, which can
-# ride on the same call: `just music hub_theme "hopeful synthwave" --duration 60 --stop-server`.
+# ACE-Step runs inside the ComfyUI host now, so there is no resident server
+# of its own to stop and no `--stop-server`: it is native to the host, and
+# measured 2026-08-30 it gives the card back by itself when the graph ends.
+# At this pin a track renders and does NOT promote — the host normalises it
+# to 0.0 dBFS and the clipping gate refuses it (designs/hosting.md).
 #
 # One music track from a prompt, to out/audio/music/.
 music name prompt *flags: _build
@@ -259,7 +377,7 @@ speech name text *flags: _build
 # Front, back, both sides and three head close-ups, to out/views/<stem>.png.
 # Back-face culling is off for anything under out/, so a face's inside
 # showing through from behind means the surface is missing, not flipped.
-# Run it on the raw lift BEFORE rig-mesh. `--no-head` for a prop; a library
+# Run it on the raw lift BEFORE prepare. `--no-head` for a prop; a library
 # name (`just views barrel`) renders the shipped file, culling on.
 #
 # One contact sheet of a glb from seven angles: `just views out/lifts/vex_runner.glb`
@@ -300,8 +418,11 @@ sheets *flags: _build
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         count=$((count + 1))
-        if ! {{forge}} sheet "$name" {{flags}} >/dev/null 2>&1; then
+        log="out/sheets/$name.log"
+        if ! {{forge}} sheet "$name" {{flags}} >"$log" 2>&1; then
             failed+=("$name")
+            echo "sheet failed: $name (full log: $log)" >&2
+            cat "$log" >&2
         fi
     done < <({{forge}} catalog --kind clip | awk 'NR > 1 && $1 == "clip" { print $2 }')
     echo "rendered $count clip(s) to out/sheets"
@@ -389,8 +510,8 @@ catalog *flags: _build
 # PNG, the rig beside the .blend, the export beside the .glb. Refuses an
 # existing name unless told `--overwrite`.
 #
-# Export, validate and file one rigged body: `just promote-mesh vex_runner`
-promote-mesh name *flags: _build
+# Export, validate and file one rigged body: `just promote-body vex_runner`
+promote-body name *flags: _build
     mkdir -p out/export
     {{forge}} gen export assets-src/blender/{{name}}.blend --out out/export/{{name}}.glb \
         --record out/export/{{name}}.export.json
@@ -400,6 +521,14 @@ promote-mesh name *flags: _build
         --lift-record assets-src/refs/characters/{{name}}.lift.json \
         --rig-record assets-src/blender/{{name}}.rig.json \
         --export-record out/export/{{name}}.export.json {{flags}}
+
+# Dies by name, for one release, the courtesy `install.sh --models` got: an
+# old command line deserves to be told what happened to it rather than
+# "unknown recipe".
+[private]
+promote-mesh name="" *flags="":
+    @echo "promote-mesh became promote-body when the skinner changed; the rig step is now prepare + skin (just prepare <name> && just skin <name>, or just body <name>). See designs/skin.md." >&2
+    @exit 1
 
 # Native bake, no Blender. The shipped recipe is the starting point when the
 # name exists; the flags you state land on top; the whole recipe is echoed.
@@ -428,6 +557,17 @@ promote-audio kind name file *flags: _build
                {{forge}} promote audio {{kind}} {{file}} {{name}} {{flags}}
            fi ;;
     esac
+
+# A merge, not a bake: every clip's channels are re-pointed at the body's
+# bones by name and their values copied, so a clip driving a bone the body
+# lacks is refused by name. The record lands beside the file as
+# <stem>.bundle.json. Nothing is filed in the library — a bundle is an
+# export, regenerated rather than repaired.
+# `just bundle out/fit_warlock/drow_warlock_fitted.glb walk,roll out/bundles/warlock.glb --motion-scale 1.0156`
+#
+# One glb carrying a body's skin and any number of clips as named animations.
+bundle body clips out *flags: _build
+    {{forge}} bundle {{body}} --clips {{clips}} --out {{out}} {{flags}}
 
 # Project the library into assets/library.json. Run it after any hand edit.
 manifest: _build
@@ -477,7 +617,7 @@ check:
 test:
     cargo test --workspace --manifest-path {{justfile_directory()}}/Cargo.toml
 
-# The launcher's own suite — stdlib + pytest, no backend, no GPU, seconds.
+# The launcher's own suite — install python[dev]; no backend or GPU required.
 # The Rust side's `python_records` test re-runs the record capture, but
 # only this runs test_cli, test_launcher, test_backends, test_doctor,
 # test_glb and test_npz.
@@ -542,8 +682,8 @@ manifest-check: _build
 # The server .mcp.json launches, driven the way a client drives it: a
 # scripted initialize, the initialized notification and tools/list over
 # stdin, newline-delimited JSON-RPC, and the reply checked for every tool
-# name the skills are written against — no more, no fewer, and never a
-# promote for a mesh. No GPU: nothing is rendered, the list is the test.
+# name the skills are written against — no more, no fewer. No GPU: nothing is
+# rendered, the list is the test.
 # The server's own banner goes to stderr, which is the rule this also
 # proves: anything on stdout that is not a frame would break the parse.
 #
@@ -552,7 +692,7 @@ mcp-check: _build
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    expected="doctor generate_audio generate_clips inspect_audio list_audio list_clips list_models promote_audio promote_clip render_clip_strip render_model"
+    expected="audit cancel doctor export_body export_bundle generate_audio generate_clips generate_mesh import_reference init_project inspect_audio licences list_audio list_clips list_models list_runs manifest_check prepare_body prepare_prop promote_audio promote_body promote_clip promote_model render_clip_strip render_model setup skin_body status verify wait"
     reply=$(printf '%s\n' \
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-check","version":"0"}}}' \
         '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -577,6 +717,30 @@ mcp-check: _build
     fi
     echo "forge mcp serves $(echo "$expected" | wc -w | tr -d ' ') tools: $expected"
 
+# The agent's whole path, scripted, over BOTH transports — stdio and the
+# daemon's streamable HTTP at /mcp — because "one tool surface, two
+# transports, one queue" is the claim this phase makes and a transport
+# nothing exercises ships ungated. The script: initialize, tools/list
+# against the pinned twenty-five, init_project, licences, the setup gate (a
+# gated kind with an empty accept must refuse and name the id), doctor (an
+# `off` row, exit 0), generate_audio (a job id comes back, not the file),
+# wait, inspect_audio, promote_audio, verify — plus the two negative legs
+# that rot silently: wait on an unknown job, and a second promote onto a
+# taken name. Then the character loop, on the fake tier: import_reference,
+# generate_mesh, wait, prepare_body, wait, skin_body, wait, export_body,
+# wait, promote_body, render_model, verify — plus a second promote_body on
+# the same name refused, then accepted with overwrite. Every step of it is a
+# tool call: a gate that shells a missing verb in the middle of the loop it
+# is holding green proves the shell, not the surface.
+#
+# It runs against `env!("CARGO_BIN_EXE_forge")`, so the binary under test is
+# this build with no `just` step in front of it. No GPU, no display, no
+# backend, no secret, no network: the project is a tempdir at tier `fake`.
+#
+# The agent's path through the MCP, end to end, on both transports.
+mcp-session:
+    cargo test -p forge --test mcp_session --manifest-path {{justfile_directory()}}/Cargo.toml -- --nocapture
+
 # Sidecars, hashes, the rig profile's drift, the reference ledger — a PNG
 # without a row in assets-src/SOURCES.md fails.
 #
@@ -594,18 +758,19 @@ verify *flags: _build
 # its own record by bytes and by pose, the rig profile held against every
 # shipped body, the committed manifest against a rebuild, the engine-free
 # verify — sidecars, hashes, profile drift, the reference ledger — the MCP
-# handshake and tool surface, and the five generate pipelines end to end
-# on FORGE_FAKE placeholders in a throwaway project, driven through the
+# handshake and tool surface, the agent's whole scripted session over both
+# transports (mcp-session), and the five generate pipelines end to end on
+# FORGE_FAKE placeholders in a throwaway project, driven through the
 # documented `just --justfile … --working-directory …` form.
 #
 # What it deliberately leaves out, and why:
-#   publish-check   `cargo package` runs in isolation; only a release can
-#                   break it, and only a release cares.
+#   publish-check   `cargo package` runs in isolation; run it separately
+#                   alongside this suite before opening or updating a PR.
 #   views, sheet, sheets, body-sheets, audio-plots, studio, play
 #                   renders for a human to look at. Not byte-stable across
 #                   GPUs, so there is no pass/fail in them — though `sheets`
 #                   does exit non-zero on a clip that binds to nothing or
-#                   never moves, and GitHub Actions runs it for that.
+#                   never moves. Run those reviews locally when relevant.
 #   bones, check-mesh
 #                   one asset at a time; `check-bodies` and `audit` run the
 #                   same checks over the whole library.
@@ -613,8 +778,8 @@ verify *flags: _build
 #                   generation: a 16–22 GB checkpoint on the GPU, minutes
 #                   each, and nothing about the result is a yes/no question.
 #                   `ci-fake` runs the same paths on placeholders.
-#   rig, rig-mesh, prop-import, promote-mesh
-#                   Blender.
+#   prepare, skin, body, prop-import, promote-body
+#                   Blender, and skin also wants the card.
 #   promote-*, manifest, rebake, migrate, setup, install
 #                   they rewrite assets, sources or the machine.
 #   doctor, gpu     they describe this machine, and a runner is not it.
@@ -624,8 +789,8 @@ verify *flags: _build
 # component assertion cannot. check-bodies and audit's posed half need no
 # adapter at all: a headless app with an animation player and no renderer.
 #
-# The pre-commit gate: fmt, clippy+doc, tests, pytest, smoke, audit, check-bodies, manifest-check, verify, mcp-check, ci-fake.
-ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify mcp-check ci-fake
+# The pre-commit gate: fmt, clippy+doc, tests, pytest, smoke, audit, check-bodies, manifest-check, verify, mcp-check, mcp-session, ci-fake.
+ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify mcp-check mcp-session ci-fake
 
 # The generate paths with no GPU, no backend and no Blender: FORGE_FAKE=1
 # makes every `forge gen` write placeholders that pass the same validators
@@ -638,9 +803,10 @@ ci: fmt-check check test pytest smoke audit check-bodies manifest-check verify m
 # gate tests, and a recipe that quietly assumes the toolkit checkout fails
 # here first. (The ledger bans a *bare* recursive `just`, the kind that
 # hunts for a justfile in the project; these calls name their justfile,
-# because the recursion is the thing under test.) The reference PNGs are
-# written first (a 4×4 flat grey) with their ledger rows, because a PNG
-# without a row fails verify and should. The voice path designs a
+# because the recursion is the thing under test.) The reference PNGs go in
+# through `ref-import`, which is what writes their ledger rows — a PNG
+# without a row fails verify and should, and the row is the door's to write.
+# The voice path designs a
 # placeholder voice, clones a line from it by name and files the line, so
 # verify's voice check runs on a record it has to read. It ends in the
 # throwaway project's own gates: catalog, audit, check-bodies,
@@ -657,25 +823,62 @@ ci-fake: _build mcp-check
     jf() { just --justfile "{{justfile()}}" --working-directory "$work" "$@"; }
     "$forge" init --project "$work" --name fake >/dev/null
     cd "$work"
-    mkdir -p assets-src/refs/props assets-src/refs/characters
-    python3 - <<'PY'
-    import struct, zlib
-    def png(path, w, h, rgb):
-        raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
-        def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
-        with open(path, "wb") as f:
-            f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
-    png("assets-src/refs/props/box.png", 4, 4, (200, 200, 200))
-    png("assets-src/refs/characters/figure.png", 4, 4, (200, 200, 200))
+    mkdir -p out/drawn
+    # Two pictures a person could have drawn, at the size the door demands:
+    # a T-posed figure and a prop clear of the frame. They are not
+    # placeholders — `ref import` needs no card, so on tier `fake` it keys
+    # and measures for real wherever Pillow, numpy and OpenCV are importable,
+    # and a 4x4 grey square would be refused for its long side (or, on a bare
+    # runner, filed with every measurement null and a note saying so). This
+    # is the caller drawing a reference, which is the only way one is ever
+    # made — the toolkit ships no image model.
+    FORGE_TOOLKIT="{{justfile_directory()}}" python3 - <<'PY'
+    import os, sys
+    sys.path.insert(0, os.path.join(os.environ["FORGE_TOOLKIT"], "python"))
+    from forge_gen.png import write_png
+
+    SIZE = 1024
+
+    def canvas():
+        return bytearray(SIZE * SIZE)
+
+    def box(flags, x0, y0, x1, y1):
+        for y in range(y0, y1):
+            flags[y * SIZE + x0:y * SIZE + x1] = b"\x01" * (x1 - x0)
+
+    def write(path, flags):
+        pixels = bytearray()
+        for value in flags:
+            pixels += b"\x80\x80\x80\xff" if value else b"\x00\x00\x00\x00"
+        write_png(path, SIZE, SIZE, bytes(pixels))
+
+    top, bottom, centre, heads = 100, 900, SIZE // 2, 6.0
+    height = bottom - top
+    half = height // 2
+    arm = top + int(round(height / heads))
+    figure = canvas()
+    box(figure, centre - 60, top, centre + 60, arm)                 # head and neck
+    box(figure, centre - half, arm, centre + half, arm + 70)        # the arms, straight out
+    box(figure, centre - 90, arm, centre + 90, top + int(height * 0.62))
+    box(figure, centre - 80, top + int(height * 0.62), centre - 10, bottom)
+    box(figure, centre + 10, top + int(height * 0.62), centre + 80, bottom)
+    write("out/drawn/figure.png", figure)
+
+    prop = canvas()
+    box(prop, 200, 300, 800, 700)                                   # clear of every edge
+    write("out/drawn/box.png", prop)
     PY
-    printf '| `props/box.png` | ci-fake placeholder | box | 2026-08-23 |\n| `characters/figure.png` | ci-fake placeholder | figure | 2026-08-23 |\n' >> assets-src/SOURCES.md
+    echo "== ref-import: the door that writes the ledger row"
+    jf ref-import out/drawn/box.png box prop "ci-fake placeholder"
+    jf ref-import out/drawn/figure.png figure character "ci-fake placeholder"
     echo "== mesh -> prop -> promote model"
     jf prop box --seed 1 --verts 2000
     jf prop-import box --height 1.0
-    echo "== mesh -> rig -> export -> rig check -> promote body"
+    echo "== mesh -> prepare -> skin -> export -> rig check -> promote body"
     jf character figure --seed 1 --verts 25000
-    jf rig-mesh figure
-    jf promote-mesh figure
+    jf prepare figure
+    jf skin figure
+    jf promote-body figure
     echo "== motion sweep -> review -> promote clip"
     jf sweep "a person walks forward" --duration 2 --samples 1 --seeds 0
     take=$(ls out/sweeps/0-*/*.npz | head -n1)
@@ -687,6 +890,10 @@ ci-fake: _build mcp-check
     jf voice warden "deep, slow, grave" --seed 1
     jf speech warden_greeting "Few come this deep." --voice warden
     jf promote-audio voice warden_greeting out/audio/voice/warden_greeting.wav
+    echo "== the queue's own doors, on the rows those runs wrote"
+    job=$("$forge" jobs --json --limit 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+    jf job-log "$job" > /dev/null
+    jf jobs > /dev/null
     echo "== the gates, on the throwaway project"
     jf catalog
     jf audit

@@ -1,0 +1,50 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "relay_interceptor",
+  "prompt": null,
+  "tags": [
+    "experimental",
+    "ship"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "reconstructed",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 47914,
+      "triangles": 56219,
+      "bones_skinned": 0,
+      "lowest_y": -0.124536954,
+      "bounds": [
+        [
+          -0.43480086,
+          -0.124536954,
+          -0.5
+        ],
+        [
+          0.43480086,
+          0.124536954,
+          0.5
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:fcb27efd2d5fac43afcbfd8e601e55c7779a0a74f161eb5a83ee80dac73707ef",
+  "note": "Experimental Pixal3D single-view seed 42, manual FOV 0.2 radians (assumption); 60000 target, 2048 texture; nvdiffrast non-commercial. Reconstructed provenance; trial pixal-interceptor1. Reviewed raw culling on/off; Y up, +Z nose, centered 1m longest extent."
+}

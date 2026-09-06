@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-09-04",
+  "created_by": "unknown",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "designs/scrapyard/scavenger-reference-v1.png",
+      "sha256": "sha256:47091e7b72def72f499e59619adf1c3ffa350da9615d8893478a93218818da19",
+      "source": "OpenAI built-in image_gen; generated 2026-09-04; prompt in designs/scrapyard/prompts-v1.json",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "character",
+    "long_side_px": 1254,
+    "stated_source": "OpenAI built-in image_gen; generated 2026-09-04; prompt in designs/scrapyard/prompts-v1.json"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/characters/scrapyard_scavenger.png",
+      "sha256": "sha256:47091e7b72def72f499e59619adf1c3ffa350da9615d8893478a93218818da19",
+      "bytes": 1164096
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.2016,
+    "arm_line_fraction": 0.2141,
+    "backdrop_rgb": [
+      223,
+      221,
+      231
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 337,
+    "heads": 4.67,
+    "height": 1254,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 1.135,
+    "subject_fill": 0.816,
+    "width": 1254
+  },
+  "fake": false,
+  "note": null
+}

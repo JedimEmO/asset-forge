@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "clip",
   "name": "pistol_shoot",
   "prompt": "A person aims a pistol with both hands, arms straight and level at shoulder height. The gun fires and the recoil flips the hands and muzzle sharply upward toward the sky, elbows staying mostly extended, then the arms come back down level to re-aim forward. The feet stay planted.",
@@ -110,6 +110,7 @@
     },
     "mesh": null
   },
+  "body": null,
   "events": [],
   "content_hash": "sha256:0cdd8d4f04cb55129b8e86a3c24ba06b892899d78e9003393423d643c64dc40a",
   "note": "migrated from the old repository's gen_pistol_shoot (sweep file a_person_aims_a_pistol_with__d3_c2_s1_4.npz; no take record survives, so seed, cfg and duration are unknown); retimed on the post-trim timeline so the up-kick peaks about 0.12 s in and the return to aim lands at 0.6 s; trims found by the old action search"

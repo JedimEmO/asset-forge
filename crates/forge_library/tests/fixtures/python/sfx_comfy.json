@@ -1,0 +1,51 @@
+{
+  "forge_record": 2,
+  "kind": "sfx",
+  "tool": "moss_sound_effect",
+  "created": "2026-08-23",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": "moss_sfx",
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+    "model_revision": null,
+    "executor": "comfy",
+    "comfyui_commit": "169fcf35a2fc163fec31338b816503ddac0d3fcf",
+    "workflow_sha256": "sha256:9f1c00000000000000000000000000000000000000000000000000000000abcd",
+    "packs": {
+      "https://github.com/diodiogod/TTS-Audio-Suite": "b7e41a2c"
+    }
+  },
+  "inputs": [
+    {
+      "role": "prompt",
+      "path": null,
+      "sha256": null,
+      "source": null,
+      "prompt": "a heavy iron door"
+    }
+  ],
+  "params": {
+    "cfg": 4.0,
+    "duration_s": 3.0,
+    "seed": 815273,
+    "steps": 100,
+    "workflow": "sfx.api.json"
+  },
+  "outputs": [
+    {
+      "path": "out/audio/sfx/door.wav",
+      "sha256": "sha256:ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095",
+      "bytes": 5
+    }
+  ],
+  "measured": {
+    "channels": 1,
+    "duration_s": 3.0,
+    "sample_rate": 48000
+  },
+  "fake": false,
+  "note": null
+}

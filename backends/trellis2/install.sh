@@ -14,11 +14,12 @@
 # holds what it would install and skips; re-running a finished install
 # re-links, re-writes the receipt and re-probes.
 #
-# What it leaves in this directory (all gitignored): .env -> the conda
-# prefix, .checkout -> the TRELLIS.2 clone at the pinned commit,
-# installed.json. Everything heavy goes under $PREFIX (default
-# ${FORGE_BACKENDS_HOME:-~/.cache/asset-forge/backends}/trellis2): env/,
-# TRELLIS.2/, src/ for the extension sources.
+# Machine-local links: .env -> the runtime, .toolchain -> the conda dependency
+# prefix, .checkout -> TRELLIS.2, plus installed.json. Heavy files live under
+# $PREFIX (default ~/.cache/asset-forge/backends/trellis2): env/, TRELLIS.2/,
+# src/ and python-3.11.16-20260901/. An adopted dependency env stays in place.
+# Fresh installs use the checksum-pinned standalone runtime; adoption adds it
+# only with --with-pinned-runtime. See install_runtime.py for the archive pin.
 #
 # Two things it will never install: nvdiffrec's renderutils (non-commercial,
 # texturing-only, nothing here needs it) and briaai/RMBG-2.0 (gated and
@@ -35,8 +36,22 @@ BACKEND_NAME=trellis2
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../_lib/common.sh
 . "$BACKEND_DIR/../_lib/common.sh"
+# Fresh installs use the pinned runtime. Adoption keeps the requested env
+# unless --with-pinned-runtime explicitly asks to add the runtime layer.
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h) printf '%s\n' 'TRELLIS extra: --with-pinned-runtime adds the verified CPython runtime when adopting an existing dependency env.' >&2 ;;
+    esac
+done
 parse_common_flags "$@"
-[ "${#EXTRA_ARGS[@]}" -eq 0 ] || die "unknown flag(s): ${EXTRA_ARGS[*]}  (--help lists them)"
+PINNED_RUNTIME=0
+[ -n "$ADOPT_ENV" ] || PINNED_RUNTIME=1
+for arg in "${EXTRA_ARGS[@]}"; do
+    case "$arg" in
+        --with-pinned-runtime) PINNED_RUNTIME=1 ;;
+        *) die "unknown flag: $arg  (--help lists them)" ;;
+    esac
+done
 
 # ------------------------------------------------------------------- pins --
 # These match backend.toml and the verified-facts table of 2026-08-23.
@@ -143,7 +158,7 @@ fi
 
 if [ -n "$ADOPT_ENV" ]; then
     [ -x "$ENV_DIR/bin/python" ] || die "--adopt-env $ENV_DIR has no bin/python"
-    log "adopting env $ENV_DIR ($(py -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')); installing nothing"
+    log "adopting env $ENV_DIR ($(py -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')); leaving its packages unchanged"
     if ! have_mod nvdiffrast; then
         warn "the adopted env has no nvdiffrast — the texture bake is unavailable; run without --adopt-env (with --yes) to install it after the licence"
     fi
@@ -281,7 +296,15 @@ fi
 # ------------------------------------------------------------------ links --
 # Linked before the models: hf_gate runs under .env's python.
 
-link_env "$ENV_DIR"
+RUNTIME_DIR="$ENV_DIR"
+if [ "$PINNED_RUNTIME" = 1 ]; then
+    RUNTIME_DIR="$PREFIX/python-3.11.16-20260901"
+    log "installing/checking the pinned CPython runtime; dependencies stay in $ENV_DIR"
+    python3 "$BACKEND_DIR/install_runtime.py" --libraries "$ENV_DIR" --destination "$RUNTIME_DIR"
+fi
+# CUDA/JIT uses the dependency prefix even when Python runs elsewhere.
+link_extra toolchain "$ENV_DIR"
+link_env "$RUNTIME_DIR"
 link_checkout "$CHECKOUT"
 
 # ----------------------------------------------------------------- models --

@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-09-04",
+  "created_by": "unknown",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "designs/scrapyard/rusher-reference-v2.png",
+      "sha256": "sha256:af5fcae05e3a7cf7ee3b0c36678510b56e56e393b61412e7594dd1f21654d596",
+      "source": "OpenAI built-in image_gen; revised solid head 2026-09-04; prompt in designs/scrapyard/rusher-reference-v2-prompt.txt",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "character",
+    "long_side_px": 1254,
+    "stated_source": "OpenAI built-in image_gen; revised solid head 2026-09-04; prompt in designs/scrapyard/rusher-reference-v2-prompt.txt"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/characters/scrapyard_rusher.png",
+      "sha256": "sha256:af5fcae05e3a7cf7ee3b0c36678510b56e56e393b61412e7594dd1f21654d596",
+      "bytes": 1490271
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.1839,
+    "arm_line_fraction": 0.1488,
+    "backdrop_rgb": [
+      213,
+      210,
+      222
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 323,
+    "heads": 6.72,
+    "height": 1254,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 1.202,
+    "subject_fill": 0.766,
+    "width": 1254
+  },
+  "fake": false,
+  "note": null
+}

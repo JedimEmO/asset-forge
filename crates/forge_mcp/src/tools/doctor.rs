@@ -34,6 +34,23 @@ impl ForgeServer {
                        render times out. Takes 10-60s: each backend's probe imports torch."
     )]
     async fn doctor(&self) -> CallToolResult {
+        // One of the three tools a session with no project may call, and
+        // what it has to say is that there is no project: every row in this
+        // table is per-project — `[make]` decides which backends are probed
+        // at all and which read `off` — so there is nothing here to probe
+        // yet. A successful frame, because "no project here" is an answer.
+        if !self.config.project_found {
+            return util::report(format!(
+                "no forge.toml at {} — there is no project to describe.\n\
+                 doctor's table is per project: `[make]` decides which backends are probed and \
+                 which read `off`, so what this machine can run is a question about a project \
+                 that does not exist yet.\n\
+                 call init_project {{\"path\": \"{}\", \"make\": {{…}}, \"tier\": \"full|lean|fake\"}}, \
+                 reconnect this server with --project <path>, and call doctor again.",
+                self.config.project.root.display(),
+                self.config.project.root.display(),
+            ));
+        }
         let mut cmd = self.forge_command();
         cmd.arg("doctor").arg("--json");
         let ran = util::run(&mut cmd, DOCTOR_TIMEOUT).await;
@@ -277,7 +294,25 @@ fn host_lines(probe: &Value, out: &mut String) {
 /// licence fact is not a detail) and hints (the next command to type).
 fn backend_lines(name: &str, entry: &Value, out: &mut String) {
     let status = text(entry, "status");
-    let _ = writeln!(out, "  {name:<12} {status}");
+    if status == "off" {
+        // Not a probe result and not a problem: the project's [make] did
+        // not choose the kind, so nothing was run and nothing is wrong.
+        let _ = writeln!(
+            out,
+            "  {name:<12} off — {}",
+            entry
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("not chosen")
+        );
+        return;
+    }
+    let executor = entry
+        .get("executor")
+        .and_then(Value::as_str)
+        .map(|word| format!(" [{word}]"))
+        .unwrap_or_default();
+    let _ = writeln!(out, "  {name:<12} {status}{executor}");
     for check in entry
         .get("checks")
         .and_then(Value::as_array)

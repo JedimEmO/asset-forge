@@ -26,11 +26,14 @@ torch itself.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from forge_gen import backends as backends_mod
@@ -50,7 +53,21 @@ PROBE_TIMEOUT_S = 60.0
 #: How long a host tool may take to say its version.
 TOOL_TIMEOUT_S = 20.0
 
-STATUSES = ("ok", "partial", "missing", "broken")
+#: How long ``GET /object_info`` may take. It is the whole node surface —
+#: megabytes on a host with packs — and a cold service answers it slowly.
+OBJECT_INFO_TIMEOUT_S = 120.0
+
+#: Where the ComfyUI service answers when nobody says otherwise. Mirrors
+#: ``forge_library::project::DEFAULT_COMFY_URL``.
+DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
+
+#: The environment variable naming where the backends install themselves.
+BACKENDS_HOME_ENV = "FORGE_BACKENDS_HOME"
+
+#: The five words. ``off`` is not a probe result: it is ``[make]`` not having
+#: chosen the kind, so the row is never probed and never votes on the exit
+#: code. The other four are what a probe found.
+STATUSES = ("ok", "partial", "missing", "broken", "off")
 
 
 def add_parser(subparsers) -> None:
@@ -65,6 +82,26 @@ def add_parser(subparsers) -> None:
         "--probe-timeout", type=float, default=PROBE_TIMEOUT_S, metavar="S", help="seconds a probe may take (default 60)"
     )
     parser.add_argument("--no-host", action="store_true", help="skip the host checks (GPU, Blender, ffmpeg)")
+    parser.add_argument(
+        "--chosen",
+        metavar="NAMES",
+        help="comma-separated backends the project's [make] chose; every other row reads `off`, "
+        "is not probed, and does not vote on the exit code. Unstated, every backend is chosen.",
+    )
+    parser.add_argument(
+        "--off",
+        metavar="NAME=REASON",
+        action="append",
+        default=[],
+        help="why an unchosen backend is off, in the words the project uses "
+        "(`--off acestep=\'[make] music = false\'`). Repeatable.",
+    )
+    parser.add_argument(
+        "--comfy-url",
+        metavar="URL",
+        help="where the ComfyUI service answers ([hardware] comfy_url). "
+        "Unstated, the comfy backend's [server] says.",
+    )
 
 
 def run(args) -> dict:
@@ -73,6 +110,9 @@ def run(args) -> dict:
         only=getattr(args, "backend", None),
         probe_timeout=getattr(args, "probe_timeout", PROBE_TIMEOUT_S),
         host=not getattr(args, "no_host", False),
+        chosen=getattr(args, "chosen", None),
+        off_reasons=getattr(args, "off", None),
+        comfy_url_override=getattr(args, "comfy_url", None),
     )
     report["_text"] = render(report)
     report["_exit"] = report.pop("exit_code")
@@ -389,9 +429,455 @@ def diagnose_tool(backend: Backend, out: dict, *, timeout: float) -> str:
     return "partial"
 
 
-def diagnose_backend(name: str, *, root: str | os.PathLike | None = None, probe_timeout: float = PROBE_TIMEOUT_S) -> dict:
-    """One backend's report: ``{status, checks, notices, hints, dir, ...}``."""
-    out: dict = {"status": "missing", "checks": [], "notices": [], "hints": [], "dir": None}
+# -------------------------------------------------------------------- comfy --
+
+
+def executor_of(backend: Backend) -> str:
+    """Which executor runs this backend: ``env``, ``comfy`` or ``tool``.
+
+    Read from the parser, never re-parsed here — ``backend.toml``'s second
+    form states it outright, and a v1 file that does not is derived from its
+    ``env_kind``: a backend with no interpreter is a host tool, everything
+    else is the per-backend launcher this repo has always had.
+    """
+    stated = getattr(backend, "executor", None) or backend.extra.get("executor")
+    if isinstance(stated, str) and stated in ("env", "comfy", "tool"):
+        return stated
+    return "tool" if backend.is_tool else "env"
+
+
+def comfy_table(backend: Backend) -> dict:
+    """The backend's ``[comfy]`` table as a plain dict, whatever shape it arrives in.
+
+    ``backends.py`` parses ``[comfy]`` into a typed :class:`ComfySpec` with
+    everything it does not name — ``base_directory``, ``snapshot``, the
+    legacy ``[[comfy.models]]`` rows — kept in its ``extra``. Reading only
+    ``isinstance(table, dict)`` would silently see **no** nodes, **no**
+    workflows and **no** weights, and every comfy row would read ``ok`` for
+    the reason that nothing was checked. So the spec is rendered back to the
+    table it was written as, and an unparsed dict (an older parser, a raw
+    read) still works.
+    """
+    table = getattr(backend, "comfy", None)
+    if table is None:
+        table = backend.extra.get("comfy")
+    if isinstance(table, dict):
+        return table
+    if table is None:
+        return {}
+    rendered = dict(getattr(table, "extra", {}) or {})
+    rendered["workflows"] = list(getattr(table, "workflows", []) or [])
+    rendered["nodes"] = list(getattr(table, "nodes", []) or [])
+    rendered["unload_node"] = getattr(table, "unload_node", None)
+    rendered["packs"] = [
+        pack if isinstance(pack, dict) else dataclasses.asdict(pack)
+        for pack in (getattr(table, "packs", []) or [])
+    ]
+    return rendered
+
+
+class ComfyView:
+    """The ComfyUI host, fetched **once per doctor run** and shared by every
+    backend the ``comfy`` executor hosts.
+
+    A per-backend fetch would be six ``GET /object_info`` on a cold host —
+    the response is the whole node surface, megabytes of it — for six
+    answers that cannot differ, because there is one service. So: one
+    ``/system_stats``, one ``/object_info``, memoised, and every comfy row
+    reads them.
+
+    Nothing here enters ComfyUI's environment. The thing to check is the
+    service: that it answers, that it is the commit we pinned, that the node
+    classes a workflow names exist in it, and that the weights are on disk.
+    """
+
+    def __init__(self, url: str, host: Backend | None = None) -> None:
+        #: Where the service answers.
+        self.url = url.rstrip("/")
+        #: The ``comfy`` backend, when the directory describes one: its
+        #: pinned commit, its packs, its unit name.
+        self.host = host
+        self._fetched = False
+        #: ``GET /system_stats``, or ``None`` when it did not answer.
+        self.stats: dict | None = None
+        #: ``GET /object_info``, or ``None``.
+        self.info: dict | None = None
+        #: Why it did not answer, when it did not.
+        self.error: str | None = None
+        #: ``--base-directory`` as the running service was given it.
+        self.base: Path | None = None
+
+    # -- the one fetch --------------------------------------------------
+
+    def fetch(self) -> None:
+        """One ``/system_stats`` and one ``/object_info``, at most once."""
+        if self._fetched:
+            return
+        self._fetched = True
+        self.stats, self.error = _get_json(f"{self.url}/system_stats", timeout=TOOL_TIMEOUT_S)
+        if self.stats is None:
+            return
+        argv = (self.stats.get("system") or {}).get("argv") or []
+        if "--base-directory" in argv:
+            index = argv.index("--base-directory")
+            if index + 1 < len(argv):
+                self.base = Path(argv[index + 1])
+        if self.base is None and self.host is not None:
+            named = comfy_table(self.host).get("base_directory")
+            prefix = _prefix_of(self.host)
+            if named and prefix:
+                self.base = prefix / str(named)
+        self.info, why = _get_json(f"{self.url}/object_info", timeout=OBJECT_INFO_TIMEOUT_S)
+        if self.info is None:
+            self.error = why
+
+    @property
+    def answered(self) -> bool:
+        """Whether the service answered at all."""
+        self.fetch()
+        return self.stats is not None
+
+    @property
+    def classes(self) -> set[str]:
+        """Every node class the running service offers."""
+        self.fetch()
+        return set(self.info or ())
+
+    @property
+    def version(self) -> str | None:
+        """What the service calls itself."""
+        self.fetch()
+        return ((self.stats or {}).get("system") or {}).get("comfyui_version")
+
+    def commit_state(self) -> tuple[bool, str]:
+        """``(matches, detail)`` for the pinned ComfyUI commit.
+
+        The *running* clone is what matters, so this reads the checkout the
+        unit execs, not the description beside it.
+        """
+        if self.host is None:
+            return True, "no comfy backend describes the host — its pin cannot be checked"
+        pinned = (self.host.commit or "").lower()
+        head = _git_head(self.host.checkout)
+        if head is None:
+            return False, f"no {backends_mod.CHECKOUT_LINK} link under backends/{self.host.name}"
+        if pinned and not head.lower().startswith(pinned[:12]):
+            return False, f"the service's clone is at {head[:12]}, not the pinned {pinned[:12]}"
+        return True, head[:12]
+
+    def pack_states(self) -> list[tuple[str, bool, str]]:
+        """``(name, at_its_pin, detail)`` for every node pack the host names."""
+        out: list[tuple[str, bool, str]] = []
+        if self.host is None:
+            return out
+        for pack in comfy_table(self.host).get("packs") or []:
+            if not isinstance(pack, dict):
+                continue
+            directory = str(pack.get("dir") or "")
+            pinned = str(pack.get("commit") or "")
+            base = self.base or _prefix_of(self.host)
+            clone = None
+            if base is not None and directory:
+                clone = base / "custom_nodes" / directory
+            if clone is None or not (clone / ".git").exists():
+                out.append((directory or "?", False, f"no clone at {clone or '(unknown)'}"))
+                continue
+            head = _git_head(clone)
+            if head is None:
+                out.append((directory, False, f"{clone} is not a git checkout"))
+            elif pinned and not head.lower().startswith(pinned.lower()[:12]):
+                out.append((directory, False, f"at {head[:12]}, not the pinned {pinned[:12]}"))
+            else:
+                out.append((directory, True, head[:12]))
+        return out
+
+    def unit_hint(self) -> str | None:
+        """``systemctl --user status forge-comfy`` — the line that says why it is not answering."""
+        unit = ((self.host.server or {}) if self.host else {}).get("unit")
+        return f"systemctl --user status {unit}" if unit else None
+
+    def start_hint(self) -> str | None:
+        """The line that starts it."""
+        unit = ((self.host.server or {}) if self.host else {}).get("unit")
+        return f"systemctl --user start {unit}" if unit else None
+
+
+def _get_json(url: str, *, timeout: float) -> tuple[dict | None, str | None]:
+    """``(parsed, why not)`` for one GET. Stdlib only: doctor never enters an env."""
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8")), None
+    except urllib.error.HTTPError as err:
+        return None, f"{url} answered {err.code}"
+    except (urllib.error.URLError, OSError) as err:
+        return None, f"{url} did not answer ({getattr(err, 'reason', err)})"
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, f"{url} answered with something that is not JSON"
+
+
+def _git_head(checkout: Path | None) -> str | None:
+    """HEAD of a clone, or ``None`` when there is not one there."""
+    if checkout is None or not checkout.exists():
+        return None
+    return _git(checkout.resolve(), "rev-parse", "HEAD")
+
+
+def _prefix_of(backend: Backend) -> Path | None:
+    """Where a backend installed itself: the ``.env`` link's parent, else
+    ``$FORGE_BACKENDS_HOME/<name>``, else the default cache."""
+    link = backend.env_link
+    if link.exists():
+        return link.resolve().parent
+    home = os.environ.get(BACKENDS_HOME_ENV)
+    base = Path(home).expanduser() if home else Path.home() / ".cache" / "asset-forge" / "backends"
+    candidate = base / backend.name
+    return candidate if candidate.exists() else None
+
+
+def comfy_url(base: Path, override: str | None = None) -> str:
+    """Where the service answers: ``--comfy-url`` (from ``[hardware]``), else
+    the ``comfy`` backend's ``[server]``, else the default."""
+    if override:
+        return override.rstrip("/")
+    try:
+        host = backends_mod.load_backend("comfy", base)
+    except MissingBackend:
+        return DEFAULT_COMFY_URL
+    server = host.server or {}
+    return f"http://{server.get('host', '127.0.0.1')}:{server.get('port', 8188)}"
+
+
+def workflow_classes(backend: Backend) -> dict[str, list[str]]:
+    """Every node class each tracked workflow names, by file name.
+
+    A workflow in the tree that names a class the service does not have is a
+    graph that cannot run — ``broken``, not ``partial``: the file is wrong or
+    the pack it needs is gone, and no download fixes either.
+    """
+    out: dict[str, list[str]] = {}
+    for name in comfy_table(backend).get("workflows") or []:
+        path = backend.dir / "workflows" / str(name)
+        if not path.is_file():
+            out[str(name)] = []
+            continue
+        try:
+            with open(path, encoding="utf-8") as handle:
+                graph = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            out[str(name)] = []
+            continue
+        classes = sorted(
+            {node["class_type"] for node in graph.values() if isinstance(node, dict) and node.get("class_type")}
+        )
+        out[str(name)] = classes
+    return out
+
+
+def comfy_weights(backend: Backend) -> list[dict]:
+    """Every weight a comfy backend needs, from either shape it can be written in.
+
+    ``[[comfy.models]]`` — ``{repo, file, folder, local?, gb?}`` — is what
+    the tracked descriptions use, because ``store`` had no word for a
+    ComfyUI model folder when they were written. ``[[models]]`` with
+    ``store = "comfy:models/<folder>"`` is that word; both are read here, and
+    a backend may use either.
+    """
+    out: list[dict] = []
+    for entry in comfy_table(backend).get("models") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("local") or Path(str(entry.get("file") or "")).name)
+        out.append(
+            {
+                "id": f"{entry.get('repo', '?')}/{name}" if name else str(entry.get("repo", "?")),
+                "folder": f"models/{entry.get('folder', '')}".rstrip("/"),
+                "file": name,
+                "gb": entry.get("gb"),
+            }
+        )
+    for model in backend.models:
+        if not str(model.store).startswith("comfy:"):
+            continue
+        # `local` beats `file` beats the repo id, exactly as the
+        # `[[comfy.models]]` branch above resolves it. Reading the id alone
+        # made doctor look for a directory named after the repo — it read
+        # `acestep partial: …/checkpoints/ace_step_1.5_ComfyUI_files is
+        # absent (10.03 GB to fetch)` on a machine whose
+        # `ace_step_1.5_turbo_aio.safetensors` had just rendered five tracks,
+        # and told a stranger to fetch 10 GB they already had (2026-08-30).
+        name = model.local or (Path(str(model.file)).name if model.file else Path(model.id).name)
+        out.append(
+            {
+                "id": model.id,
+                "folder": str(model.store).split(":", 1)[1],
+                "file": name,
+                "gb": getattr(model, "gb", None),
+            }
+        )
+    return out
+
+
+def comfy_model_present(view: ComfyView, weight: dict) -> tuple[bool, str]:
+    """Whether one weight is on disk under the host's base directory.
+
+    ComfyUI reads its models from ``<base>/models/<folder>``, so that is
+    where a weight either is or is not; the hub cache is irrelevant to a
+    service that was never told about it.
+
+    **A weight may be a directory.** A checkpoint is one file, but a node
+    pack that fetches a whole hub snapshot writes a directory —
+    TTS-Audio-Suite puts the three MOSS models under
+    ``models/TTS/{moss_soundeffect_v2,moss_tts}/<name>/`` — and a file check
+    read those as absent for ever, so the rows said ``partial`` on a machine
+    that had just spoken a line and offered a stranger a download the
+    installer cannot do (2026-08-30). Non-empty is the test for a directory,
+    the same one :func:`hf_model_present` uses on a snapshot.
+    """
+    base = view.base
+    if base is None and view.host is not None:
+        prefix = _prefix_of(view.host)
+        named = comfy_table(view.host).get("base_directory") or "data"
+        base = prefix / str(named) if prefix else None
+    if base is None:
+        return False, "the comfy base directory is not known — is the service running?"
+    target = base / weight["folder"] / weight["file"]
+    if target.is_file():
+        return True, str(target)
+    if _non_empty_dir(target):
+        return True, f"{target}/ ({len(list(target.iterdir()))} entries)"
+    return False, f"{target} is absent"
+
+
+def diagnose_comfy(backend: Backend, out: dict, view: ComfyView) -> str:
+    """One ``comfy`` backend's five words, against the shared view.
+
+    ``ok`` the service answers, is at its pin, has every class the
+    backend's ``[comfy] nodes`` and its tracked workflows name, every pack
+    clone is at its pinned commit and every ``[[models]]`` file is on disk;
+    ``partial`` it answers and the packs are right but a class or a weight
+    is absent; ``missing`` nothing is listening; ``broken`` it answers as
+    another commit, or a pack is off its pin, or a tracked workflow names a
+    class that does not exist.
+    """
+    out["checks"].append(_check("comfy_url", True, view.url))
+    if not view.answered:
+        out["checks"].append(_check("service", False, view.error or "no answer"))
+        for hint in (view.start_hint(), view.unit_hint()):
+            if hint:
+                out["hints"].append(hint)
+        out["hints"].append("the comfy executor cannot run anything while the service is down")
+        return "missing"
+    out["checks"].append(_check("service", True, f"ComfyUI {view.version or '?'} at {view.url}"))
+
+    broken = False
+    matches, detail = view.commit_state()
+    out["checks"].append(_check("commit", matches, detail))
+    if not matches:
+        broken = True
+        if view.unit_hint():
+            out["hints"].append(view.unit_hint())
+
+    for name, at_pin, detail in view.pack_states():
+        out["checks"].append(_check(f"pack:{name}", at_pin, detail))
+        if not at_pin:
+            broken = True
+
+    classes = view.classes
+    wanted = [str(node) for node in comfy_table(backend).get("nodes") or []]
+    missing_nodes = [node for node in wanted if node not in classes]
+    if wanted:
+        out["checks"].append(
+            _check(
+                "nodes",
+                not missing_nodes,
+                ", ".join(wanted) if not missing_nodes else f"absent from /object_info: {', '.join(missing_nodes)}",
+            )
+        )
+
+    for file_name, named in workflow_classes(backend).items():
+        absent = [node for node in named if node not in classes]
+        if not named:
+            out["checks"].append(_check(f"workflow:{file_name}", False, "not tracked here, or not JSON"))
+            broken = True
+        elif absent:
+            # A graph naming a class the service does not have cannot run,
+            # and no download makes it run: the file or the pack is wrong.
+            out["checks"].append(
+                _check(f"workflow:{file_name}", False, f"names {', '.join(absent)}, which /object_info does not list")
+            )
+            broken = True
+        else:
+            out["checks"].append(_check(f"workflow:{file_name}", True, f"{len(named)} classes, all present"))
+
+    for weight in comfy_weights(backend):
+        present, detail = comfy_model_present(view, weight)
+        label = f"model:{weight['id']}"
+        if present:
+            out["checks"].append(_check(label, True, detail))
+        else:
+            gb = f" ({weight['gb']} GB to fetch)" if weight.get("gb") else ""
+            out["checks"].append(_check(label, False, f"{detail}{gb}"))
+    for model in backend.models:
+        # A comfy backend may still name a weight in one of the three
+        # non-comfy stores — the hub cache, a checkpoints dir — and those
+        # are checked the way they always were.
+        if str(model.store).startswith("comfy:"):
+            continue
+        present, detail = model_present(backend, model)
+        out["checks"].append(_check(f"model:{model.id}", present, detail))
+
+    if broken:
+        return "broken"
+    if all(check["ok"] for check in out["checks"]):
+        return "ok"
+    return "partial"
+
+def off_row(name: str, reason: str, *, root: str | os.PathLike | None = None) -> dict:
+    """A row for a kind the project did not choose.
+
+    Never probed — which is what makes doctor fast on a props-only project —
+    and never a reason to exit 1. The ``backend.toml`` is still *read*, which
+    is a file read and not a probe, so the row can say which executor would
+    have run it; a backend that is not even described here reads ``off`` all
+    the same, because a kind you did not choose cannot be missing.
+    """
+    row: dict = {
+        "status": "off",
+        "chosen": False,
+        "executor": None,
+        "reason": reason,
+        "checks": [],
+        "notices": [],
+        "hints": [],
+        "dir": None,
+    }
+    try:
+        backend = backends_mod.load_backend(name, root)
+    except MissingBackend:
+        return row
+    row["dir"] = str(backend.dir)
+    row["executor"] = executor_of(backend)
+    return row
+
+
+def diagnose_backend(
+    name: str,
+    *,
+    root: str | os.PathLike | None = None,
+    probe_timeout: float = PROBE_TIMEOUT_S,
+    comfy: ComfyView | None = None,
+) -> dict:
+    """One backend's report: ``{status, executor, chosen, checks, notices, hints, dir, ...}``."""
+    out: dict = {
+        "status": "missing",
+        "chosen": True,
+        "executor": None,
+        "checks": [],
+        "notices": [],
+        "hints": [],
+        "dir": None,
+    }
     try:
         backend = backends_mod.load_backend(name, root)
     except backends_mod.BackendConfigError as err:
@@ -405,6 +891,19 @@ def diagnose_backend(name: str, *, root: str | os.PathLike | None = None, probe_
             out["hints"].append(err.hint)
         return out
     out["dir"] = str(backend.dir)
+    out["executor"] = executor_of(backend)
+    if out["executor"] == "comfy":
+        out["checks"].append(
+            _check("toml", True, f"{backend.role or 'backend'}, comfy executor, {backend.license or 'licence unstated'}")
+        )
+        out["notices"].extend(backend.notices)
+        if comfy is None:
+            out["checks"].append(_check("service", False, "no ComfyUI host was resolved for this run"))
+            out["status"] = "missing"
+            return out
+        out["status"] = diagnose_comfy(backend, out, comfy)
+        out["hints"] = list(dict.fromkeys(out["hints"]))
+        return out
     if backend.is_tool:
         out["checks"].append(_check("toml", True, f"{backend.role or 'tool'}, a host program, {backend.license or 'licence unstated'}"))
         out["notices"].extend(backend.notices)
@@ -519,8 +1018,39 @@ def host_report() -> dict:
 # ------------------------------------------------------------------ overall --
 
 
-def diagnose(*, only: str | None = None, root: str | os.PathLike | None = None, probe_timeout: float = PROBE_TIMEOUT_S, host: bool = True) -> dict:
-    """The whole report, with ``exit_code`` decided."""
+def parse_off_reasons(entries: list[str] | None) -> dict[str, str]:
+    """``--off name=reason`` into a map. A malformed entry is dropped rather
+    than refused: a missing reason costs a good sentence, not the table."""
+    out: dict[str, str] = {}
+    for entry in entries or []:
+        name, sep, reason = str(entry).partition("=")
+        if sep and name.strip():
+            out[name.strip()] = reason.strip()
+    return out
+
+
+def diagnose(
+    *,
+    only: str | None = None,
+    root: str | os.PathLike | None = None,
+    probe_timeout: float = PROBE_TIMEOUT_S,
+    host: bool = True,
+    chosen: str | list[str] | None = None,
+    off_reasons: list[str] | dict[str, str] | None = None,
+    comfy_url_override: str | None = None,
+) -> dict:
+    """The whole report, with ``exit_code`` decided.
+
+    ``chosen`` is the backend set the project's ``[make]`` implies; every
+    other row reads ``off``, is not probed, and does not vote. Unstated,
+    every backend is chosen — which is what ``python3 python/forge_gen
+    doctor`` on its own means, and what a project with no ``[make]`` reads
+    as.
+
+    **Exit 1 only while a chosen backend is not ok.** ``--make none`` and
+    tier ``fake`` choose nothing, so every row is ``off`` and the exit is 0:
+    that is how this gate stays green on a machine with no card.
+    """
     base = Path(root).expanduser().resolve() if root else backends_mod.backends_dir()
     report: dict = {
         "schema": SCHEMA,
@@ -543,9 +1073,36 @@ def diagnose(*, only: str | None = None, root: str | os.PathLike | None = None, 
             report["exit_code"] = exit_codes.USAGE
             return report
         names = [only]
+
+    if isinstance(chosen, str):
+        chosen_set: set[str] | None = {word.strip() for word in chosen.split(",") if word.strip()}
+    elif chosen is None:
+        chosen_set = None
+    else:
+        chosen_set = {str(word) for word in chosen}
+    report["chosen"] = sorted(chosen_set) if chosen_set is not None else None
+    reasons = off_reasons if isinstance(off_reasons, dict) else parse_off_reasons(off_reasons)
+
+    # One view of the host per run: ``GET /object_info`` is the whole node
+    # surface, and six comfy backends asking six times on a cold host is six
+    # times the wait for one answer that cannot differ.
+    url = comfy_url(base, comfy_url_override)
+    try:
+        comfy_host: Backend | None = backends_mod.load_backend("comfy", base)
+    except MissingBackend:
+        comfy_host = None
+    view = ComfyView(url, comfy_host)
+    report["comfy_url"] = url
+
     for name in names:
-        report["backends"][name] = diagnose_backend(name, root=base, probe_timeout=probe_timeout)
-    all_ok = all(entry["status"] == "ok" for entry in report["backends"].values())
+        if chosen_set is not None and name not in chosen_set:
+            report["backends"][name] = off_row(name, reasons.get(name, "not needed by [make]"), root=base)
+            continue
+        report["backends"][name] = diagnose_backend(name, root=base, probe_timeout=probe_timeout, comfy=view)
+
+    # ``off`` never votes: a kind the project did not choose is not a defect.
+    voting = [entry for entry in report["backends"].values() if entry["status"] != "off"]
+    all_ok = all(entry["status"] == "ok" for entry in voting)
     report["ok"] = all_ok
     report["exit_code"] = exit_codes.OK if all_ok else 1
     return report
@@ -582,7 +1139,13 @@ def render(report: dict) -> str:
     if report.get("error"):
         lines.append(f"  error: {report['error']}")
     for name, entry in (report.get("backends") or {}).items():
-        lines.append(f"  {name:<10} {entry['status']:<8} {entry.get('dir') or ''}")
+        executor = entry.get("executor") or "?"
+        if entry["status"] == "off":
+            # Dimmed, with the reason on the same line: an `off` row is not
+            # a problem to be fixed and should not read like one.
+            lines.append(_dim(f"  {name:<10} {'off':<8} off — {entry.get('reason') or 'not chosen'}"))
+            continue
+        lines.append(f"  {name:<10} {entry['status']:<8} [{executor}] {entry.get('dir') or ''}")
         for check in entry["checks"]:
             mark = "ok  " if check["ok"] else "FAIL"
             if check["ok"] and check["detail"].startswith("warn:"):
@@ -592,6 +1155,26 @@ def render(report: dict) -> str:
             lines.append(f"    warn notice: {notice}")
         for hint in entry["hints"]:
             lines.append(f"    hint: {hint}")
-    verdict = "every backend ok" if report.get("ok") else "not every backend is ok"
+    entries = report.get("backends") or {}
+    off = [name for name, entry in entries.items() if entry["status"] == "off"]
+    chosen = [name for name, entry in entries.items() if entry["status"] != "off"]
+    if not chosen:
+        verdict = "nothing is chosen — every backend is off, and that is not a problem"
+    elif report.get("ok"):
+        verdict = f"every chosen backend ok ({', '.join(chosen)})"
+    else:
+        bad = [name for name in chosen if entries[name]["status"] != "ok"]
+        verdict = f"not every chosen backend is ok: {', '.join(bad)}"
+    if off:
+        verdict += f"; {len(off)} off ({', '.join(off)})"
     lines.append(f"doctor: {verdict} (exit {report.get('exit_code', report.get('_exit', '?'))})")
     return "\n".join(lines) + "\n"
+
+
+def _dim(text: str) -> str:
+    """Dimmed, when something is watching. A pipe gets the plain words: the
+    Rust side parses the JSON, and a log with escape codes in it is worse
+    than one without."""
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\x1b[2m{text}\x1b[0m"

@@ -1,4 +1,4 @@
-//! Sidecar schema 1: what an asset records about itself.
+//! Sidecar schema 2: what an asset records about itself.
 //!
 //! # Why the shape is what it is
 //!
@@ -33,6 +33,20 @@
 //! know refuses on the number, out loud, before it can rewrite that record
 //! without the fields it did not understand.
 //!
+//! # Why 2
+//!
+//! One addition, [`Sidecar::body`]: a body's own bone lengths and the motion
+//! scale a consumer applies to a root track. It is a bump rather than an
+//! optional extra because it changes what a consumer must do with a clip —
+//! a game that scaled no root track would put a short body's feet through
+//! the floor of its own stride — and because the manifest that projects it
+//! bumped with it. Nothing else in the record changed: no kind, no
+//! generator, no claim, and not one clip was rebaked. A schema-1 record is
+//! not read here; `forge migrate` brings it forward, re-deriving the bone
+//! table from each shipped `.glb` rather than copying the profile's, because
+//! a default written where a measurement belongs is the one thing this
+//! schema exists to prevent.
+//!
 //! # Two empties that are not the same
 //!
 //! [`Sidecar::events`] is `None` when nothing has ever examined the clip for
@@ -41,9 +55,11 @@
 //! checked" — the same lie `null`-means-unknown exists to prevent everywhere
 //! else. The distinction is load-bearing and the writer keeps it.
 
+mod body;
 mod clip;
 mod events;
 
+pub use body::{BONE_TOLERANCE_M, Body, BodyBone, MOTION_SCALE_TOLERANCE};
 pub use clip::{
     AutoTrim, ClipRecipe, DEFAULT_FPS, InPlaceMode, PartialRecipe, RootYMode, format_retime,
     overlay_recipe, parse_retime,
@@ -55,7 +71,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 /// The schema version this build writes, and the only one it reads.
-pub const SCHEMA: u64 = 1;
+pub const SCHEMA: u64 = 2;
+
+/// The schema `forge migrate` reads to bring forward. One version back and
+/// no further: there is no legacy reader here, and 1 is migrated rather than
+/// read because a body's [`Sidecar::body`] block cannot be invented from the
+/// record — it is re-derived from the `.glb`.
+pub const MIGRATABLE_SCHEMA: u64 = 1;
 
 /// What kind of asset a sidecar describes.
 ///
@@ -459,6 +481,34 @@ pub struct AceStepParams {
     pub lyrics: Option<String>,
     /// Seconds requested.
     pub duration_s: Option<f32>,
+    /// Graph gain in whole decibels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gain_db: Option<i64>,
+    /// Whether the text model planned audio codes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<bool>,
+    /// Requested output container.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Explicit optional loop derivation; absent for historical full tracks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<MusicLoopParams>,
+}
+
+/// Explicit PCM loop selection, preserving the requested period.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MusicLoopParams {
+    /// Source offset in seconds.
+    pub start_s: f64,
+    /// Output period in seconds, rounded to the nearest frame.
+    pub duration_s: f64,
+    /// Wrap blend in seconds; source must extend beyond the period by this much.
+    pub crossfade_s: f64,
+    /// Versioned deterministic transform.
+    pub algorithm: String,
+    /// False for fake requests where no transform ran.
+    pub applied: bool,
 }
 
 /// What MOSS `SoundEffect` was asked for.
@@ -644,6 +694,19 @@ pub struct Sidecar {
     pub recipe: Option<ClipRecipe>,
     /// Facts measured from the built file.
     pub measured: Option<Measured>,
+    /// The per-body skeleton: every bone's own rest translation and the
+    /// motion scale a consumer applies to a root track. `Some` on a body and
+    /// on nothing else — [`Sidecar::validate`] refuses it anywhere else,
+    /// because a prop that could claim a skeleton is a prop a game would try
+    /// to animate.
+    ///
+    /// `None` on a body means nobody has re-derived it yet, which is what
+    /// `forge migrate` is for; it never means the body has no bones.
+    /// The default is what lets a schema-1 record, which has no such key at
+    /// all, be read by the migration rather than refused for a missing
+    /// field.
+    #[serde(default)]
+    pub body: Option<Body>,
     /// Gameplay events on the clip's timeline.
     ///
     /// The distinction between the two empties is load-bearing: `None` means
@@ -678,6 +741,7 @@ impl Sidecar {
             source: Source::default(),
             recipe: None,
             measured: None,
+            body: None,
             events: None,
             content_hash: String::new(),
             note: None,
@@ -694,12 +758,15 @@ impl Sidecar {
     ///
     /// # Errors
     ///
-    /// Fails when the document declares a schema other than [`SCHEMA`], or
-    /// does not match these types.
+    /// Fails when the document declares a schema other than [`SCHEMA`], does
+    /// not match these types, or breaks [`Sidecar::validate`].
     pub fn from_value(value: serde_json::Value, path: &Path) -> crate::Result<Self> {
         match value.get("schema").and_then(serde_json::Value::as_u64) {
             Some(SCHEMA) => {
-                serde_json::from_value(value).map_err(|e| crate::LibraryError::json(path, e))
+                let record: Self = serde_json::from_value(value)
+                    .map_err(|e| crate::LibraryError::json(path, e))?;
+                record.validate(path)?;
+                Ok(record)
             }
             Some(other) => Err(crate::LibraryError::UnsupportedSchema {
                 path: path.to_path_buf(),
@@ -710,6 +777,31 @@ impl Sidecar {
                 schema: 0,
             }),
         }
+    }
+
+    /// What the types cannot say: a [`Sidecar::body`] block belongs to a
+    /// body and to nothing else.
+    ///
+    /// Checked at every door a record comes through, read and written, and
+    /// not only at the promote — a hand-typed sidecar giving a barrel a
+    /// skeleton would otherwise be a manifest entry a game tries to
+    /// animate, and the failure would surface in the consumer with a message
+    /// that names nothing.
+    ///
+    /// # Errors
+    ///
+    /// The record carries a body block under a kind that is not
+    /// [`Kind::Body`].
+    pub fn validate(&self, path: &Path) -> crate::Result<()> {
+        if self.body.is_some() && self.kind != Kind::Body {
+            return Err(crate::LibraryError::rejected(format!(
+                "{}: a {} carries a body block, and only a body has a skeleton — bone lengths \
+                 and a motion scale mean nothing on it",
+                path.display(),
+                self.kind
+            )));
+        }
+        Ok(())
     }
 
     /// Read a sidecar from JSON bytes. See [`Self::from_value`].
@@ -873,7 +965,7 @@ mod tests {
     /// would be worse than one that refuses it by name.
     #[test]
     fn an_unknown_generator_tag_is_refused_not_laundered() {
-        let text = r#"{"schema": 1, "kind": "body", "name": "neutral", "created": "2026-08-23",
+        let text = r#"{"schema": 2, "kind": "body", "name": "neutral", "created": "2026-08-23",
             "content_hash": "sha256:00", "generator": {"tool": "lab_body", "version": "0.2.0"}}"#;
         let error = parse(text).expect_err("must refuse");
         assert!(error.to_string().contains("lab_body"), "{error}");

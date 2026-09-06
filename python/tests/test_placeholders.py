@@ -119,3 +119,68 @@ def test_refuse_real_guards_and_lets_placeholders_by(tmp_path):
         handle.writeframes(b"\x00\x01" * 800)
     with pytest.raises(UsageError, match="real.wav"):
         placeholders.refuse_real(fake, real)
+
+
+def _humanoid(repo_root):
+    from forge_gen import profile as profile_mod
+
+    return profile_mod.load_profile(repo_root / "rigs" / "humanoid")
+
+
+def test_the_prepared_placeholder_is_a_body_with_bones_and_no_skin(repo_root, tmp_path):
+    """What ``forge gen prepare --fake`` writes: the shape a real one writes."""
+    prof = _humanoid(repo_root)
+    out = placeholders.placeholder_prepared_glb(tmp_path / "figure.glb", prof)
+    info = glb.verify_glb(out)
+    assert info["skins"] == 0, "the weights are what the skinner is being asked for"
+    assert info["meshes"] == 1 and info["images"] == 1
+    names = {node.get("name") for node in info["document"]["nodes"]}
+    assert {bone["name"] for bone in prof.bones} <= names
+    assert placeholders.is_placeholder(out)
+
+
+def test_the_skinned_placeholder_carries_a_fitted_looking_skeleton(repo_root, tmp_path):
+    """Bones scaled, rotations untouched — the one move a real fit makes.
+
+    A placeholder at exactly the contract's lengths would exercise none of
+    what the fitted skeleton exists to fill: a sidecar's ``bones[]`` and its
+    ``motion_scale`` would both be the contract's own numbers.
+    """
+    prof = _humanoid(repo_root)
+    plain = glb.verify_glb(placeholders.placeholder_body_glb(tmp_path / "one.glb", prof))["document"]
+    fitted = glb.verify_glb(placeholders.placeholder_body_glb(tmp_path / "fit.glb", prof, scale=0.95))["document"]
+    assert len(fitted["skins"][0]["joints"]) == len(prof.bones)
+
+    for index, bone in enumerate(prof.bones):
+        want = [value * 0.95 for value in bone["rest_translation"]]
+        assert fitted["nodes"][index]["translation"] == pytest.approx(want, abs=1e-9), bone["name"]
+        assert fitted["nodes"][index]["rotation"] == plain["nodes"][index]["rotation"], "a fit may scale a bone and may not turn one"
+    assert placeholders.is_placeholder(tmp_path / "fit.glb")
+
+
+def test_the_boxy_body_is_one_box_per_segment(repo_root):
+    prof = _humanoid(repo_root)
+    positions, indices, bones = placeholders.boxy_body(prof)
+    assert len(positions) == 8 * placeholders.BODY_SEGMENTS
+    assert len(indices) == 3 * 12 * placeholders.BODY_SEGMENTS
+    assert len(bones) == len(positions)
+    assert len(set(bones)) == placeholders.BODY_SEGMENTS, "each box belongs wholly to one bone"
+    assert max(point[1] for point in positions) > 1.0, "and the figure stands up"
+
+
+def test_the_boxy_body_scales_with_the_skeleton_it_is_built_on(repo_root):
+    prof = _humanoid(repo_root)
+    plain, _indices, _bones = placeholders.boxy_body(prof)
+    small, _indices, _bones = placeholders.boxy_body(prof, scale=0.5)
+    assert max(point[1] for point in small) == pytest.approx(0.5 * max(point[1] for point in plain), rel=0.02)
+
+
+def test_the_inverse_bind_matrix_is_the_inverse_of_the_rest_transform():
+    """One copy of the arithmetic; a matrix written two ways is a body inside out."""
+    position, rotation = (0.1, 0.9, -0.2), (0.0, 0.0, 0.3826834, 0.9238795)
+    inverse = placeholders.inverse_rigid(position, rotation)
+    # Applying the inverse to the rest position must land on the origin.
+    columns = [[inverse[column * 4 + row] for column in range(4)] for row in range(4)]
+    moved = [sum(columns[row][k] * value for k, value in enumerate((*position, 1.0))) for row in range(3)]
+    assert moved == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert inverse[15] == 1.0

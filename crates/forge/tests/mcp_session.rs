@@ -1,0 +1,1064 @@
+//! `mcp-session`: the agent's whole path through the MCP, held green the
+//! way `ci-fake` holds the shell's.
+//!
+//! One scripted session — initialize, the tool surface, a project, the
+//! licences, the setup gate, doctor, a sound made, waited on, inspected,
+//! promoted and verified, then a reference brought and a body filed behind
+//! the export gate and the rig check — run **twice, over both transports**,
+//! because "one tool surface, two transports, one queue" is this phase's
+//! central claim and a transport nothing exercises ships ungated.
+//! Everything is asserted on the frame text an agent would read, never on
+//! an internal: the thing under test is what the agent is told.
+//!
+//! # Why Rust, and why rmcp's own client
+//!
+//! `rmcp` is already pinned in this workspace, so the client speaks exactly
+//! the protocol the server does; a second implementation in CI would be a
+//! second thing to keep current, and the day it drifted it would fail for a
+//! reason that is not this repo's. `env!("CARGO_BIN_EXE_forge")` is the
+//! binary Cargo just built — no `just` step in front of it, no stale
+//! `target/debug/forge` from last week, no PATH.
+//!
+//! # What it needs
+//!
+//! No GPU, no display, no backend, no secret and no network. The project is
+//! a `tempfile::tempdir()` at tier `fake`, so every generator writes a
+//! branded placeholder through the same doors and validators, and every
+//! doctor row reads `off`.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
+
+use rmcp::ServiceExt;
+use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent};
+use rmcp::service::{RoleClient, RunningService};
+use rmcp::transport::{
+    StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
+};
+use serde_json::{Value, json};
+
+/// The whole tool surface, sorted. `mcp-check` pins the same list against a
+/// raw handshake; this pins it against a real client, so the two cannot
+/// drift apart without one of them saying so.
+const TOOLS: [&str; 30] = [
+    "audit",
+    "cancel",
+    "doctor",
+    "export_body",
+    "export_bundle",
+    "generate_audio",
+    "generate_clips",
+    "generate_mesh",
+    "import_reference",
+    "init_project",
+    "inspect_audio",
+    "licences",
+    "list_audio",
+    "list_clips",
+    "list_models",
+    "list_runs",
+    "manifest_check",
+    "prepare_body",
+    "prepare_prop",
+    "promote_audio",
+    "promote_body",
+    "promote_clip",
+    "promote_model",
+    "render_clip_strip",
+    "render_model",
+    "setup",
+    "skin_body",
+    "status",
+    "verify",
+    "wait",
+];
+
+/// This build by default; distribution acceptance can supply a staged binary.
+fn forge() -> PathBuf {
+    std::env::var_os("FORGE_TEST_BINARY")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_forge")), PathBuf::from)
+}
+
+/// The toolkit checkout, for `FORGE_HOME` — `crates/forge/` up two.
+fn toolkit() -> PathBuf {
+    if let Some(path) = std::env::var_os("FORGE_TEST_TOOLKIT") {
+        return PathBuf::from(path);
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the toolkit root is two above crates/forge")
+        .to_path_buf()
+}
+
+/// A project to run a session in: a real one, made through the real door.
+///
+/// `forge init` writes `forge.toml`, the directories, the ledger header,
+/// the rig profile and an empty manifest — so the `verify` at the end of
+/// the script has something honest to hold. The session's own
+/// `init_project` then re-answers the three questions through the MCP,
+/// which is the step being tested.
+fn scratch_project() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let status = Command::new(forge())
+        .arg("init")
+        .arg("--project")
+        .arg(dir.path())
+        .arg("--name")
+        .arg("mcp_session")
+        .args(["--tier", "fake", "--yes"])
+        .env("FORGE_HOME", toolkit())
+        .env("FORGE_FAKE", "1")
+        .stdin(std::process::Stdio::null())
+        .status()
+        .expect("forge init runs");
+    assert!(status.success(), "forge init exited {status}");
+    dir
+}
+
+/// The text of a frame, joined — what an agent reads.
+fn text(result: &CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|content| match &content.raw {
+            RawContent::Text(text) => Some(text.text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Whether the frame carried an error result. A refusal is a *successful*
+/// frame with this set: that is the shape the whole surface promises.
+fn is_error(result: &CallToolResult) -> bool {
+    result.is_error.unwrap_or(false)
+}
+
+/// Call one tool.
+async fn call(
+    client: &RunningService<RoleClient, ()>,
+    name: &'static str,
+    arguments: Value,
+) -> CallToolResult {
+    let object = arguments
+        .as_object()
+        .cloned()
+        .expect("tool arguments are an object");
+    client
+        .call_tool(CallToolRequestParams::new(name).with_arguments(object))
+        .await
+        .unwrap_or_else(|err| panic!("{name} did not answer: {err}"))
+}
+
+/// A successful frame, or a panic naming what came back instead.
+async fn ok(
+    client: &RunningService<RoleClient, ()>,
+    name: &'static str,
+    arguments: Value,
+) -> String {
+    let result = call(client, name, arguments).await;
+    let body = text(&result);
+    assert!(!is_error(&result), "{name} refused:\n{body}");
+    body
+}
+
+/// A refusal, or a panic naming what came back instead.
+async fn refused(
+    client: &RunningService<RoleClient, ()>,
+    name: &'static str,
+    arguments: Value,
+) -> String {
+    let result = call(client, name, arguments).await;
+    let body = text(&result);
+    assert!(
+        is_error(&result),
+        "{name} was expected to refuse and did not:\n{body}"
+    );
+    body
+}
+
+/// The one script, run over whichever transport the caller connected with.
+///
+/// It is the stranger's whole path: make a project, read the licences,
+/// meet the gate, ask what this machine can do, make a sound, wait for it,
+/// look at it, ship it, and hold the library to its own claims.
+async fn session(client: &RunningService<RoleClient, ()>, project: &Path) {
+    let resources = client.list_all_resources().await.expect("resources/list");
+    assert!(
+        resources
+            .iter()
+            .any(|r| r.uri == "forge://guides/v1/workflow")
+    );
+    let guide = client
+        .read_resource(rmcp::model::ReadResourceRequestParams::new(
+            "forge://guides/v1/workflow",
+        ))
+        .await
+        .expect("read workflow guide");
+    let guide = serde_json::to_string(&guide).expect("guide text");
+    for name in ["verify", "audit", "manifest_check", "generate_audio"] {
+        assert!(guide.contains(name), "{name} missing from guide");
+    }
+    assert!(
+        client
+            .read_resource(rmcp::model::ReadResourceRequestParams::new(
+                "forge://guides/missing"
+            ))
+            .await
+            .is_err()
+    );
+    // -- the surface ------------------------------------------------------
+    let mut names: Vec<String> = client
+        .list_all_tools()
+        .await
+        .expect("tools/list")
+        .into_iter()
+        .map(|tool| tool.name.into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        TOOLS.iter().map(|n| (*n).to_string()).collect::<Vec<_>>(),
+        "the tool surface moved; mcp-check pins the same list and must move with it"
+    );
+
+    // -- the three questions ---------------------------------------------
+    let already = refused(
+        client,
+        "init_project",
+        json!({ "path": project.display().to_string(), "make": { "sfx": true } }),
+    )
+    .await;
+    assert!(
+        already.contains("already a project") && already.contains("adopt"),
+        "an existing forge.toml must not be rewritten uninvited:\n{already}"
+    );
+
+    let made = ok(
+        client,
+        "init_project",
+        json!({
+            "path": project.display().to_string(),
+            "make": { "sfx": true },
+            "tier": "fake",
+            "adopt": true,
+        }),
+    )
+    .await;
+    assert!(made.contains("sfx"), "{made}");
+    assert!(made.contains("fake"), "{made}");
+    assert!(
+        made.contains("[make]"),
+        "the file it wrote is shown:\n{made}"
+    );
+
+    // -- the licences, in full --------------------------------------------
+    let licences = ok(client, "licences", json!({ "kinds": ["sfx"] })).await;
+    assert!(licences.contains("comfyui_gpl"), "{licences}");
+    assert!(
+        licences.contains("GPL-3.0-or-later"),
+        "the notice itself, not a summary:\n{licences}"
+    );
+    assert!(licences.contains("needs_accept:"), "{licences}");
+
+    // -- the gate ---------------------------------------------------------
+    // sfx carries a fact that is told, not asked, so it is not gated.
+    let sfx = ok(
+        client,
+        "setup",
+        json!({ "kinds": ["sfx"], "accept": [], "dry_run": true }),
+    )
+    .await;
+    assert!(sfx.contains("moss_sfx"), "{sfx}");
+
+    // characters is. The refusal must name the id, or an agent that is told
+    // "no" without being told which word to say next burns a turn and then
+    // repeats the same call.
+    let gated = refused(
+        client,
+        "setup",
+        json!({ "kinds": ["characters"], "accept": [] }),
+    )
+    .await;
+    assert!(gated.contains("nvdiffrast"), "{gated}");
+    assert!(
+        gated.contains("call licences first and pass each id in accept"),
+        "{gated}"
+    );
+    assert!(gated.contains("nothing was installed"), "{gated}");
+
+    // -- what this machine can do -----------------------------------------
+    let doctor = ok(client, "doctor", json!({})).await;
+    assert!(
+        doctor.contains("off — "),
+        "tier fake chooses nothing, so every row reads off:\n{doctor}"
+    );
+    assert!(
+        doctor.contains("exit 0")
+            || doctor.contains("doctor: ok")
+            || doctor.contains("nothing is chosen"),
+        "an off row never votes on the exit code:\n{doctor}"
+    );
+
+    // -- make one sound ---------------------------------------------------
+    let started = ok(
+        client,
+        "generate_audio",
+        json!({ "kind": "sfx", "name": "door", "prompt": "a heavy door closing", "seconds": 1 }),
+    )
+    .await;
+    let job = job_id(&started);
+    // A generate returns a JOB, not a finished sound. The frame names where
+    // the file WILL be — `designs/serve.md` §7 prints `out` and `record` in
+    // it, and `next` is the literal call to make — but its state is not
+    // terminal and nothing has been measured yet.
+    assert!(
+        matches!(
+            job_state(&started).as_str(),
+            "queued" | "blocked" | "running"
+        ),
+        "a generate must not block until the sound exists:\n{started}"
+    );
+    assert!(
+        started.contains("wait"),
+        "and it hands back the literal call to make next:\n{started}"
+    );
+
+    // -- wait on it -------------------------------------------------------
+    let done = ok(client, "wait", json!({ "job": job, "max_s": 120 })).await;
+    assert!(done.contains("done"), "{done}");
+    assert!(done.contains("fake"), "the placeholder says so:\n{done}");
+    assert!(done.contains("out/audio/sfx/door.wav"), "{done}");
+    assert!(
+        project.join("out/audio/sfx/door.wav").is_file(),
+        "the sound is on disk where the frame said it is"
+    );
+    assert!(
+        project.join("out/audio/sfx/door.json").is_file()
+            || project.join("out/audio/sfx/door.wav.json").is_file(),
+        "and its record is beside it"
+    );
+
+    // Two negative legs, in the same script, because they rot silently.
+    let unknown = refused(client, "wait", json!({ "job": "job_nothing", "max_s": 5 })).await;
+    assert!(
+        unknown.contains(&job),
+        "an unknown job id must list the ids that DO exist:\n{unknown}"
+    );
+
+    // -- look at it -------------------------------------------------------
+    let plot = ok(
+        client,
+        "inspect_audio",
+        json!({ "name_or_path": "out/audio/sfx/door.wav" }),
+    )
+    .await;
+    assert!(plot.contains("door"), "{plot}");
+
+    // -- ship it ----------------------------------------------------------
+    let shipped = ok(
+        client,
+        "promote_audio",
+        json!({ "kind": "sfx", "name": "door", "file": "out/audio/sfx/door.wav" }),
+    )
+    .await;
+    assert!(shipped.contains("door"), "{shipped}");
+    assert!(
+        project.join("assets/audio/sfx/door.wav").is_file(),
+        "a promote is a direct write"
+    );
+
+    let taken = refused(
+        client,
+        "promote_audio",
+        json!({ "kind": "sfx", "name": "door", "file": "out/audio/sfx/door.wav" }),
+    )
+    .await;
+    assert!(
+        taken.contains("overwrite"),
+        "a taken name is refused, and the way past it is named:\n{taken}"
+    );
+    assert!(
+        taken.contains("door"),
+        "and the record it would have replaced is echoed:\n{taken}"
+    );
+
+    character_loop(client, project).await;
+
+    // -- hold the library to its own claims -------------------------------
+    for name in ["verify", "audit", "manifest_check"] {
+        let result = call(client, name, json!({})).await;
+        assert!(!is_error(&result), "{}: {}", name, text(&result));
+        let fields = result.structured_content.expect("structured validation");
+        assert_eq!(fields["passed"], true);
+        assert_eq!(fields["exit_code"], 0);
+    }
+    // Deliberate damage stays inside the throwaway project. Checks must report
+    // drift without repairing it; CLI and MCP must reach the same verdict.
+    for (name, path, args) in [
+        (
+            "verify",
+            project.join("assets/audio/sfx/door.wav"),
+            vec!["verify"],
+        ),
+        (
+            "audit",
+            project.join("assets/bodies/mannequin.glb"),
+            vec!["audit"],
+        ),
+        (
+            "manifest_check",
+            project.join("assets/library.json"),
+            vec!["manifest", "--check"],
+        ),
+    ] {
+        let original = std::fs::read(&path).expect("original fixture");
+        std::fs::write(&path, b"deliberately invalid test fixture").expect("damage fixture");
+        let result = call(client, name, json!({})).await;
+        assert!(
+            is_error(&result),
+            "{name} must report damage: {}",
+            text(&result)
+        );
+        let fields = result.structured_content.expect("failure fields");
+        assert_eq!(fields["passed"], false);
+        let cli = Command::new(forge())
+            .arg("--project")
+            .arg(project)
+            .args(args)
+            .output()
+            .expect("CLI validation");
+        assert_eq!(fields["exit_code"], cli.status.code().expect("exit code"));
+        assert!(
+            fields["report"]
+                .as_str()
+                .expect("report")
+                .contains(String::from_utf8_lossy(&cli.stdout).trim()),
+            "{name} CLI/MCP reports differ:\nCLI stdout:\n{}\nCLI stderr:\n{}\nMCP report:\n{}",
+            String::from_utf8_lossy(&cli.stdout),
+            String::from_utf8_lossy(&cli.stderr),
+            fields["report"],
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("unchanged"),
+            b"deliberately invalid test fixture"
+        );
+        std::fs::write(&path, original).expect("restore fixture");
+    }
+}
+
+/// The character path, appended to the session: a reference in, a mesh out,
+/// a body filed.
+///
+/// Two halves, and they are asserted differently on purpose.
+///
+/// The **making** half — `import_reference`, `generate_mesh`,
+/// `prepare_body`, `skin_body` — is held to the contract this door actually
+/// makes: every one of them answers with a job id and the literal next call,
+/// or with a refusal that names doctor and what to install, and never with a
+/// protocol error or a call that blocks for four minutes. Whether the
+/// generator behind it then succeeds depends on a card and an installed
+/// backend, which a runner has neither of; `ci-fake` is where the
+/// placeholders run end to end.
+///
+/// The **shipping** half runs for real, because it needs nothing but this
+/// binary: the fixture mannequin is written from the profile, filed through
+/// `promote_body` behind the export gate and `rig check`, refused when the
+/// name is taken, accepted when told `overwrite`, and looked at. Then the
+/// session's own `verify` holds what it shipped to its record — which, for a
+/// body, now includes re-deriving all 55 rest translations out of the `.glb`
+/// and recomputing its motion scale.
+async fn character_loop(client: &RunningService<RoleClient, ()>, project: &Path) {
+    // -- a reference, brought ---------------------------------------------
+    let drawn = project.join("out/refs/hero.png");
+    draw_a_reference(&drawn);
+
+    let imported = ok(
+        client,
+        "import_reference",
+        json!({
+            "png": "out/refs/hero.png",
+            "name": "hero",
+            "kind": "character",
+            "source": "drawn by hand for this test",
+        }),
+    )
+    .await;
+    let job = job_id(&imported);
+    assert!(
+        !job.is_empty() && imported.contains("generate_mesh"),
+        "the import hands back a job and the literal next call:\n{imported}"
+    );
+    let mut submitted = vec![job];
+
+    // The same name twice is refused: a reference is the durable source a
+    // body is re-derived from, so this door has no overwrite at all.
+    let again = refused(
+        client,
+        "import_reference",
+        json!({
+            "png": "out/refs/hero.png",
+            "name": "hero",
+            "kind": "character",
+            "source": "drawn by hand for this test",
+        }),
+    )
+    .await;
+    assert!(again.contains("hero"), "{again}");
+
+    // -- the three card steps ---------------------------------------------
+    // Held to the contract this door makes and no further: each answers
+    // with a job id and the literal next call, or with a refusal that names
+    // doctor and what to install. Whether the generator behind it then
+    // succeeds wants a card and an installed backend, which a runner has
+    // neither of; `the_whole_character_loop_on_the_fake_tier` runs the
+    // whole path once the generators' own doors exist.
+    for (tool, arguments) in [
+        (
+            "generate_mesh",
+            json!({"image": "out/refs/hero.png", "name": "hero"}),
+        ),
+        ("prepare_body", json!({"glb": "out/lifts/hero.glb"})),
+        (
+            "prepare_prop",
+            json!({"glb": "out/lifts/hero.glb", "height_m": 1.0}),
+        ),
+        ("skin_body", json!({"glb": "out/prepare/hero.glb"})),
+        (
+            "export_body",
+            json!({"blend": "assets-src/blender/hero.blend"}),
+        ),
+    ] {
+        let result = call(client, tool, arguments).await;
+        let body = text(&result);
+        if is_error(&result) {
+            assert!(
+                body.contains("doctor")
+                    || body.contains("no reference PNG")
+                    || body.contains("no mesh at")
+                    || body.contains("no prepared mesh at")
+                    || body.contains("no rigged .blend at"),
+                "{tool} refused without naming what would have worked:\n{body}"
+            );
+        } else {
+            assert!(
+                !job_id(&body).is_empty(),
+                "{tool} answered without a job id:\n{body}"
+            );
+            submitted.push(job_id(&body));
+        }
+    }
+
+    // The capability calls may still be publishing source references/records.
+    // Wait before comparing CLI and MCP checks against one stable library.
+    // A slow successful render used to hide this race; a missing adapter made
+    // rendering return immediately and the reports counted different files.
+    // These calls promise a job or refusal, not generator success: terminal
+    // failures are valid here and the complete fake loop checks success below.
+    for job in submitted {
+        let finished = call(client, "wait", json!({"job": job, "max_s": 120})).await;
+        let frame = finished
+            .content
+            .iter()
+            .find_map(|content| match &content.raw {
+                RawContent::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .expect("wait returns a job frame");
+        assert!(
+            matches!(
+                job_state(frame).as_str(),
+                "done" | "refused" | "failed" | "cancelled" | "interrupted"
+            ),
+            "the capability job must be terminal before validation: {}",
+            text(&finished)
+        );
+    }
+
+    // -- a body, filed ----------------------------------------------------
+    // Written through `forge rig fixture`, which builds the mannequin from
+    // the profile itself: a real body on the real contract, with no card.
+    // This one is a *fixture*, not a step of the character path routed
+    // round — there is no tool that makes a mannequin and none is wanted;
+    // the path's own middle step is `export_body`, exercised above and
+    // driven end to end in `the_whole_character_loop_on_the_fake_tier`.
+    let body = project.join("out/export/mannequin.glb");
+    let wrote = Command::new(forge())
+        .arg("--project")
+        .arg(project)
+        .arg("rig")
+        .arg("fixture")
+        .arg(&body)
+        .env("FORGE_HOME", toolkit())
+        .output()
+        .expect("forge rig fixture runs");
+    assert!(
+        wrote.status.success(),
+        "the fixture body did not build:\n{}",
+        String::from_utf8_lossy(&wrote.stderr)
+    );
+
+    let filed = ok(
+        client,
+        "promote_body",
+        json!({"name": "mannequin", "glb": "out/export/mannequin.glb",
+               "prompt": "the fixture mannequin, on the profile's own skeleton"}),
+    )
+    .await;
+    assert!(filed.contains("bodies/mannequin.glb"), "{filed}");
+    assert!(
+        filed.contains("motion_scale 1.0000"),
+        "the sidecar's own skeleton is echoed, re-derived from the glb:\n{filed}"
+    );
+    assert!(
+        project.join("assets/bodies/mannequin.glb").is_file(),
+        "a promote is a direct write"
+    );
+
+    let taken = refused(
+        client,
+        "promote_body",
+        json!({"name": "mannequin", "glb": "out/export/mannequin.glb"}),
+    )
+    .await;
+    assert!(
+        taken.contains("overwrite: true"),
+        "a taken name is refused, and the way past it is named:\n{taken}"
+    );
+    assert!(
+        taken.contains("bodies/mannequin.glb"),
+        "and the record it would have replaced is echoed:\n{taken}"
+    );
+
+    let replaced = ok(
+        client,
+        "promote_body",
+        json!({"name": "mannequin", "glb": "out/export/mannequin.glb", "overwrite": true}),
+    )
+    .await;
+    assert!(
+        replaced.contains("replaced the body mannequin"),
+        "and an overwrite says what it replaced:\n{replaced}"
+    );
+
+    // Looking is not a gate, which is why it is a separate call: on a
+    // machine with no wgpu adapter it refuses, and that refusal is a
+    // successful frame like any other.
+    let looked = call(client, "render_model", json!({"name_or_path": "mannequin"})).await;
+    let body_text = text(&looked);
+    assert!(
+        body_text.contains("mannequin") || body_text.contains("adapter"),
+        "render_model says what it drew or why it could not:\n{body_text}"
+    );
+}
+
+/// A T-posed figure on transparent, 1024 square, written where the session
+/// says a reference was drawn.
+///
+/// Not a stand-in pixel. `import_reference` spends no card — it wants numpy
+/// and a PNG — so tier `fake` runs the real door wherever the keyer's
+/// libraries are importable, and the real door refuses anything under
+/// 1024 px on its long side before it looks at a thing. This is the shape
+/// the format text asks for and the pre-checks measure: head and neck above
+/// the arm line, arms straight out, one span as wide as the body is tall,
+/// two legs, nothing touching the frame.
+fn draw_a_reference(path: &Path) {
+    const SIZE: u32 = 1024;
+    let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+    let mut box_of = |x0: u32, y0: u32, x1: u32, y1: u32| {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let at = ((y * SIZE + x) * 4) as usize;
+                pixels[at..at + 4].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]);
+            }
+        }
+    };
+    let (top, bottom, centre) = (100u32, 900u32, SIZE / 2);
+    let height = bottom - top;
+    let half = height / 2;
+    let arm = top + height / 6; // six heads: the arm line is one head down
+    box_of(centre - 60, top, centre + 60, arm);
+    box_of(centre - half, arm, centre + half, arm + 70);
+    box_of(centre - 90, arm, centre + 90, top + height * 62 / 100);
+    box_of(centre - 80, top + height * 62 / 100, centre - 10, bottom);
+    box_of(centre + 10, top + height * 62 / 100, centre + 80, bottom);
+    std::fs::create_dir_all(path.parent().expect("a parent")).expect("the picture's directory");
+    forge_raster::save_png(SIZE, SIZE, &pixels, path).expect("write the picture");
+}
+
+/// The job id out of a frame, read the way an agent reads it: the frame is
+/// one JSON object and the id is under `job`, exactly as `designs/serve.md`
+/// §7 prints it. Reading the key rather than scanning for a word shape is
+/// the point — an agent that had to guess the shape of an id would be the
+/// bug this gate exists to catch.
+fn job_id(frame: &str) -> String {
+    let object: serde_json::Value = serde_json::from_str(frame)
+        .unwrap_or_else(|err| panic!("a job frame is JSON ({err}):\n{frame}"));
+    let Some(id) = object.get("job").and_then(serde_json::Value::as_str) else {
+        panic!("no `job` key in the frame a generate returned:\n{frame}")
+    };
+    assert!(
+        id.starts_with("j-"),
+        "a job id is the daemon's own `j-<stamp>-<nonce>`:\n{frame}"
+    );
+    id.to_string()
+}
+
+/// The state a frame reports, for the legs that care whether a call blocked.
+fn job_state(frame: &str) -> String {
+    let object: serde_json::Value = serde_json::from_str(frame)
+        .unwrap_or_else(|err| panic!("a job frame is JSON ({err}):\n{frame}"));
+    object
+        .get("state")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("no `state` key in a job frame:\n{frame}"))
+        .to_string()
+}
+
+/// The environment every session runs in: no card, no display, no network.
+fn session_env(command: &mut tokio::process::Command, project: &Path) {
+    command
+        .env("FORGE_HOME", toolkit())
+        .env("FORGE_FAKE", "1")
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .arg("--project")
+        .arg(project);
+}
+
+/// A stranger's very first session: a directory that is not a project yet.
+///
+/// `forge mcp` used to refuse to start here — exit 2, "no forge.toml in
+/// &lt;dir&gt;", stdout closed before the handshake — so the one tool that makes
+/// a project was reachable only from a server already bound to a different
+/// one, and the way out a client with no shell was handed was a shell
+/// command. The other two legs of this gate cannot see that: both run
+/// `forge init` from a shell first.
+#[tokio::test]
+async fn mcp_session_with_no_project_yet() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut command = tokio::process::Command::new(forge());
+    command.arg("mcp");
+    session_env(&mut command, dir.path());
+    command.env_remove("FORGE_FAKE");
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command.spawn().expect("forge mcp starts without a project");
+    let stdout = child.stdout.take().expect("the server's stdout");
+    let stdin = child.stdin.take().expect("the server's stdin");
+    let client = ()
+        .serve((stdout, stdin))
+        .await
+        .expect("the handshake completes where there is no forge.toml");
+
+    let guide = client
+        .read_resource(rmcp::model::ReadResourceRequestParams::new(
+            "forge://guides/v1/workflow",
+        ))
+        .await
+        .expect("guide is available before init");
+    assert!(!guide.contents.is_empty());
+
+    // Every tool is still advertised — the surface is the toolkit's, not
+    // the project's — and the seventeen that need a library refuse by
+    // naming the one that fixes it.
+    let blocked = refused(client_ref(&client), "list_audio", json!({})).await;
+    assert!(blocked.contains("init_project"), "{blocked}");
+    assert!(blocked.contains("no forge.toml"), "{blocked}");
+
+    // The two that answer without one, because their answers are the
+    // toolkit's and the machine's rather than a library's.
+    let licences = ok(client_ref(&client), "licences", json!({"kinds": ["props"]})).await;
+    assert!(licences.contains("nvdiffrast"), "{licences}");
+    let doctor = ok(client_ref(&client), "doctor", json!({"quick": true})).await;
+    assert!(!doctor.is_empty());
+
+    // Initialize the bound directory, then run the entire workflow on this connection.
+    let made = ok(
+        client_ref(&client),
+        "init_project",
+        json!({ "path": dir.path().display().to_string(), "make": { "sfx": true }, "tier": "fake" }),
+    )
+    .await;
+    assert!(dir.path().join("forge.toml").is_file(), "{made}");
+    assert!(
+        made.contains("without reconnecting"),
+        "initialization must make continuation explicit:\n{made}"
+    );
+
+    session(&client, dir.path()).await;
+
+    // Creating another game never switches this session's bound library.
+    let other = tempfile::tempdir().expect("other game");
+    let made = ok(
+        &client,
+        "init_project",
+        json!({"path": other.path(), "tier": "fake", "make": {}}),
+    )
+    .await;
+    assert!(made.contains("Reconnect"), "{made}");
+    assert!(ok(&client, "list_audio", json!({})).await.contains("door"));
+    let _ = client.cancel().await;
+    let _ = child.kill().await;
+}
+
+/// The borrow every helper takes, spelled once.
+fn client_ref(client: &RunningService<RoleClient, ()>) -> &RunningService<RoleClient, ()> {
+    client
+}
+
+/// The whole character path on the fake tier, end to end through the MCP:
+/// a picture in, a body in the library, and `verify` holding it to its own
+/// record.
+///
+/// It runs `forge gen ref-import`, `prepare`, `skin` and `export` through
+/// the queue, and **every one of them is a tool call**. It used to shell
+/// `forge gen export` in the middle, because there was no `export_body` on
+/// the surface — which meant the one gate that claimed to hold the agent's
+/// character path green was itself stepping outside the protocol at exactly
+/// the point the path was broken (`decisions.md`, 2026-08-31). A loop that
+/// needs a terminal in the middle is not a loop an agent can run.
+#[tokio::test]
+async fn the_whole_character_loop_on_the_fake_tier() {
+    let dir = scratch_project();
+    let mut command = tokio::process::Command::new(forge());
+    command.arg("mcp");
+    session_env(&mut command, dir.path());
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command.spawn().expect("forge mcp starts");
+    let stdout = child.stdout.take().expect("the server's stdout");
+    let stdin = child.stdin.take().expect("the server's stdin");
+    let client = ().serve((stdout, stdin)).await.expect("initialize over stdio");
+    let project = dir.path();
+
+    let drawn = project.join("out/refs/knight.png");
+    draw_a_reference(&drawn);
+
+    // reference → mesh → prepare → skin, each waited out: a fake tier writes
+    // placeholders through the same doors and validators, so the chain is
+    // the real chain with the card taken out of it.
+    let imported = ok(
+        client_ref(&client),
+        "import_reference",
+        json!({"png": "out/refs/knight.png", "name": "knight", "kind": "character",
+               "source": "drawn by hand for this test", "wait_s": 120}),
+    )
+    .await;
+    assert!(
+        imported.contains("assets-src/refs/characters/knight.png"),
+        "{imported}"
+    );
+
+    for (tool, arguments, wrote) in [
+        (
+            "generate_mesh",
+            json!({"image": "assets-src/refs/characters/knight.png", "name": "knight",
+                   "wait_s": 300}),
+            "out/lifts/knight.glb",
+        ),
+        (
+            "prepare_body",
+            json!({"glb": "out/lifts/knight.glb", "wait_s": 300}),
+            "out/prepare/knight.glb",
+        ),
+        (
+            "skin_body",
+            json!({"glb": "out/prepare/knight.glb", "wait_s": 300}),
+            "assets-src/blender/knight.blend",
+        ),
+        // The step that was missing. It is a tool call like every other one
+        // here: the loop this test holds green is the one an agent with no
+        // shell can actually run.
+        (
+            "export_body",
+            json!({"blend": "assets-src/blender/knight.blend", "wait_s": 300}),
+            "out/export/knight.glb",
+        ),
+    ] {
+        let frame = ok(client_ref(&client), tool, arguments).await;
+        assert!(frame.contains("done"), "{tool} did not finish:\n{frame}");
+        assert!(
+            project.join(wrote).exists(),
+            "{tool} said it was done and {wrote} is not there:\n{frame}"
+        );
+    }
+
+    // The body, filed behind the export gate and the rig check.
+    let filed = ok(
+        client_ref(&client),
+        "promote_body",
+        json!({"name": "knight", "glb": "out/export/knight.glb",
+               "rig_record": "assets-src/blender/knight.rig.json",
+               "export_record": "out/export/knight.export.json"}),
+    )
+    .await;
+    assert!(filed.contains("bodies/knight.glb"), "{filed}");
+    assert!(
+        filed.contains("motion_scale"),
+        "the fitted skeleton is echoed:\n{filed}"
+    );
+
+    let looked = ok(
+        client_ref(&client),
+        "render_model",
+        json!({"name_or_path": "knight"}),
+    )
+    .await;
+    assert!(looked.contains("knight"), "{looked}");
+
+    // -- the prop leg -----------------------------------------------------
+    // The same picture, brought as a prop: lift at the prop register,
+    // normalise through the door that was missing until 2026-09-04 (an
+    // agent with no shell could lift a prop and never file it, because
+    // promote_model only files and `forge gen prop` had no tool), then
+    // promote_model with both records.
+    let drawn = project.join("out/refs/crate.png");
+    draw_a_reference(&drawn);
+    let imported = ok(
+        client_ref(&client),
+        "import_reference",
+        json!({"png": "out/refs/crate.png", "name": "crate", "kind": "prop",
+               "source": "drawn by hand for this test", "wait_s": 120}),
+    )
+    .await;
+    assert!(
+        imported.contains("assets-src/refs/props/crate.png"),
+        "{imported}"
+    );
+    for (tool, arguments, wrote) in [
+        (
+            "generate_mesh",
+            json!({"image": "assets-src/refs/props/crate.png", "name": "crate",
+                   "kind": "prop", "wait_s": 300}),
+            "out/lifts/crate.glb",
+        ),
+        (
+            "prepare_prop",
+            json!({"glb": "out/lifts/crate.glb", "height_m": 0.9, "wait_s": 300}),
+            "out/props/crate.glb",
+        ),
+    ] {
+        let frame = ok(client_ref(&client), tool, arguments).await;
+        assert!(frame.contains("done"), "{tool} did not finish:\n{frame}");
+        assert!(
+            project.join(wrote).exists(),
+            "{tool} said it was done and {wrote} is not there:\n{frame}"
+        );
+    }
+    let filed = ok(
+        client_ref(&client),
+        "promote_model",
+        json!({"name": "crate", "glb": "out/props/crate.glb",
+               "prop_record": "out/props/crate.prop.json",
+               "lift_record": "out/lifts/crate.lift.json"}),
+    )
+    .await;
+    assert!(filed.contains("models/crate.glb"), "{filed}");
+    let looked = ok(
+        client_ref(&client),
+        "render_model",
+        json!({"name_or_path": "crate", "head_row": false}),
+    )
+    .await;
+    assert!(looked.contains("crate"), "{looked}");
+
+    ok(&client, "verify", json!({})).await;
+    ok(&client, "manifest_check", json!({})).await;
+
+    let _ = client.cancel().await;
+    let _ = child.kill().await;
+}
+
+/// The script over stdio: the transport an editor's MCP client uses.
+#[tokio::test]
+async fn mcp_session_stdio() {
+    let dir = scratch_project();
+    let mut command = tokio::process::Command::new(forge());
+    command.arg("mcp");
+    session_env(&mut command, dir.path());
+    // The child's own pipes are the transport. rmcp's `TokioChildProcess`
+    // would do the same thing and pulls `process-wrap` in behind
+    // `transport-child-process`, which this workspace's index cannot
+    // resolve; a pair of pipes is the same protocol over the same bytes and
+    // one fewer dependency in a test.
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command.spawn().expect("forge mcp starts");
+    let stdout = child.stdout.take().expect("the server's stdout");
+    let stdin = child.stdin.take().expect("the server's stdin");
+    let client = ().serve((stdout, stdin)).await.expect("initialize over stdio");
+    session(&client, dir.path()).await;
+    let _ = client.cancel().await;
+    let _ = child.kill().await;
+}
+
+/// The same script over streamable HTTP, against the daemon that owns the
+/// queue. One tool surface, two transports, one queue — and the queue is
+/// the same one `just sfx` at a terminal goes through.
+#[tokio::test]
+async fn mcp_session_http() {
+    let dir = scratch_project();
+    let mut serve = tokio::process::Command::new(forge());
+    serve
+        .arg("serve")
+        .arg("--port")
+        .arg("0")
+        .arg("--foreground");
+    session_env(&mut serve, dir.path());
+    let mut daemon = serve.spawn().expect("forge serve starts");
+
+    let (port, token) = daemon_details(dir.path()).await;
+    let transport = StreamableHttpClientTransport::from_config(
+        StreamableHttpClientTransportConfig::with_uri(format!("http://127.0.0.1:{port}/mcp"))
+            .auth_header(token),
+    );
+    let client = ().serve(transport).await.expect("initialize over http");
+    session(&client, dir.path()).await;
+    let _ = client.cancel().await;
+
+    let stopped = Command::new(forge())
+        .arg("stop")
+        .arg("--project")
+        .arg(dir.path())
+        .env("FORGE_HOME", toolkit())
+        .status()
+        .expect("forge stop runs");
+    assert!(stopped.success(), "forge stop exited {stopped}");
+    let _ = daemon.wait().await;
+}
+
+/// The port and the token the daemon wrote, once it has written them.
+///
+/// `--port 0` means the kernel picks, so the port is only knowable from
+/// `out/serve/daemon.json`; polling for the file is how a client that did
+/// not start the daemon finds it too.
+async fn daemon_details(project: &Path) -> (u16, String) {
+    let path = project.join("out/serve/daemon.json");
+    for _ in 0..200 {
+        if let Ok(text) = std::fs::read_to_string(&path)
+            && let Ok(value) = serde_json::from_str::<Value>(&text)
+            && let Some(port) = value.get("port").and_then(Value::as_u64)
+        {
+            let token = value
+                .get("token")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            return (u16::try_from(port).expect("a port"), token);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("{} never appeared", path.display());
+}

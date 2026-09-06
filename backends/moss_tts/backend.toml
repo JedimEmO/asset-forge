@@ -1,46 +1,68 @@
-# MOSS-TTS: one spoken line from text, zero-shot voice cloning from a 5–15 s
-# reference clip. The checkpoint is the Local-Transformer 4B (MossTTSLocal,
-# 48 kHz stereo out); the model code arrives with the weights through
-# `trust_remote_code`, so the clone is here for its pins and its commit, not
-# for an import. Shares the clone with moss_sfx ($PREFIX/../moss-tts) and
-# keeps its own venv: torch 2.9.1 and transformers 5.0.0, against the
-# sound-effect model's 2.9.0 / 4.57.1.
-#
-# The same env also runs MOSS-VoiceGenerator (1.7B, MossTTSDelay, 24 kHz
-# mono): `forge gen voice` designs a reference clip from a description so a
-# project never has to bring one, and `forge gen speech --voice <name>`
-# clones every line from it.
+# MOSS-VoiceGenerator on ComfyUI; spoken lines use moss_speech.
 name = "moss_tts"
 role = "speech"
-upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
-commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
-license = "Apache-2.0"
-env_kind = "venv"
-python = "3.12"
-cuda = "12.8"
-# The 4B in bf16 with the audio tokenizer resident. Not resident after the
-# call. The 1.7B voice generator needs less; the row is the larger of the two.
-vram_gb = 12
-entry = "audio.speech"
-cwd = "checkout"
-resident = false
+executor = "comfy"
+host = "comfy"
+upstream = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # the pack, v5.8.7, 2026-08-28
+license = "Apache-2.0 (MOSS-TTS and MOSS-VoiceGenerator weights); TTS-Audio-Suite: MIT; ComfyUI: GPL-3.0-or-later"
+# Retain the conservative 13 GB budget; the voice designer measured 5.3 GB.
+vram_gb = 13
+entry = "audio.voice"
 
-[env]
-PYTHONNOUSERSITE = "1"
+[comfy]
+workflows = ["voice.api.json"]
+# Captured from the running host's GET /object_info on 2026-08-30.
+nodes = [
+    "MossTTSEngineNode",
+    "UnifiedVoiceDesignerNode",
+    "SaveAudio",
+]
+# No `unload_node`: the pack registers no unload class at this pin, and
+# `POST /free` does not unload what it loaded — 5.4 GB stayed after a
+# `voice` and 7.3 GB after a `speech` (2026-08-30). The lever is
+# `systemctl --user restart forge-comfy`, 4.4 s, which is step 4 of
+# `forge_serve`'s ladder.
 
-[[models]]
-id = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
-store = "hf"
-license = "Apache-2.0"
-note = "~8 GB; downloaded by install.sh, or by the first `forge gen speech`. MOSS_TTS_MODEL overrides the id."
+[[comfy.packs]]
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+dir = "TTS-Audio-Suite"
+license = "MIT"
+# The same list backends/moss_sfx/backend.toml carries and for the same
+# reason: it is one pack in one venv, and MOSS-SoundEffect v2 is what needs
+# these. `forge gen voice` ran without any of them on 2026-08-30; they are
+# named here so the pack's four places say one thing.
+pips = [
+    "diffusers", "ftfy",
+    "descript-audiotools",   # --no-deps
+    "flatten-dict", "julius", "soundfile", "ffmpy", "importlib-resources",
+    "tensorboard", "randomname",
+]
+nodes = ["MossTTSEngineNode", "UnifiedTTSTextNode", "UnifiedVoiceDesignerNode", "CharacterVoicesNode"]
 
+# NOT `store = "hf"`: TTS-Audio-Suite downloads all three into the host's
+# own base directory, `$PREFIX/data/models/TTS/moss_tts/`, and never into
+# the hub cache. While these rows said `hf`, doctor looked in
+# ~/.cache/huggingface and read `partial` on a machine where the voice
+# designer had just spoken (2026-08-30). Each `gb` is what the directory
+# measures on this host, dated — not a figure copied off a model card.
 [[models]]
 id = "OpenMOSS-Team/MOSS-VoiceGenerator"
-store = "hf"
+store = "comfy:models/TTS/moss_tts"
+local = "MOSS-VoiceGenerator"
 license = "Apache-2.0"
-gated = false
-note = "~4 GB; the 1.7B voice designer behind `forge gen voice`. Downloaded by install.sh, or by the first design. MOSS_VOICE_MODEL overrides the id."
+gb = 3.95
+note = "3.95 GB on disk, measured 2026-08-30; the pack's \"Voice Design 1.7B\" — the same weights `forge gen voice` recorded before the move, and the one MOSS-TTS path that works at this pin"
+
+[[models]]
+id = "OpenMOSS-Team/MOSS-Audio-Tokenizer"
+store = "comfy:models/TTS/moss_tts"
+local = "MOSS-Audio-Tokenizer"
+license = "Apache-2.0"
+gb = 6.61
+note = "6.61 GB on disk, measured 2026-08-30. The codec both the designer and the cloner encode and decode through; the pack fetches it beside them and no row named it until doctor was pointed at the directory they actually live in"
 
 [[notices]]
-title = "VRAM"
-text = "the 8B Delay model (OpenMOSS-Team/MOSS-TTS-v1.5) OOMs on 24 GB with the audio tokenizer resident; Local-Transformer 4B fits and is what this backend runs"
+title = "speech is isolated"
+text = "This backend designs voices on ComfyUI. forge gen speech uses moss_speech, with transformers 5.0.0 in its own interpreter. The former speech graph is retained for diagnosis only: under the host's 5.16.1 it returns silence. Do not shim or downgrade the shared host."

@@ -29,14 +29,19 @@ pub(crate) fn run(cli: &Cli, command: &RigCommand) -> Outcome {
 /// or a failure with the reason, never a pass.
 fn check(cli: &Cli, args: &RigCheckArgs) -> Outcome {
     let project = crate::project(cli)?;
-    let report = forge_studio::rig_check::run(&project, &args.glb, args.out.as_deref()).map_err(
-        |error| match error {
-            forge_studio::rig_check::RigCheckError::NotAFile(_) => {
-                Failure::refused(error.to_string())
-            }
-            _ => Failure::failed(error.to_string()),
-        },
-    )?;
+    let report = forge_studio::rig_check::run_with_reference(
+        &project,
+        &args.glb,
+        args.out.as_deref(),
+        args.reference_clip.as_deref(),
+    )
+    .map_err(|error| match error {
+        forge_studio::rig_check::RigCheckError::NotAFile(_)
+        | forge_studio::rig_check::RigCheckError::MissingReference(_) => {
+            Failure::refused(error.to_string())
+        }
+        _ => Failure::failed(error.to_string()),
+    })?;
     println!("{report}");
     if report.failed() {
         Err(Failure::failed(format!(
@@ -49,9 +54,11 @@ fn check(cli: &Cli, args: &RigCheckArgs) -> Outcome {
 }
 
 /// The humanoid profile's scalars: 1.80 m reference stature with a 1.4–2.2 m
-/// band, feet within 5 cm of the ground, a 1e-3 rest-rotation tolerance, and
-/// the walk as the binding reference. What a directory with no contract yet
-/// starts from.
+/// band, feet within 5 cm of the ground, a 1e-3 rest-rotation tolerance, the
+/// walk as the binding reference, and the four a fitted skeleton is held to
+/// (a degree of rest-translation turn, lengths between 0.4 and 2.5 of the
+/// contract's, the planted foot within 5 cm of the floor). What a directory
+/// with no contract yet starts from.
 fn humanoid_defaults(dir: &Path) -> export::Options {
     export::Options {
         name: String::from("humanoid"),
@@ -64,6 +71,10 @@ fn humanoid_defaults(dir: &Path) -> export::Options {
         },
         foot_tolerance_m: 0.05,
         rest_rotation_tolerance: 1e-3,
+        rest_direction_tolerance_deg: 1.0,
+        length_ratio_min: 0.4,
+        length_ratio_max: 2.5,
+        contact_foot_tolerance_m: 0.05,
         reference_clip: String::from("walk"),
         glb: String::from("rig.glb"),
         blend: dir

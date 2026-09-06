@@ -1,0 +1,63 @@
+{
+  "forge_record": 2,
+  "kind": "ref",
+  "tool": "imported",
+  "created": "2026-08-30",
+  "created_by": "agent:claude",
+  "backend": {
+    "name": null,
+    "commit": null,
+    "python": null,
+    "torch": null,
+    "model": null,
+    "model_revision": null,
+    "executor": null,
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/props/barrel.png",
+      "sha256": "sha256:cbafe261429ed3f4f5b7daaf037baf061b6f602901c2017d93476d61b62c833b",
+      "source": "xAI grok, image_edit chained from the same style board; painted 2026-08-18",
+      "prompt": null
+    }
+  ],
+  "params": {
+    "kind": "prop",
+    "long_side_px": 1024,
+    "stated_source": "xAI grok, image_edit chained from the same style board; painted 2026-08-18"
+  },
+  "outputs": [
+    {
+      "path": "assets-src/refs/props/barrel.png",
+      "sha256": "sha256:cbafe261429ed3f4f5b7daaf037baf061b6f602901c2017d93476d61b62c833b",
+      "bytes": 404303
+    }
+  ],
+  "measured": {
+    "alpha_fraction": 0.2781,
+    "arm_line_fraction": null,
+    "backdrop_rgb": [
+      179,
+      180,
+      179
+    ],
+    "contact_shadow_px": 0,
+    "floor_band": 0.0,
+    "foot_width_px": 301,
+    "heads": null,
+    "height": 1024,
+    "interior_hole_fraction": 0.0,
+    "islands": 1,
+    "islands_all": 1,
+    "keyer_tolerance": 28,
+    "span_over_height": 0.821,
+    "subject_fill": 0.634,
+    "width": 1024
+  },
+  "fake": false,
+  "note": null
+}

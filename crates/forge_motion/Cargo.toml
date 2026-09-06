@@ -19,12 +19,12 @@ glam = { workspace = true }
 # baked clip carries a three-vertex anchor triangle and no images, and the
 # rig file it reads rest transforms from carries none this crate decodes.
 gltf = { workspace = true }
-
-[dev-dependencies]
-# Tests only: the oracle fixtures are sidecar json off disk, and the cskel27
-# constants are held to `rigs/humanoid/motion_skeleton.json`. The bake itself
-# never sees json — it takes already-parsed types — so consumers do not link
-# this.
+# The bundle merge only. Everything else here speaks glTF through the typed
+# `gltf-json` document, but a merge has to hand a body's document back
+# unchanged apart from what it appended — materials, textures and any
+# extension this crate does not model — and a typed round trip drops what it
+# does not know. So the merge edits the JSON chunk as generic JSON. The bake
+# still never sees json: it takes already-parsed types.
 serde_json = { workspace = true }
 
 [lints]

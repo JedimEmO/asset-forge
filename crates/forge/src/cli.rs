@@ -38,6 +38,13 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Make a project here: forge.toml, the asset directories, the rig profile
     Init(InitArgs),
+    /// Write missing project agent instructions and explicit MCP launch configuration
+    AgentConfig,
+    /// Print the embedded workflow guide; no project or backend is required
+    Guide,
+    /// Install the backends the chosen kinds need, after one screen naming
+    /// every licence they carry and what they cost on disk
+    Setup(crate::commands::setup::SetupArgs),
     /// What the library holds, one line per asset
     Catalog(CatalogArgs),
     /// Project the library into assets/library.json, or check the committed one
@@ -60,8 +67,13 @@ pub(crate) enum Command {
     /// The rig profile: export its contract, write its fixture mannequin
     #[command(subcommand)]
     Rig(RigCommand),
-    /// Run a generator through the Python layer: mesh, prop, rig, export,
-    /// rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor
+    /// The reference images a lift starts from: bring one in, checked and
+    /// recorded. Nothing here paints one
+    #[command(subcommand)]
+    Ref(RefCommand),
+    /// Run a generator through the Python layer: mesh, prop, ref-import,
+    /// prepare, skin, export, rig-build, motion sweep|keys|review, sfx,
+    /// music, speech, voice, doctor
     Gen(GenArgs),
     /// What this machine can do: project, profile drift, library counts, host
     /// tools, every backend probed in its own environment
@@ -79,12 +91,106 @@ pub(crate) enum Command {
     /// Which bones a clip drives on a body — driven, at rest, orphaned — with
     /// no GPU. Exits 1 when nothing binds
     Bones(BonesArgs),
+    /// One self-contained glb carrying a body's skin and any number of clips
+    /// as named animations, for handing an asset outside the toolkit
+    Bundle(BundleArgs),
     /// Open the viewer window: library browser, stage, transport, metadata,
     /// audio
     Studio(StudioArgs),
     /// Serve the MCP tools over stdio for an agent: lists, contact sheets,
-    /// audio plots, doctor, the generators, and the two direct promote doors
+    /// audio plots, doctor, the generators, and the four asset promotion doors
     Mcp,
+    /// Run the queue for this project: one FIFO, one worker, one card lock,
+    /// and the MCP tools over HTTP at /mcp
+    Serve(ServeArgs),
+    /// What the queue holds: every job, newest first
+    Jobs(JobsArgs),
+    /// One job: its row, its log, or a cancel
+    Job {
+        #[command(subcommand)]
+        what: JobCommand,
+    },
+    /// Stop the daemon serving this project
+    Stop,
+}
+
+/// `forge serve`.
+#[derive(Debug, Args)]
+pub(crate) struct ServeArgs {
+    /// Stay in the foreground and log to stderr. The default when stdout is
+    /// a terminal.
+    #[arg(long)]
+    pub(crate) foreground: bool,
+    /// The port to listen on. Default 0: the kernel picks one and
+    /// out/serve/daemon.json records it.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) port: u16,
+    /// Exit after this many seconds with an empty queue. A daemon a
+    /// stranger starts by accident should not outlive the session.
+    #[arg(long, value_name = "SECONDS")]
+    pub(crate) idle_exit: Option<u64>,
+    /// Serve the queue only: no MCP tools at /mcp.
+    #[arg(long)]
+    pub(crate) no_mcp: bool,
+    /// Stop the daemon that is serving this project.
+    #[arg(long)]
+    pub(crate) stop: bool,
+    /// Say whether a daemon is up, and what it is doing.
+    #[arg(long)]
+    pub(crate) status: bool,
+}
+
+/// `forge jobs`.
+#[derive(Debug, Args)]
+pub(crate) struct JobsArgs {
+    /// Only jobs in this state: queued, blocked, running, done, refused,
+    /// failed, cancelled, interrupted.
+    #[arg(long, value_name = "STATE")]
+    pub(crate) state: Option<String>,
+    /// Only jobs whose kind starts with this: `generate_audio`,
+    /// `generate_audio.sfx`.
+    #[arg(long, value_name = "KIND")]
+    pub(crate) kind: Option<String>,
+    /// How many rows. Default 20.
+    #[arg(long, default_value_t = 20, value_name = "N")]
+    pub(crate) limit: usize,
+    /// One JSON array instead of the table.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+/// `forge job <what> <id>`.
+#[derive(Debug, Subcommand)]
+pub(crate) enum JobCommand {
+    /// The row: state, timings, outputs, and why it stopped
+    Show(JobIdArgs),
+    /// The job's log, from the top or from where you left off
+    Log(JobLogArgs),
+    /// Stop a job: SIGTERM to its process group, SIGKILL after 10 s
+    Cancel(JobIdArgs),
+}
+
+/// A job by id.
+#[derive(Debug, Args)]
+pub(crate) struct JobIdArgs {
+    /// The job id, as `forge jobs` prints it.
+    pub(crate) id: String,
+    /// One JSON object instead of the lines.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+/// `forge job log <id>`.
+#[derive(Debug, Args)]
+pub(crate) struct JobLogArgs {
+    /// The job id.
+    pub(crate) id: String,
+    /// Keep printing until the job is over.
+    #[arg(long)]
+    pub(crate) follow: bool,
+    /// Start at this byte offset rather than the top.
+    #[arg(long, default_value_t = 0, value_name = "BYTE")]
+    pub(crate) from: u64,
 }
 
 /// `forge audit`.
@@ -190,6 +296,32 @@ pub(crate) struct BonesArgs {
     pub(crate) body: BodyArg,
 }
 
+/// `forge bundle <body> --clips a,b,c --out <path>`.
+#[derive(Debug, Args)]
+pub(crate) struct BundleArgs {
+    /// The body: a library body name, or a path to any rigged glb — an
+    /// export under out/ that has not been promoted yet.
+    pub(crate) body: String,
+    /// The clips, in the order they should appear in the file: library clip
+    /// names or paths to clip glbs, comma-separated. Repeat the flag for
+    /// more.
+    #[arg(long, required = true, value_name = "A,B,C", value_delimiter = ',')]
+    pub(crate) clips: Vec<String>,
+    /// Where to write the bundle. The record lands beside it as
+    /// `<stem>.bundle.json`.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) out: PathBuf,
+    /// Multiply the root travel by this — the body's own root height against
+    /// the profile's, so a fitted skeleton travels its own stride. Rotations
+    /// are never touched. Unstated, the body's record says what it is; the
+    /// bundle record names which of the two it used.
+    #[arg(long, value_name = "F")]
+    pub(crate) motion_scale: Option<f64>,
+    /// Who is exporting: human, `agent:<name>`, unknown.
+    #[arg(long, default_value = "human", value_name = "WHO")]
+    pub(crate) created_by: String,
+}
+
 /// `forge studio`.
 #[derive(Debug, Args)]
 pub(crate) struct StudioArgs {
@@ -256,6 +388,11 @@ pub(crate) struct GpuArgs {
     /// One JSON object instead of the lines.
     #[arg(long)]
     pub(crate) json: bool,
+    /// Give the card back: ask the `ComfyUI` host to unload its models, and
+    /// clear a withheld lease once it has. Replaces `forge gen music
+    /// --stop-server`, which went with the resident server.
+    #[arg(long)]
+    pub(crate) free: bool,
 }
 
 /// `forge init`.
@@ -269,6 +406,10 @@ pub(crate) struct InitArgs {
     /// `rigs/<rig>`.
     #[arg(long, value_name = "DIR")]
     pub(crate) rig_dir: Option<PathBuf>,
+    /// The three questions, as flags: `--make`, `--tier`, `--comfy-url`,
+    /// `--yes`. Their text lives beside the code that answers them.
+    #[command(flatten)]
+    pub(crate) make: crate::commands::init::MakeFlags,
 }
 
 /// `forge catalog`.
@@ -499,6 +640,45 @@ pub(crate) struct AudioListArgs {
     pub(crate) dir: Option<PathBuf>,
 }
 
+/// `forge ref`.
+#[derive(Debug, Subcommand)]
+pub(crate) enum RefCommand {
+    /// Bring one drawn PNG under assets-src/refs/ with its record and its
+    /// SOURCES.md row, after the format, the keyer and the silhouette
+    /// pre-checks that would otherwise cost a lift
+    Import(RefImportArgs),
+}
+
+/// `forge ref import <png>`.
+///
+/// Every flag is the importer's own, because this door composes no command
+/// line of its own: it submits `forge gen ref-import` with what it was
+/// given, which is the same line `just ref-import` and the MCP
+/// `import_reference` submit. One door, three ways in.
+#[derive(Debug, Args)]
+pub(crate) struct RefImportArgs {
+    /// The PNG as it was drawn, wherever it is now. It is copied, not
+    /// moved, and its ORIGINAL bytes are what land under assets-src/refs/.
+    pub(crate) png: PathBuf,
+    /// The library name: `assets-src/refs/<kind>s/<name>.png`, and the name
+    /// the lift and the body then carry.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) name: String,
+    /// Which register the picture is for: a character is held to a T-pose,
+    /// a prop to a three-quarter view inside its frame.
+    #[arg(long, value_name = "KIND", default_value = "character")]
+    pub(crate) kind: String,
+    /// Where it came from, in your own words — the model, the tool, the
+    /// artist, the licence. It is written into the record and into the
+    /// SOURCES.md row verbatim, and it is the only provenance a brought
+    /// picture has.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) source: String,
+    /// Replace a reference of this name; the record it replaces is echoed.
+    #[arg(long)]
+    pub(crate) overwrite: bool,
+}
+
 /// `forge rig`.
 #[derive(Debug, Subcommand)]
 pub(crate) enum RigCommand {
@@ -515,6 +695,9 @@ pub(crate) enum RigCommand {
 /// `forge rig check <glb>`.
 #[derive(Debug, Args)]
 pub(crate) struct RigCheckArgs {
+    /// Library clip to use for binding and planted-foot checks (default: rig contract).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) reference_clip: Option<String>,
     /// The rigged glb to check — an export under out/, or a shipped body.
     pub(crate) glb: PathBuf,
     /// Also render it playing the reference clip (or at rest, when the

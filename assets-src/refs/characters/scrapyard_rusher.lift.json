@@ -1,0 +1,55 @@
+{
+  "forge_record": 2,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": "3.11.15",
+    "torch": "2.6.0+cu124",
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": "af44b45f2e35a493886929c6d786e563ec68364d",
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
+  },
+  "inputs": [
+    {
+      "role": "image",
+      "path": "assets-src/refs/characters/scrapyard_rusher.png",
+      "sha256": "sha256:af5fcae05e3a7cf7ee3b0c36678510b56e56e393b61412e7594dd1f21654d596",
+      "source": null,
+      "prompt": null
+    }
+  ],
+  "params": {
+    "attn_backend": "flash_attn",
+    "decimation_target_vertices": 25000,
+    "pipeline_type": "1024_cascade",
+    "preset": "character",
+    "prompt_from": null,
+    "remesh": true,
+    "resolution": 1024,
+    "seed": 42,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "texture_size": 1024
+  },
+  "outputs": [
+    {
+      "path": "out/lifts/scrapyard_rusher.glb",
+      "sha256": "sha256:5d2e848b6e361e62590d4fcab8fb76f4451ee989d1390b6af550926e9080a47c",
+      "bytes": 3867920
+    }
+  ],
+  "measured": {
+    "images": 2,
+    "keyed_subject_fraction": 0.1838728508962707,
+    "triangles": 24016,
+    "vertices": 26272
+  },
+  "fake": false,
+  "note": null
+}

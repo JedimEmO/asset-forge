@@ -1,0 +1,80 @@
+# SkinTokens (TokenRig) — mesh + skeleton → skin weights. `forge gen skin`
+# runs under this env. Read by python/forge_gen/backends.py; the launcher
+# exports [env] with ${PREFIX}, ${CHECKOUT}, ${BACKEND_DIR} and
+# ${CHECKPOINTS} expanded, as defaults (a value you exported yourself
+# wins). Install traps live in designs/hosting.md under "SkinTokens".
+#
+# What it is for here: `--use_skeleton` reads the armature already inside
+# the input file and predicts weights *for that skeleton*, which is what
+# makes the project's own 55-bone humanoid profile — and later a user's
+# imported rig — possible. It has no seed, so a rig claims integrity (the
+# hash of what shipped) and never reproduction.
+
+name = "skintokens"
+role = "rig"
+upstream = "https://github.com/VAST-AI-Research/SkinTokens"
+commit = "273b691d35989d71cd17ff2895fdc735097b92d1"
+license = "MIT code; MIT weights (VAST-AI/SkinTokens); see the Michelangelo notice below"
+
+# forge2's second form: the executor that runs it. `env` is today's
+# per-backend launcher — a python prefix and a checkout. `env_kind` stays
+# beside it because backends.py still requires it (and doctor parses it);
+# the two say the same thing until the daemon lands.
+executor = "env"
+env_kind = "venv"
+
+python = "3.11"
+cuda = "12.8"                      # torch 2.7.0+cu128, what upstream's README pins
+vram_gb = 14                       # a budget, kept conservative: upstream says "at least 14 GB", but a skin-only run measured 3.3-4.4 GB here (hosting.md, 2026-08-30). Never beside TRELLIS, ARDY, MOSS or the ACE-Step server.
+entry = "skin"                     # forge_gen.skin — Phase 2
+cwd = "checkout"                   # `src` is a plain package in the clone, not installed; every run stands in it
+resident = false
+
+[env]
+# The clone, so the inner half (and probe.py) can put `src` on sys.path
+# without depending on the working directory.
+SKINTOKENS_CHECKOUT = "${CHECKOUT}"
+# Where download.py's `experiments/` and `models/` were written: the
+# expansion of backends/skintokens/.checkpoints. The clone also carries
+# symlinks by those two names, because src/model/tokenrig.py joins
+# "models/Qwen3-0.6B" onto the working directory.
+SKINTOKENS_WEIGHTS = "${CHECKPOINTS}"
+
+[env.force]
+# demo.py sets this itself, before it imports src, and our inner half is
+# not demo.py. Kept where the shell cannot unset it because the thing it
+# silences is a version check for a wheel this env deliberately lacks.
+XFORMERS_IGNORE_FLASH_VERSION_CHECK = "1"
+# Every backend forces it: a ~/.local that has seen years of experiments
+# carries .pth startup hooks.
+PYTHONNOUSERSITE = "1"
+
+[[models]]
+id = "experiments/articulation_xl_quantization_256_token_4"
+store = "checkpoints_dir"
+license = "MIT"
+note = "TokenRig, the autoregressive rig model (grpo_1400.ckpt) — ArticulationXL 2.0 + VRoid Hub + ModelsResource, GRPO-refined; the recommended checkpoint"
+
+[[models]]
+id = "experiments/skin_vae_2_10_32768"
+store = "checkpoints_dir"
+license = "MIT"
+note = "the FSQ-CVAE (last.ckpt) that encodes and decodes the skin tokens themselves"
+
+[[models]]
+id = "models/Qwen3-0.6B"
+store = "checkpoints_dir"
+license = "Apache-2.0"
+note = "config and tokenizer only (download.py ignores *.bin and *.safetensors) — the transformer is built from this config and its weights come from the TokenRig checkpoint"
+
+[[notices]]
+title = "Michelangelo encoder"
+text = "src/model/michelangelo/ is derived from NeuralCarver/Michelangelo, which is GPL-3.0 upstream, while SkinTokens ships the whole repository under MIT — the authors have not answered which grant covers those files (issue #9). It runs in its own process and nothing of it ships inside an asset; every rig record names the skinner and this note travels with it."
+
+[[notices]]
+title = "flash-attn"
+text = "Not installed. patches/0001 rewrites the two hard-coded attn_implementation=\"flash_attention_2\" call sites to \"sdpa\" and gives each flash_attn import a PyTorch scaled_dot_product_attention fallback; without it src.model.tokenrig does not import at all."
+
+[[notices]]
+title = "issue #8"
+text = "patches/0002 makes make_asset() count each child once. Upstream appends every child twice into `sons`, so no joint ever has exactly one child, tails never reach it, and the exported armature's bone tails are wrong."

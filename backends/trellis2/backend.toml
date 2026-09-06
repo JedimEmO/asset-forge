@@ -19,12 +19,14 @@ license = "MIT (code+weights); texture bake via nvdiffrast: NVIDIA Source Code L
 env_kind = "conda"
 python = "3.11"
 cuda = "12.4"
-vram_gb = 22
+vram_gb = 22                       # a budget, not a peak: a 1024-cubed lift measured 4.7 GB here (hosting.md, 2026-08-30). `just gpu` sizes the card against this number, so it stays conservative.
 entry = "mesh"
 cwd = "checkout"
 resident = false
 
 [env]
+# Preserve a Python/native-extension traceback on fatal signals in the job log.
+PYTHONFAULTHANDLER = "1"
 # opencv refuses EXR unless asked; the pipeline's texture path reads some.
 OPENCV_IO_ENABLE_OPENEXR = "1"
 # The cascade allocates and frees in waves; expandable segments keep a
@@ -43,14 +45,15 @@ TRELLIS2_DIR = "${CHECKOUT}"
 # for any same-versioned interpreter; the launcher sets this everywhere, and
 # forcing it here means even an exported PYTHONNOUSERSITE=0 cannot let them in.
 PYTHONNOUSERSITE = "1"
-# No system CUDA root: the toolkit lives in the env. nvdiffrast JIT-compiles
-# its kernels on first use, so this is a runtime setting, not a build one.
-CUDA_HOME = "${PREFIX}"
-# CUDA 12.4's host_config.h refuses gcc > 13; the env carries gcc 13 and
+# The installer links .toolchain to the conda dependency prefix. It can differ
+# from .env, which runs the pinned CPython build. nvdiffrast JIT uses CUDA and
+# gcc from .toolchain even when an agent overrides the interpreter.
+CUDA_HOME = "${TOOLCHAIN}"
+# CUDA 12.4's host_config.h refuses gcc > 13; the dependency env carries gcc 13 and
 # the same trio is exported on every run, for the JIT above.
-CC = "${PREFIX}/bin/x86_64-conda-linux-gnu-gcc"
-CXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
-CUDAHOSTCXX = "${PREFIX}/bin/x86_64-conda-linux-gnu-g++"
+CC = "${TOOLCHAIN}/bin/x86_64-conda-linux-gnu-gcc"
+CXX = "${TOOLCHAIN}/bin/x86_64-conda-linux-gnu-g++"
+CUDAHOSTCXX = "${TOOLCHAIN}/bin/x86_64-conda-linux-gnu-g++"
 
 [[models]]
 id = "microsoft/TRELLIS.2-4B"

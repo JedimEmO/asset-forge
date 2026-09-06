@@ -1,0 +1,165 @@
+{
+  "schema": "scrapyard-vfx-1",
+  "note": "Standalone texture pack; Forge library schema currently registers models, bodies, clips and audio only. Alpha below 4/255 contains generator speckles; discard it in the material.",
+  "effects": [
+    {
+      "name": "muzzle_flash",
+      "path": "muzzle_flash.png",
+      "sha256": "ec0dbb27999769e1f41e6ea0a94635bd4b0a4fb40e0c69ce90fa9acbabad2696",
+      "size_px": [
+        1254,
+        1254
+      ],
+      "grid": [
+        2,
+        2
+      ],
+      "frames": 4,
+      "order": "row-major",
+      "fps": 30,
+      "loop": false,
+      "pivot_normalized_top_left": [
+        0.44,
+        0.515
+      ],
+      "alpha": "straight",
+      "alpha_discard_below": 0.01568627450980392,
+      "blend": "alpha; optional additive on dark backgrounds",
+      "filter": "linear, clamp-to-edge; disable mipmaps or extrude frame gutters",
+      "visible_bounds_px_per_cell": [
+        [
+          244,
+          294,
+          308,
+          358
+        ],
+        [
+          234,
+          252,
+          440,
+          390
+        ],
+        [
+          248,
+          248,
+          402,
+          368
+        ],
+        [
+          248,
+          294,
+          292,
+          336
+        ]
+      ],
+      "billboard": true,
+      "source": "OpenAI built-in image_gen; original alpha retained"
+    },
+    {
+      "name": "metal_impact",
+      "path": "metal_impact.png",
+      "sha256": "2d94da439bf2cc0ca5e4174ac13a9a797fb2d58ad4b0bf91d1970b3c5e989a21",
+      "size_px": [
+        1254,
+        1254
+      ],
+      "grid": [
+        2,
+        2
+      ],
+      "frames": 4,
+      "order": "row-major",
+      "fps": 20,
+      "loop": false,
+      "pivot_normalized_top_left": [
+        0.5,
+        0.5
+      ],
+      "alpha": "straight",
+      "alpha_discard_below": 0.01568627450980392,
+      "blend": "alpha; optional additive on dark backgrounds",
+      "filter": "linear, clamp-to-edge; disable mipmaps or extrude frame gutters",
+      "visible_bounds_px_per_cell": [
+        [
+          255,
+          248,
+          382,
+          402
+        ],
+        [
+          40,
+          111,
+          489,
+          568
+        ],
+        [
+          158,
+          138,
+          498,
+          476
+        ],
+        [
+          40,
+          151,
+          448,
+          492
+        ]
+      ],
+      "billboard": true,
+      "source": "OpenAI built-in image_gen; original alpha retained"
+    },
+    {
+      "name": "pickup_burst",
+      "path": "pickup_burst.png",
+      "sha256": "d3aaa4ffdef44a63cdfbe89d0322924253c00013118865235fb05f21e1bce9d4",
+      "size_px": [
+        1254,
+        1254
+      ],
+      "grid": [
+        2,
+        2
+      ],
+      "frames": 4,
+      "order": "row-major",
+      "fps": 12,
+      "loop": false,
+      "pivot_normalized_top_left": [
+        0.51,
+        0.51
+      ],
+      "alpha": "straight",
+      "alpha_discard_below": 0.01568627450980392,
+      "blend": "alpha; optional additive on dark backgrounds",
+      "filter": "linear, clamp-to-edge; disable mipmaps or extrude frame gutters",
+      "visible_bounds_px_per_cell": [
+        [
+          227,
+          192,
+          434,
+          447
+        ],
+        [
+          103,
+          124,
+          523,
+          518
+        ],
+        [
+          105,
+          92,
+          547,
+          521
+        ],
+        [
+          138,
+          122,
+          499,
+          493
+        ]
+      ],
+      "billboard": true,
+      "source": "OpenAI built-in image_gen; original alpha retained"
+    }
+  ]
+}

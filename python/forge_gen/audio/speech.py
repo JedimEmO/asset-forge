@@ -12,21 +12,20 @@ the clip's hash so "same" is checkable. A bare ``--voice <name>`` is a voice
 designed by ``forge-gen voice``: it resolves to
 ``assets-src/voices/<name>/ref.wav``, and the ``voice.json`` beside it is
 recorded too, so a line's provenance chains back through the audition clip
-to the description and the seed that made the voice. Loading the 4B model is
-most of a call; ``--lines-file`` (one ``stem|text`` per line, into
-``--out-dir``) renders a session on one load.
+to the description and the seed that made the voice. ``--lines-file``
+(one ``stem|text`` per line, into ``--out-dir``) renders a session of them.
 
-The command is backend-agnostic on its face — ``--backend`` names who
-speaks — and ``moss_tts`` is the one backend v1 ships. OmniVoice is a
-documented v1.1 add; naming it today exits 2 and says so.
+Speech runs in the isolated ``moss_speech`` interpreter, pinned to
+transformers 5.0.0 and torch 2.9.1+cu128. ``moss_tts`` remains accepted as
+a legacy speech alias; voice design still runs on ComfyUI. The former Comfy speech graph is retained on disk for historical diagnosis.
 
 Each WAV gets a ``forge_record`` beside it (``<stem>.json``, or ``--record``):
 the spoken line is the prompt, because that is what a reader searches for,
 and the reference is an input with its sha256, because that is what makes
-the same character come back. ``seed`` is null and stays null: MOSS-TTS's
-API takes none. ``--seed`` seeds torch's RNG, which its sampler does draw
-from, and is recorded only when given — writing a zero there otherwise would
-be the same fabrication the animation sidecars used to carry.
+the same character come back. ``seed`` is now always a number and always
+recorded: the node takes one, so every line has one whether or not the
+caller chose it, and a drawn seed written down is the difference between a
+line that can be asked for again and one that cannot.
 
 ``build_record`` is pure — the record from its numbers — so the schema can
 be checked without the model resident.
@@ -34,36 +33,31 @@ be checked without the model resident.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import platform
+import random
 import re
-import subprocess
 import sys
-import tempfile
 import wave
 from pathlib import Path
 
-from forge_gen import backends as backends_mod
-from forge_gen import launcher, placeholders, records
-from forge_gen.exit_codes import BackendFailed, InputRejected, UsageError
+from forge_gen import placeholders, records
+from forge_gen.audio import check_pcm
+from forge_gen.exit_codes import InputRejected, UsageError
 
-#: The backends that can speak. ``moss_tts`` is the one that exists.
-BACKENDS = ("moss_tts",)
-DEFAULT_BACKEND = "moss_tts"
+#: The isolated backend and its legacy public alias.
+BACKENDS = ("moss_speech", "moss_tts")
+DEFAULT_BACKEND = "moss_speech"
 
 #: Names a user may reach for that are not here yet, with the answer.
-PLANNED = {"omnivoice": "OmniVoice is a v1.1 add; only moss_tts speaks in this build"}
+PLANNED = {"omnivoice": "OmniVoice is a v1.1 add; moss_speech is the isolated speaker in this build"}
 
-#: The record's ``tool`` — the sidecar's generator name, which for this backend is also the backend's name.
+#: Keep the generator family name stable; the backend names its executor separately.
 TOOL = "moss_tts"
 
-#: Local-4B fits comfortably on the 24 GB card (the 8B Delay model + audio
-#: tokenizer OOMs); override with ``MOSS_TTS_MODEL=OpenMOSS-Team/MOSS-TTS-v1.5``
-#: if the llama.cpp low-VRAM path ever gets set up.
 MODEL_ENV = "MOSS_TTS_MODEL"
-DEFAULT_MODEL = "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5"
+DEFAULT_MODEL = "OpenMOSS-Team/MOSS-TTS-Local-Transformer"
+GENERATE_TIMEOUT_S = 1800.0
 
 #: Reference clip containers the processor reads (it decodes through its own audio loader).
 REFERENCE_SUFFIXES = (".wav", ".mp3", ".flac", ".m4a")
@@ -81,7 +75,13 @@ REFERENCE_GOOD_S = (5.0, 15.0)
 REFERENCE_HARD_S = (3.0, 30.0)
 
 #: The sampling knobs the model card recommends; recorded with every line.
-SAMPLING = {"temperature": 1.7, "top_p": 0.8, "top_k": 25, "repetition_penalty": 1.0, "max_new_tokens": 4096}
+SAMPLING = {
+    "max_new_tokens": 512,
+    "text_temperature": 1.5, "text_top_p": 1.0, "text_top_k": 50,
+    "text_repetition_penalty": 1.0,
+    "audio_temperature": 1.0, "audio_top_p": 0.95, "audio_top_k": 50,
+    "audio_repetition_penalty": 1.1,
+}
 
 #: MOSS-TTS wants the language by name ("English"); the 31 it speaks, by ISO 639-1/-3 code.
 LANGUAGES = {
@@ -90,9 +90,20 @@ LANGUAGES = {
     "el": "Greek", "he": "Hebrew", "hi": "Hindi", "hu": "Hungarian", "it": "Italian",
     "ja": "Japanese", "ko": "Korean", "mk": "Macedonian", "ms": "Malay", "fa": "Persian",
     "pl": "Polish", "pt": "Portuguese", "ro": "Romanian", "ru": "Russian", "es": "Spanish",
-    "sw": "Swahili", "sv": "Swedish", "tl": "Tagalog", "th": "Thai", "tr": "Turkish",
+    "sw": "Swahili", "sv": "Swedish", "tl": "Filipino", "th": "Thai", "tr": "Turkish",
     "vi": "Vietnamese",
 }  # fmt: skip
+
+#: What ``MossTTSEngineNode`` accepts for ``language``, captured from the
+#: running host's ``GET /object_info`` on 2026-08-30. A name outside this is
+#: a refusal here rather than a ``POST /prompt`` failure with the card
+#: leased — which is also why ``tl`` maps to the node's own word, Filipino.
+NODE_LANGUAGES = (
+    "Auto", "Chinese", "English", "German", "Spanish", "French", "Japanese", "Italian",
+    "Hungarian", "Korean", "Russian", "Persian", "Arabic", "Polish", "Portuguese", "Czech",
+    "Danish", "Swedish", "Greek", "Turkish", "Cantonese", "Dutch", "Finnish", "Hindi",
+    "Macedonian", "Malay", "Romanian", "Swahili", "Filipino", "Thai", "Vietnamese", "Hebrew",
+)
 
 DEFAULT_LANGUAGE = "en"
 
@@ -156,6 +167,25 @@ def voice_record_beside(reference: str | os.PathLike | None) -> Path | None:
     return record if record.is_file() else None
 
 
+def _voice_line(voice_record: Path | None) -> str | None:
+    """What a designed voice's audition clip says, from its own record.
+
+    ``params.text`` is the line `forge gen voice` had the designer speak, so
+    it is the transcript of the very clip the cloner is being handed. A
+    record that will not parse is not a reason to refuse a line: the
+    transcript is an input the node improves on, not one it requires.
+    """
+    if voice_record is None:
+        return None
+    try:
+        with open(voice_record, encoding="utf-8") as handle:
+            recorded = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    text = (recorded.get("params") or {}).get("text")
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def voice_name(reference: str | os.PathLike | None) -> str | None:
     """The voice's name from its clip: the file's stem, or the folder's when the file is ``ref.*``.
 
@@ -189,6 +219,12 @@ def build_record(
     python: str | None = None,
     torch: str | None = None,
     model_revision: str | None = None,
+    executor: str = "comfy",
+    backend_name: str = TOOL,
+    comfyui_commit: str | None = None,
+    workflow_sha256: str | None = None,
+    packs: dict | None = None,
+    workflow: str | None = None,
     fake: bool = False,
 ) -> dict:
     """The record for one spoken line.
@@ -205,13 +241,15 @@ def build_record(
     reference; OmniVoice will.
     """
     if fake:
-        rec = placeholders.fake_record("speech", TOOL, backend=TOOL, created_by=created_by, model=model)
+        rec = placeholders.fake_record("speech", TOOL, backend=backend_name, created_by=created_by, model=model)
+        rec["backend"]["executor"] = executor
     else:
         rec = records.new_record("speech", TOOL, created_by=created_by)
         rec["backend"] = records.backend_block(
-            name=TOOL, commit=commit, python=python, torch=torch, model=model, model_revision=model_revision
+            name=backend_name, commit=commit, python=python, torch=torch, model=model,
+            model_revision=model_revision, executor=executor, comfyui_commit=comfyui_commit,
+            workflow_sha256=workflow_sha256, packs=packs,
         )
-        rec["note"] = "MOSS-TTS takes no seed; the hash is what identifies this render" if seed is None else None
     records.add_input(rec, "prompt", prompt=text)
     reference_entry = records.add_input(rec, "reference", reference) if reference is not None else None
     record_entry = records.add_input(rec, "voice_record", voice_record) if voice_record is not None else None
@@ -225,6 +263,8 @@ def build_record(
         "voice_text": voice_text,
     }
     params.update(sampling or {})
+    if workflow:
+        params["workflow"] = workflow
     rec["params"] = params
     records.add_output(rec, out_path)
     rec["measured"] = measure_wav(out_path)
@@ -259,11 +299,11 @@ def add_parser(subparsers) -> None:
     parser.add_argument("--text", metavar="TEXT", help="the line to speak; [pause 1.5s] is an explicit pause")
     parser.add_argument("--out", metavar="WAV", help="where the WAV goes (single line)")
     parser.add_argument("--record", metavar="JSON", help="where the record goes (default: <out stem>.json beside it)")
-    parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); omit for an uncloned voice")
-    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference (recorded; moss_tts does not use it)")
-    parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "Norwegian", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
+    parser.add_argument("--voice", metavar="NAME|REF", help=f"a voice designed by `voice` (a name under {VOICES_DIR}/), or a reference clip, 5–15 s of clean speech (.wav/.mp3/.flac/.m4a); required for real speech")
+    parser.add_argument("--voice-text", metavar="TEXT", help="transcript of the reference clip, recorded but unused by this checkpoint. Default: the designed voice's own audition line, from voice.json params.text")
+    parser.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG", help=f'"en", "English", … (default {DEFAULT_LANGUAGE}); "auto" lets the model infer')
     parser.add_argument("--backend", default=DEFAULT_BACKEND, metavar="NAME", help=f"who speaks (default {DEFAULT_BACKEND}; OmniVoice is v1.1)")
-    parser.add_argument("--seed", type=int, default=None, metavar="N", help="seed torch's RNG for the sampler (recorded only when given)")
+    parser.add_argument("--seed", type=int, default=None, metavar="N", help="seed torch's RNG for the sampler (drawn and recorded if omitted)")
     parser.add_argument("--lines-file", metavar="FILE", help='one "stem|text" per line; # comments; into --out-dir')
     parser.add_argument("--out-dir", metavar="DIR", help="where a batch's <stem>.wav and <stem>.json go")
     parser.add_argument("--model", default=None, metavar="ID", help=f"weights (default ${MODEL_ENV} or {DEFAULT_MODEL})")
@@ -362,19 +402,33 @@ def plan(args) -> dict:
     voice_record = voice_record_beside(reference)
     if args.voice_text and reference is None:
         raise UsageError("--voice-text describes a --voice clip; there is none")
-    if args.voice_text and backend == "moss_tts":
-        sys.stderr.write("forge-gen: speech: moss_tts takes no transcript of the reference; --voice-text is recorded, not used\n")
     seed = args.seed
     if seed is not None and seed < 0:
         raise InputRejected(f"--seed must be >= 0, got {seed}")
+    if seed is None:
+        # The node takes a seed whether or not the caller chose one, so one
+        # is drawn and written down. A seed nobody chose is still the seed
+        # that spoke the line.
+        seed = random.randrange(2**31)
+    language = language_name(args.language)
+    if language is not None and language not in NODE_LANGUAGES:
+        raise InputRejected(
+            f"--language {language!r} is not one the host's engine offers: {', '.join(NODE_LANGUAGES)}"
+        )
     project = records.project()
     return {
-        "backend": backend,
+        "backend": "moss_speech",
         "model": args.model or model_id(),
         "reference": str(reference) if reference else None,
         "voice_record": str(voice_record) if voice_record else None,
-        "language": language_name(args.language),
-        "voice_text": args.voice_text or None,
+        "language": language,
+        # The transcript the cloner's own node asks for. Stated, else the
+        # designed voice's audition line — which `voice.json` records under
+        # `params.text` and which is, by construction, exactly what the
+        # reference clip says. `CharacterVoicesNode.reference_text` was left
+        # `""` and unpatched until 2026-08-30, while the flag's help said
+        # moss_tts did not use it; both were wrong about the host.
+        "voice_text": args.voice_text or _voice_line(voice_record),
         "seed": seed,
         "sampling": dict(SAMPLING),
         "created_by": getattr(args, "created_by", None),
@@ -396,43 +450,10 @@ def _success(spec: dict, rendered: list[dict]) -> dict:
     }
 
 
-# --------------------------------------------------------------------- outer --
-
-
-def checkout_commit(backend: backends_mod.Backend) -> str | None:
-    """HEAD of the upstream checkout the inner half runs from, or ``None`` when git will not say."""
-    checkout = backend.checkout
-    if not checkout.exists():
-        return None
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(checkout), "rev-parse", "--verify", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if done.returncode != 0:
-        return None
-    return done.stdout.strip() or None
-
-
 def run(args) -> dict:
-    """Validate, resolve the backend (exit 3 before any GPU work), speak under its venv."""
-    spec = plan(args)
-    backend = backends_mod.load_backend(spec["backend"])
-    launcher.resolve_interpreter(backend)
-    spec["commit"] = checkout_commit(backend)
-    with tempfile.TemporaryDirectory(prefix="forge-speech-") as scratch:
-        spec_path = Path(scratch) / "spec.json"
-        spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
-        result = launcher.run_inner_checked(backend, "audio.speech", ["--spec", str(spec_path)])
-    rendered = result.get("jobs") or []
-    if not rendered:
-        raise BackendFailed("the inner half returned no spoken lines")
-    return _success(spec, rendered)
+    """Run speech in the pinned isolated interpreter, including the legacy alias."""
+    from forge_gen.audio.speech_isolated import run as run_isolated
+    return run_isolated(plan(args), timeout=float(getattr(args, "timeout", GENERATE_TIMEOUT_S)))
 
 
 def run_fake(args) -> dict:
@@ -442,6 +463,7 @@ def run_fake(args) -> dict:
     rendered = []
     for job in spec["jobs"]:
         placeholders.placeholder_wav(job["out"])
+        check_pcm(job["out"], what="the placeholder")
         rec = build_record(
             text=job["text"],
             out_path=job["out"],
@@ -454,182 +476,9 @@ def run_fake(args) -> dict:
             sampling=spec["sampling"],
             created_by=spec["created_by"],
             fake=True,
+            executor="env",
+            backend_name="moss_speech",
         )
         records.write(rec, job["record"])
         rendered.append({"out": job["out"], "record": job["record"]})
     return _success(spec, rendered)
-
-
-# --------------------------------------------------------------------- inner --
-
-
-def _snapshot_revision(model: str) -> str | None:
-    """The hub revision the cached snapshot is, for ``backend.model_revision``; ``None`` for a local dir or offline."""
-    if os.path.isdir(model):
-        return None
-    try:
-        from huggingface_hub import snapshot_download
-
-        path = snapshot_download(model, local_files_only=True)
-    except Exception:  # noqa: BLE001 - a revision is a nicety; the model id is the fact
-        return None
-    revision = os.path.basename(os.path.normpath(path))
-    return revision if len(revision) == 40 else None
-
-
-def _attn_implementation(torch, device: str, dtype) -> str:
-    """flash-attn when it is installed and the card is Ampere or newer; SDPA on CUDA otherwise; eager on CPU."""
-    import importlib.util
-
-    if device == "cuda" and importlib.util.find_spec("flash_attn") is not None and dtype in (torch.float16, torch.bfloat16):
-        major, _ = torch.cuda.get_device_capability()
-        if major >= 8:
-            return "flash_attention_2"
-    return "sdpa" if device == "cuda" else "eager"
-
-
-def main_inner(argv: list[str]) -> int:
-    """Speak every line in the spec under the backend's venv; torch is imported here and nowhere above.
-
-    Prints progress lines and, last, one JSON object ``{"ok": true, "jobs":
-    [{"out", "record"}]}``. Anything the model raises is a backend failure
-    (5) with the traceback on stderr; the launcher carries the tail out.
-    """
-    parser = argparse.ArgumentParser(prog="forge_gen.audio.speech --inner", add_help=True)
-    parser.add_argument("--spec", required=True)
-    args = parser.parse_args(argv)
-    spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
-    if spec.get("project"):
-        records.set_project(spec["project"])
-
-    import soundfile
-    import torch
-    from transformers import AutoModel, AutoProcessor
-
-    torch.backends.cuda.enable_cudnn_sdp(False)  # broken kernel, per model card
-    # Kept enabled as fallbacks, as the card does.
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(True)
-    torch.backends.cuda.enable_math_sdp(True)
-
-    model_name = spec["model"]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    attn = _attn_implementation(torch, device, dtype)
-    print(f"[tts] loading {model_name} on {device} ({attn})", flush=True)
-    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
-    processor.audio_tokenizer = processor.audio_tokenizer.to(device)
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, attn_implementation=attn, torch_dtype=dtype).to(device)
-    model.eval()
-    revision = _snapshot_revision(model_name)
-
-    reference = spec.get("reference")
-    language = spec.get("language")
-    seed = spec.get("seed")
-    sampling = spec.get("sampling") or dict(SAMPLING)
-    sample_rate = int(processor.model_config.sampling_rate)
-
-    # The reference is read here and tokenized once, not handed to the
-    # processor as a path: a path goes through torchaudio.load → torchcodec,
-    # whose ffmpeg libraries collide with the system glib on this box (the
-    # same reason the writer is soundfile). Codes in, the processor never
-    # opens the file. Resampling to the codec's rate is torchaudio's pure
-    # torch kernel and needs no codec.
-    reference_codes = None
-    if reference:
-        wav, wav_rate = soundfile.read(reference, dtype="float32", always_2d=True)
-        reference_codes = processor.encode_audios_from_wav([torch.from_numpy(wav.T)], int(wav_rate))[0]
-        print(f"[tts] reference {reference}: {wav.shape[0] / wav_rate:.2f} s at {wav_rate} Hz -> {reference_codes.shape[0]} codes", flush=True)
-
-    rendered = []
-    for job in spec["jobs"]:
-        if seed is not None:
-            # Re-seeded per line so re-rendering one line of a batch gives
-            # back what it gave inside the batch.
-            torch.manual_seed(int(seed))
-            if device == "cuda":
-                torch.cuda.manual_seed_all(int(seed))
-        kwargs = {"text": job["text"]}
-        if reference_codes is not None:
-            kwargs["reference"] = [reference_codes]
-        if language:
-            kwargs["language"] = language
-        conversation = [processor.build_user_message(**kwargs)]
-        batch = processor([conversation], mode="generation")
-        print(f"[tts] {language or 'inferred language'}{', cloning ' + voice_name(reference) if reference else ''}: {job['text']}", flush=True)
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=batch["input_ids"].to(device),
-                attention_mask=batch["attention_mask"].to(device),
-                max_new_tokens=int(sampling["max_new_tokens"]),
-                do_sample=True,
-                audio_temperature=float(sampling["temperature"]),
-                audio_top_p=float(sampling["top_p"]),
-                audio_top_k=int(sampling["top_k"]),
-                audio_repetition_penalty=float(sampling["repetition_penalty"]),
-            )
-        messages = [message for message in processor.decode(outputs) if message is not None]
-        if not messages or not messages[0].audio_codes_list:
-            raise BackendFailed(f"the model produced no audio for {job['text']!r}")
-        audio = messages[0].audio_codes_list[0]
-        out_path = Path(job["out"])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        # soundfile instead of torchaudio.save: torchaudio 2.9 delegates to
-        # torchcodec, whose ffmpeg libs collide with system glib on this box.
-        # The v1.5 codec returns [channels, samples]; soundfile wants
-        # [samples, channels]. PCM_16 so the stdlib wave module measures it.
-        wav = audio.detach().float().cpu().numpy()
-        soundfile.write(os.fspath(out_path), wav.T if wav.ndim > 1 else wav, sample_rate, subtype="PCM_16")
-        rec = build_record(
-            text=job["text"],
-            out_path=out_path,
-            model=model_name,
-            reference=reference,
-            language=language,
-            voice_text=spec.get("voice_text"),
-            voice_record=spec.get("voice_record"),
-            seed=seed,
-            sampling=sampling,
-            created_by=spec.get("created_by"),
-            commit=spec.get("commit"),
-            python=platform.python_version(),
-            torch=torch.__version__,
-            model_revision=revision,
-        )
-        records.write(rec, job["record"])
-        print(f"[tts] OK {out_path}", flush=True)
-        rendered.append({"out": str(out_path), "record": job["record"]})
-    sys.stdout.write(json.dumps({"ok": True, "jobs": rendered}) + "\n")
-    sys.stdout.flush()
-    return 0
-
-
-def _inner_entry(argv: list[str]) -> int:
-    """``main_inner`` with a refusal turned into its exit code and JSON line, so the outer relays it unchanged."""
-    import traceback
-
-    from forge_gen import exit_codes
-    from forge_gen.exit_codes import ForgeGenError
-
-    try:
-        return main_inner(argv)
-    except ForgeGenError as err:
-        sys.stderr.write(f"forge-gen: {err.error}: {err.message}\n")
-        sys.stdout.write(json.dumps(err.payload(), ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return err.code
-    except KeyboardInterrupt:
-        return 130
-    except Exception as err:  # noqa: BLE001 - anything the model raises is a backend failure, with its traceback
-        traceback.print_exc()
-        payload = {"ok": False, "error": "backend_failed", "message": f"{err.__class__.__name__}: {err}"}
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-        return exit_codes.BACKEND_FAILED
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--inner":
-        sys.exit(_inner_entry(sys.argv[2:]))
-    sys.stderr.write("run me through forge-gen: python3 python/forge_gen speech ...\n")
-    sys.exit(2)

@@ -160,3 +160,17 @@ def test_run_blender_relays_the_script_exit_code(monkeypatch, tmp_path, capfd):
     assert launcher.run_blender(tmp_path / "mod.py", []) == 4
     with pytest.raises(InputRejected, match="not a T-pose"):
         launcher.run_blender_checked(tmp_path / "mod.py", [])
+
+
+def test_toolchain_is_independent_of_runtime_and_preserves_legacy_installs(installed_tree, tmp_path):
+    ardy = backends.backends_dir() / 'ardy'
+    toml = (ardy/'backend.toml').read_text()
+    (ardy/'backend.toml').write_text(toml + '\n[env.force]\nCUDA_HOME = "${TOOLCHAIN}"\n')
+    backend = backends.load_backend('ardy')
+    assert launcher.inner_env(backend)['CUDA_HOME'] == str(launcher.prefix_of(backend))
+    toolchain = tmp_path/'native dependencies'
+    toolchain.mkdir()
+    (ardy/'.toolchain').symlink_to(toolchain)
+    assert launcher.inner_env(backend)['CUDA_HOME'] == str(toolchain)
+    toolchain.rmdir()
+    assert launcher.inner_env(backend)['CUDA_HOME'] == str(toolchain), 'a broken explicit link must not fall back'

@@ -1,0 +1,39 @@
+[package]
+name = "forge_serve"
+description = "The queue behind every generate: one FIFO, one worker, one card lock, a job table under out/serve/ and a loopback HTTP door onto it — what `forge serve` runs and what the CLI and the MCP server hold as an Arc<dyn Queue>"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# A daemon, not a library a game depends on.
+publish = false
+
+[dependencies]
+# The project, the backend table, the clock and the record reader: the queue
+# schedules what the library already describes and reads no format of its own.
+forge_library = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The daemon's runtime and its router. NOT rmcp: forge_mcp depends on this
+# crate and the binary composes the two, which is the only direction with no
+# cycle and the one that keeps rmcp's =1.8.0 pin out of the daemon's build.
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+# The card lease is an exclusive flock(2): the kernel drops it when the
+# holder dies, which no pidfile can promise.
+fs4 = { workspace = true }
+# Signal a process group without an unsafe block — this crate denies unsafe
+# code, and a signal to the wrong group is the one mistake here that cannot
+# be taken back.
+rustix = { workspace = true }
+# Three scalars out of a backend.toml (executor, host, [server]) until
+# forge_library::backends carries them; see src/backend_facts.rs.
+toml = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

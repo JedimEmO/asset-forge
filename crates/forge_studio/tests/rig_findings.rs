@@ -176,13 +176,32 @@ fn the_mannequin_passes_every_finding_and_binds_the_reference_clip() {
     println!("{report}");
     assert!(!report.failed(), "{:?}", failures(&report));
     assert_eq!(report.reference.as_deref(), Some("clips/walk.glb"));
-    // The same ten checks `forge rig check` prints, and nothing advisory.
+    // The twelve checks `forge rig check` prints, plus the one note: the
+    // whole-clip lowest vertex, which is a different question from the
+    // planted foot's own and is said beside it rather than instead of it.
     assert_eq!(
         report.findings.len(),
-        10,
+        13,
         "a check appeared or went missing"
     );
-    assert_eq!(report.count(Severity::Ok), 10);
+    assert_eq!(report.count(Severity::Ok), 12);
+    assert_eq!(report.count(Severity::Note), 1);
+    let directions = lines_of(&report, Severity::Ok)
+        .into_iter()
+        .find(|line| line.starts_with("rest translation directions"))
+        .expect("the direction line");
+    assert!(
+        directions.contains("match the contract (worst "),
+        "{directions}"
+    );
+    let planted = lines_of(&report, Severity::Ok)
+        .into_iter()
+        .find(|line| line.contains("planted foot"))
+        .expect("the contact line");
+    assert!(
+        planted.starts_with("the planted foot's own lowest vertex stays within"),
+        "the gate says whose vertex it measured: {planted}"
+    );
     let binding = lines_of(&report, Severity::Ok)
         .into_iter()
         .find(|line| line.contains("bone(s) driven"))
@@ -197,7 +216,7 @@ fn the_mannequin_passes_every_finding_and_binds_the_reference_clip() {
         "{text}"
     );
     assert!(
-        text.ends_with("10 finding(s) passed, 0 failed, 0 note(s), 0 warning(s)"),
+        text.ends_with("12 finding(s) passed, 0 failed, 1 note(s), 0 warning(s)"),
         "{text}"
     );
 }
@@ -296,14 +315,22 @@ fn a_library_without_the_reference_clip_warns_instead_of_binding() {
     println!("{report}");
     assert!(!report.failed(), "{:?}", failures(&report));
     assert_eq!(report.reference, None);
-    assert_eq!(report.findings.len(), 10);
+    assert_eq!(report.findings.len(), 12);
+    // Two warnings, because two different checks wanted that clip: the
+    // binding diff and the planted foot. Each says which one it is, so a
+    // reader is not left guessing what "not checked" covered.
     let warnings = lines_of(&report, Severity::Warn);
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
     assert!(
-        warnings[0]
-            .starts_with("no reference clip 'walk' in the library; walk binding not checked"),
+        warnings[0].starts_with("the planted foot's own lowest vertex was not measured"),
         "{}",
         warnings[0]
+    );
+    assert!(
+        warnings[1]
+            .starts_with("no reference clip 'walk' in the library; walk binding not checked"),
+        "{}",
+        warnings[1]
     );
     assert!(
         !report.text().contains("bone(s) driven"),
@@ -339,4 +366,34 @@ fn check_a_subject_from_the_environment() {
     let report = rig_check::run(&project, &subject, out.as_deref()).expect("the check runs");
     println!("{report}");
     assert!(!report.failed(), "{:?}", failures(&report));
+}
+
+#[test]
+fn explicit_reference_is_used_and_missing_selection_is_refused() {
+    let (_dir, project, mannequin) = temp_project();
+    promote_clip(
+        &project,
+        &PromoteClip {
+            name: "jog".into(),
+            take_path: toolkit("crates/forge_motion/tests/fixtures/blender/gen_walk.npz"),
+            recipe: ClipRecipe::default(),
+            prompt: None,
+            tags: Vec::new(),
+            note: None,
+            events: Vec::new(),
+            created_by: Actor::Agent("tester".into()),
+            take_record: None,
+            overwrite: false,
+        },
+    )
+    .expect("promote jog without a walk entry");
+    let report =
+        rig_check::run_with_reference(&project, &mannequin, None, Some("jog")).expect("check jog");
+    assert_eq!(report.reference.as_deref(), Some("clips/jog.glb"));
+    assert!(!report.failed(), "{report}");
+    assert_eq!(report.count(Severity::Warn), 0, "{report}");
+    assert!(matches!(
+        rig_check::run_with_reference(&project, &mannequin, None, Some("missing")),
+        Err(rig_check::RigCheckError::MissingReference(_))
+    ));
 }

@@ -43,7 +43,14 @@ use serde::Deserialize;
 use crate::Project;
 
 /// The backends the toolkit knows, in the order doctor lists them.
-pub const KNOWN: [&str; 5] = ["trellis2", "ardy", "acestep", "moss_sfx", "moss_tts"];
+pub const KNOWN: [&str; 6] = [
+    "trellis2",
+    "ardy",
+    "acestep",
+    "moss_sfx",
+    "moss_tts",
+    "moss_speech",
+];
 
 /// The environment variable naming the backends directory.
 pub const BACKENDS_ENV: &str = "FORGE_BACKENDS";
@@ -132,6 +139,82 @@ impl std::fmt::Display for GenExit {
 /// The file that describes a backend.
 pub const BACKEND_FILE: &str = "backend.toml";
 
+/// How a backend is run — `backend.toml`'s second form, mirrored from
+/// `python/forge_gen/backends.py`'s `EXECUTORS`.
+///
+/// The field is optional in the file and **derived when it is absent**
+/// (`env_kind = "none"` → [`Self::Tool`], anything else → [`Self::Env`]),
+/// so every `backend.toml` written before this form keeps working unedited;
+/// a file that states both and disagrees with itself is
+/// [`BackendState::Broken`] at parse time rather than a surprise at the
+/// first generate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutorKind {
+    /// Exec the inner half under the backend's own interpreter.
+    Env,
+    /// Post a graph to the `ComfyUI` host named by [`Backend::host`].
+    Comfy,
+    /// A host program (Blender) or the host service itself: nothing to exec,
+    /// nothing to install under `backends/<name>`.
+    Tool,
+}
+
+impl ExecutorKind {
+    /// The word the file and the records use.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Env => "env",
+            Self::Comfy => "comfy",
+            Self::Tool => "tool",
+        }
+    }
+}
+
+impl std::fmt::Display for ExecutorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One custom node pack the `ComfyUI` host carries, from `[[comfy.packs]]`.
+///
+/// A pack lives in four places or nowhere — here, in `install.sh`, in the
+/// host's `snapshot.json` and in `designs/hosting.md`'s pins row.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct ComfyPack {
+    /// Where it is cloned from.
+    pub repo: String,
+    /// The commit it is pinned at.
+    pub commit: String,
+    /// The directory name under the host's `custom_nodes/`.
+    pub dir: String,
+    /// Its licence.
+    pub license: Option<String>,
+    /// What it needs in the host's venv.
+    pub pips: Vec<String>,
+    /// The node classes it contributes, captured from `GET /object_info`.
+    pub nodes: Vec<String>,
+}
+
+/// The `[comfy]` table: what a backend needs of the host to run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct ComfySpec {
+    /// The tracked API-format graphs under `backends/<name>/workflows/`.
+    pub workflows: Vec<String>,
+    /// Every node class those graphs use — captured from the running host,
+    /// never written from memory.
+    pub nodes: Vec<String>,
+    /// The node that unloads the model at the end of a graph. `None` for
+    /// native nodes, which honour `POST /free`.
+    pub unload_node: Option<String>,
+    /// The packs those graphs need.
+    pub packs: Vec<ComfyPack>,
+}
+
 /// The symlink `install.sh` leaves pointing at the interpreter prefix.
 pub const ENV_LINK: &str = ".env";
 
@@ -174,6 +257,12 @@ pub struct Backend {
     /// What it makes — `mesh`, `motion`, `music`, `sfx`, `speech`, or `tool`
     /// for a host program like Blender — when the file says.
     pub role: Option<String>,
+    /// How it is run: stated by `executor`, or derived from `env_kind`.
+    pub executor: ExecutorKind,
+    /// Which `backends/<name>` is the service, for [`ExecutorKind::Comfy`].
+    pub host: Option<String>,
+    /// The `[comfy]` table, when the file has one.
+    pub comfy: Option<ComfySpec>,
     /// The VRAM one call peaks at, in GB, when the file says. What `forge
     /// gpu` holds the card's free memory against.
     pub vram_gb: Option<f64>,
@@ -193,6 +282,45 @@ struct BackendToml {
     role: Option<String>,
     vram_gb: Option<f64>,
     resident: Option<bool>,
+    executor: Option<ExecutorKind>,
+    env_kind: Option<String>,
+    host: Option<String>,
+    comfy: Option<ComfySpec>,
+}
+
+impl BackendToml {
+    /// The executor the file describes, or the disagreement it states.
+    ///
+    /// The same rule `python/forge_gen/backends.py::_executor` implements:
+    /// `executor` wins, an absent one is derived from `env_kind`, and both
+    /// present and disagreeing is a defect named at parse time.
+    fn executor(&self) -> std::result::Result<ExecutorKind, String> {
+        let derived = self.env_kind.as_deref().map(|kind| {
+            if kind == "none" {
+                ExecutorKind::Tool
+            } else {
+                ExecutorKind::Env
+            }
+        });
+        match (self.executor, derived) {
+            (Some(stated), Some(derived)) if stated != derived => Err(format!(
+                "executor \"{stated}\" and env_kind \"{}\" disagree (env_kind reads as executor \
+                 \"{derived}\") — say it once",
+                self.env_kind.as_deref().unwrap_or_default()
+            )),
+            (Some(ExecutorKind::Env), None) => {
+                Err(String::from("executor \"env\" needs an env_kind"))
+            }
+            (Some(stated), _) => Ok(stated),
+            (None, Some(derived)) => Ok(derived),
+            // A file that states neither is one this module cannot read the
+            // answer out of — and a file with no `env_kind` is refused by
+            // `python/forge_gen/backends.py` at exit 3 with the field named,
+            // which is where the completeness check belongs. This side reads
+            // the part it needs and says nothing it was not told.
+            (None, None) => Ok(ExecutorKind::Env),
+        }
+    }
 }
 
 /// The backends directory and what it holds.
@@ -366,33 +494,10 @@ pub fn override_var(name: &str) -> String {
     format!("FORGE_BACKEND_{}_PYTHON", name.to_ascii_uppercase())
 }
 
-/// The directory holding `python/forge_gen`: the project itself when it is
-/// the toolkit, else [`HOME_ENV`] or [`TOOLKIT_ENV`], else an ancestor of
-/// the running executable (a checkout's `target/debug/forge` is two levels
-/// under it).
+/// The shared resolver: explicit [`HOME_ENV`] or [`TOOLKIT_ENV`], then
+/// the project when it is a toolkit, then executable ancestors.
 fn toolkit_root(project: &Project) -> Option<PathBuf> {
-    let is_toolkit = |dir: &Path| dir.join("python").join("forge_gen").is_dir();
-    if is_toolkit(&project.root) {
-        return Some(project.root.clone());
-    }
-    for key in [HOME_ENV, TOOLKIT_ENV] {
-        if let Some(dir) = std::env::var_os(key) {
-            let dir = PathBuf::from(dir);
-            if is_toolkit(&dir) {
-                return Some(dir);
-            }
-        }
-    }
-    let exe = std::env::current_exe().ok()?;
-    let mut here = exe.parent()?.to_path_buf();
-    loop {
-        if is_toolkit(&here) {
-            return Some(here);
-        }
-        if !here.pop() {
-            return None;
-        }
-    }
+    crate::toolkit::root(Some(&project.root))
 }
 
 /// One backend's state, from its directory and the overrides.
@@ -408,54 +513,86 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
                 .map(|p| project.root.join(p))
         });
     let toml_path = dir.join(BACKEND_FILE);
+    let broken = |dir: PathBuf, why: String, interpreter: Option<PathBuf>| Backend {
+        name: name.to_owned(),
+        dir,
+        state: BackendState::Broken(why),
+        entry: None,
+        role: None,
+        executor: ExecutorKind::Env,
+        host: None,
+        comfy: None,
+        vram_gb: None,
+        resident: false,
+        interpreter,
+    };
     let described = match std::fs::read_to_string(&toml_path) {
         Ok(text) => match toml::from_str::<BackendToml>(&text) {
             Ok(parsed) => Some(parsed),
             Err(err) => {
-                return Backend {
-                    name: name.to_owned(),
+                return broken(
                     dir,
-                    state: BackendState::Broken(format!("{BACKEND_FILE} does not parse: {err}")),
-                    entry: None,
-                    role: None,
-                    vram_gb: None,
-                    resident: false,
+                    format!("{BACKEND_FILE} does not parse: {err}"),
                     interpreter,
-                };
+                );
             }
         },
         Err(_) => None,
     };
     let entry = described.as_ref().and_then(|d| d.entry.clone());
     let role = described.as_ref().and_then(|d| d.role.clone());
+    let host = described.as_ref().and_then(|d| d.host.clone());
+    let comfy = described.as_ref().and_then(|d| d.comfy.clone());
     let vram_gb = described.as_ref().and_then(|d| d.vram_gb);
     let resident = described.as_ref().and_then(|d| d.resident).unwrap_or(false);
-    if let Some(declared) = described.as_ref().and_then(|d| d.name.as_deref())
-        && declared != name
-    {
+    // The same defect the Python parser raises `BackendConfigError` for, in
+    // the word this side speaks: a file that says two things about how it is
+    // run, or nothing at all, is present-but-unusable rather than absent.
+    let (executor, said) = match described.as_ref().map(BackendToml::executor) {
+        Some(Ok(kind)) => (kind, None),
+        Some(Err(why)) => (ExecutorKind::Env, Some(format!("{BACKEND_FILE} {why}"))),
+        None => (ExecutorKind::Env, None),
+    };
+    let defect = said.or_else(|| {
+        described
+            .as_ref()
+            .and_then(|d| d.name.as_deref())
+            .filter(|declared| *declared != name)
+            .map(|declared| {
+                format!("{BACKEND_FILE} calls itself {declared:?} but lives in {name}/")
+            })
+    });
+    if let Some(why) = defect {
         return Backend {
             name: name.to_owned(),
             dir,
-            state: BackendState::Broken(format!(
-                "{BACKEND_FILE} calls itself {declared:?} but lives in {name}/"
-            )),
+            state: BackendState::Broken(why),
             entry,
             role,
+            executor,
+            host,
+            comfy,
             vram_gb,
             resident,
             interpreter,
         };
     }
-    // A tool backend — Blender — has no environment to install; the Python
-    // launcher finds its binary through $BLENDER_BIN or PATH, and doctor's
-    // probe says whether it answers. Described is as found as it gets here.
-    if role.as_deref() == Some("tool") {
+    // Neither a tool backend (Blender) nor a comfy one has an environment
+    // under `backends/<name>` to install: Blender's binary is found through
+    // $BLENDER_BIN or PATH, and a comfy backend's generator lives inside the
+    // host, which doctor probes over HTTP. Described is as found as it gets
+    // here, and an absent interpreter must not read as "generation is off"
+    // for either.
+    if executor != ExecutorKind::Env {
         return Backend {
             name: name.to_owned(),
             dir,
             state: BackendState::Found,
             entry,
             role,
+            executor,
+            host,
+            comfy,
             vram_gb,
             resident,
             interpreter: None,
@@ -493,6 +630,9 @@ fn describe(project: &Project, backends: Option<&Path>, name: &str) -> Backend {
         state,
         entry,
         role,
+        executor,
+        host,
+        comfy,
         vram_gb,
         resident,
         interpreter,
@@ -565,15 +705,15 @@ mod tests {
         for (name, text) in [
             (
                 "trellis2",
-                "name = \"trellis2\"\nrole = \"mesh\"\nentry = \"mesh\"\nvram_gb = 22\n",
+                "name = \"trellis2\"\nrole = \"mesh\"\nentry = \"mesh\"\nvram_gb = 22\nenv_kind = \"conda\"\n",
             ),
             (
                 "acestep",
-                "name = \"acestep\"\nrole = \"music\"\nentry = \"audio.music\"\nvram_gb = 8\nresident = true\n",
+                "name = \"acestep\"\nrole = \"music\"\nentry = \"audio.music\"\nvram_gb = 8\nresident = true\nenv_kind = \"venv\"\n",
             ),
             (
                 "blender",
-                "name = \"blender\"\nrole = \"tool\"\nentry = \"forge_gen.blender\"\nvram_gb = 0\n",
+                "name = \"blender\"\nrole = \"tool\"\nentry = \"forge_gen.blender\"\nvram_gb = 0\nenv_kind = \"none\"\n",
             ),
         ] {
             let sub = backends.join(name);
@@ -603,7 +743,7 @@ mod tests {
         std::fs::create_dir_all(&ardy).expect("mkdir");
         std::fs::write(
             ardy.join(BACKEND_FILE),
-            "name = \"ardy\"\nentry = \"motion\"\n",
+            "name = \"ardy\"\nentry = \"motion\"\nenv_kind = \"venv\"\n",
         )
         .expect("toml");
         project.backends_dir = Some(backends.clone());
@@ -642,6 +782,73 @@ mod tests {
             found.get("ardy").expect("listed").state,
             BackendState::Broken(_)
         ));
+    }
+
+    #[test]
+    fn the_executor_is_stated_or_derived_and_a_comfy_backend_needs_no_env() {
+        let (dir, mut project) = temp_project();
+        let backends = dir.path().join("backends");
+        for (name, text) in [
+            // No `executor`: derived, so a file written before the second
+            // form keeps working unedited.
+            (
+                "ardy",
+                "name = \"ardy\"\nenv_kind = \"venv\"\nentry = \"motion\"\n",
+            ),
+            (
+                "blender",
+                "name = \"blender\"\nenv_kind = \"none\"\nentry = \"blender\"\n",
+            ),
+            // Stated, and nothing under backends/moss_sfx to install: the
+            // generator lives inside the host, which doctor probes.
+            (
+                "moss_sfx",
+                "name = \"moss_sfx\"\nexecutor = \"comfy\"\nhost = \"comfy\"\nentry = \"audio.sfx\"\nvram_gb = 8\n\
+                 [comfy]\nworkflows = [\"sfx.api.json\"]\nnodes = [\"A\", \"B\"]\nunload_node = \"B\"\n\
+                 [[comfy.packs]]\nrepo = \"https://github.com/x/y\"\ncommit = \"b7e41a2c\"\ndir = \"y\"\nnodes = [\"A\"]\n",
+            ),
+            // Two words for one thing: refused at parse time, not resolved
+            // into a MissingBackend three steps later.
+            (
+                "moss_tts",
+                "name = \"moss_tts\"\nexecutor = \"comfy\"\nenv_kind = \"venv\"\nentry = \"audio.speech\"\n",
+            ),
+        ] {
+            let sub = backends.join(name);
+            std::fs::create_dir_all(&sub).expect("mkdir");
+            std::fs::write(sub.join(BACKEND_FILE), text).expect("toml");
+        }
+        project.backends_dir = Some(backends);
+        let found = Backends::discover(&project);
+        assert_eq!(
+            found.get("ardy").expect("listed").executor,
+            ExecutorKind::Env
+        );
+        assert_eq!(
+            found.get("blender").expect("listed").executor,
+            ExecutorKind::Tool
+        );
+
+        let sfx = found.get("moss_sfx").expect("listed");
+        assert_eq!(sfx.executor, ExecutorKind::Comfy);
+        assert_eq!(sfx.state, BackendState::Found, "no env of its own to miss");
+        assert_eq!(sfx.host.as_deref(), Some("comfy"));
+        assert!(found.is_found("moss_sfx"), "the door does not refuse it");
+        let comfy = sfx.comfy.as_ref().expect("[comfy]");
+        assert_eq!(comfy.workflows, ["sfx.api.json"]);
+        assert_eq!(comfy.unload_node.as_deref(), Some("B"));
+        assert_eq!(comfy.packs.len(), 1);
+        assert_eq!(comfy.packs[0].dir, "y");
+        assert_eq!(comfy.packs[0].commit, "b7e41a2c");
+
+        let tts = found.get("moss_tts").expect("listed");
+        match &tts.state {
+            BackendState::Broken(why) => {
+                assert!(why.contains("disagree"), "{why}");
+                assert!(why.contains("env_kind"), "{why}");
+            }
+            other => panic!("a file that says two things is broken, got {other:?}"),
+        }
     }
 
     #[test]

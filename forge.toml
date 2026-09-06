@@ -20,3 +20,21 @@ stage_body = "vex_runner"       # the body clips are posed on by default, by nam
 
 [backends]
 dir = "backends"                # one subdirectory per generator: backend.toml, install.sh, probe.py
+
+[make]
+# What you make here. Everything after reads this: `forge setup` installs
+# only what a chosen kind needs, and `forge doctor` prints `off` for a kind
+# you did not choose rather than probing it. This library ships all six.
+props      = true    # trellis2
+characters = true    # trellis2 + skintokens
+clips      = true    # ardy
+sfx        = true    # moss_sfx
+music      = true    # acestep
+voice      = true    # moss_tts voice design + isolated moss_speech
+
+[hardware]
+# Detected from the card and overridable. Tiers change registers and
+# variants according to the backend descriptors. Lean lifts at 1024 cubed
+# like full; doctor checks the selected budgets.
+tier = "full"     # a 24 GB card: every model in its full register
+comfy_url = "http://127.0.0.1:8188"   # where the ComfyUI service answers; another machine's is fine

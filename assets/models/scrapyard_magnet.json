@@ -1,0 +1,69 @@
+{
+  "schema": 2,
+  "kind": "model",
+  "name": "scrapyard_magnet",
+  "prompt": null,
+  "tags": [
+    "scrapyard",
+    "pickup"
+  ],
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "trellis2",
+    "model": "microsoft/TRELLIS.2-4B",
+    "trellis_commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "resolution": 1024,
+    "pipeline_type": "1024_cascade",
+    "seed": 42,
+    "decimation_target_vertices": 6000,
+    "texture_size": 1024,
+    "remesh": true,
+    "texture_baker": "nvdiffrast (NVIDIA Source Code License, non-commercial)",
+    "image": "assets-src/refs/props/scrapyard_magnet.png",
+    "image_sha256": "sha256:39876cd31e5071e35fe8720f29eef6cefc87c785db15c4d8eb8a95ea124e9b22",
+    "lift_sha256": "sha256:7508103c2a3a3b887e5caf563522775346352d6b18321ac2d4fc2a838d41b389",
+    "post": {
+      "tool": "blender",
+      "script": "prop",
+      "version": "Khronos glTF Blender I/O v5.2.40"
+    }
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": null,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": {
+      "vertices": 4439,
+      "triangles": 5801,
+      "bones_skinned": 0,
+      "lowest_y": -0.057224147,
+      "bounds": [
+        [
+          -0.15365738,
+          -0.057224147,
+          -0.17500001
+        ],
+        [
+          0.15365738,
+          0.057224147,
+          0.17500001
+        ]
+      ]
+    }
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:24b6fc0ecd33e4dbd9cd97113e762fd7dd1cbff7dade34a795cb3c3b5f2fc9b9",
+  "note": "35 cm longest extent, centered origin for hover/spin; blue horseshoe silhouette. Runtime magnet behavior and glow are consumer-owned."
+}

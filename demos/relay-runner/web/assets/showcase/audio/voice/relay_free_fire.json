@@ -1,0 +1,40 @@
+{
+  "schema": 2,
+  "kind": "voice",
+  "name": "relay_free_fire",
+  "prompt": "FREE FIRE!!!",
+  "tags": [
+    "audition"
+  ],
+  "created": "2026-09-06",
+  "created_by": "agent:codex",
+  "provenance": "recorded",
+  "rig": null,
+  "generator": {
+    "tool": "moss_tts",
+    "model": "OpenMOSS-Team/MOSS-TTS-Local-Transformer",
+    "seed": 73,
+    "voice": "relay_announcer_titan",
+    "reference": "assets-src/voices/relay_announcer_titan/ref.wav",
+    "voice_record": "assets-src/voices/relay_announcer_titan/voice.json",
+    "language": "English"
+  },
+  "source": {
+    "path": "assets-src/voices/relay_announcer_titan/ref.wav",
+    "sha256": "sha256:391dbf604798a84a16cde0d6bb99bca5a2626c7b98c12b2a2c5ccd7b3ad065e9",
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 4.72,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:d135f25306b5b4c6cba48049af37848e5015d1b82688713f376568ef5d2b3009",
+  "note": "Deeper announcer playtest candidate; standard text FREE FIRE!!! from relay_announcer_titan. Signal inspected; user listening preference between this and the drawn-out variant remains pending. First voice rejected as insufficiently deep/explosive."
+}

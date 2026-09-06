@@ -34,7 +34,21 @@ pub const PROJECT_ENV: &str = "FORGE_PROJECT";
 #[derive(Debug, Clone)]
 pub struct Config {
     /// The project: root, asset directories, rig profile, scratch.
+    ///
+    /// When [`Self::project_found`] is false this is a *provisional* one —
+    /// the conventional layout under the directory the server was pointed
+    /// at, held in memory and written nowhere.
     pub project: Project,
+    /// Whether a `forge.toml` was actually found.
+    ///
+    /// `false` is a session in a directory that is not a project yet, and
+    /// the server serves `init_project`, `licences` and `doctor` there and
+    /// refuses every other tool naming the first. It used to refuse to
+    /// *start*: exit 2 with `no forge.toml in …`, stdout closed before the
+    /// handshake — so the one tool that makes a project was reachable only
+    /// from a server already bound to a different project, and the hint a
+    /// client with no shell got was a shell command (2026-08-30).
+    pub project_found: bool,
     /// The binary that renders — this one, re-invoked with `sheet`, `views`
     /// or `doctor --json`. See the module note for why it is never looked
     /// up by name.
@@ -147,6 +161,20 @@ impl Config {
         Ok(Self::with_renderer(project, renderer))
     }
 
+    /// Configure the server for a directory that holds no project.
+    ///
+    /// # Errors
+    ///
+    /// [`ConfigError::NoExecutable`] when the OS will not say where this
+    /// binary is.
+    pub fn for_no_project(root: &Path) -> Result<Self, ConfigError> {
+        let renderer = std::env::current_exe().map_err(ConfigError::NoExecutable)?;
+        Ok(Self {
+            project_found: false,
+            ..Self::with_renderer(Project::provisional(root), renderer)
+        })
+    }
+
     /// [`Self::for_project`] with the renderer stated — for a test that
     /// must not spawn anything, and for a harness that wants a different
     /// build to draw.
@@ -156,6 +184,7 @@ impl Config {
         let toolkit = Backends::toolkit_root(&project);
         Self {
             project,
+            project_found: true,
             renderer,
             stage_body,
             toolkit,
@@ -176,6 +205,13 @@ impl Config {
     /// startup.
     #[must_use]
     pub fn banner(&self) -> String {
+        if !self.project_found {
+            return format!(
+                "forge mcp: no forge.toml at {} — serving init_project, licences and doctor; \
+                 every other tool refuses until this is a project",
+                self.project.root.display()
+            );
+        }
         format!(
             "forge mcp: project={} assets={} renderer={} stage_body={} toolkit={}",
             self.project.root.display(),

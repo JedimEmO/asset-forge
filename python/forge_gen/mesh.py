@@ -544,6 +544,15 @@ def run_in_trellis_env(ns: argparse.Namespace) -> dict:
         sys.path.insert(0, trellis_dir)
     from PIL import Image  # noqa: PLC0415
     import torch  # noqa: PLC0415
+
+    # Opt-in, and off in every ordinary run: $FORGE_VRAM_CAP_GB holds this
+    # process below a ceiling so a 24 GB card can stand in for a 16 GB one
+    # while the lean tier's numbers are measured. Applied here, before the
+    # first weight moves, and approximate — see forge_gen/vram_cap.py.
+    from forge_gen import vram_cap  # noqa: PLC0415
+
+    capped = vram_cap.apply()
+
     from trellis2.pipelines import Trellis2ImageTo3DPipeline  # noqa: PLC0415
     from trellis2.pipelines import rembg as trellis_rembg  # noqa: PLC0415
     import o_voxel  # noqa: PLC0415
@@ -627,6 +636,9 @@ def run_in_trellis_env(ns: argparse.Namespace) -> dict:
             "model_revision": _model_revision(),
         },
         "attn_backend": attn_backend,
+        # null unless $FORGE_VRAM_CAP_GB was set: a ceiling nobody asked for
+        # is not a measurement, and one that was asked for belongs in the log.
+        "vram_cap": capped,
     }
 
 

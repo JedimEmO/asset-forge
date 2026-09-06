@@ -22,14 +22,23 @@
 //! before this call) and [`EFFECTIVE_RECIPE_HEADING`] (what was baked
 //! now), so the caller sees what it replaced rather than assuming.
 //!
-//! # No mesh door
+//! # The mesh door, and what actually guards it
 //!
-//! There is deliberately no `promote_body` or `promote_model` here. A mesh
-//! comes out of a lift that has to be looked at from every side, rigged,
-//! checked against the contract and looked at again; that path is the
-//! skills, with a human reading every view. A server that could file a
-//! body on an agent's say-so would be the one step in the chain nobody
-//! watched.
+//! `promote_body` and `promote_model` are here, and the first form of this
+//! server deliberately had neither. The rule went because the human was
+//! never absent: the harness that issues every one of these calls is a
+//! human in the loop, which is the same ground "no review queue" already
+//! stands on, and a doorman who only makes the agent ask a human to type
+//! the command the agent composed guards nothing. What guards the library
+//! is the gates — the export gate on the file, `forge rig check` on the
+//! walk, and a taken name that must be told `overwrite` and then echoes
+//! what it replaced. `promote_body` runs all three, and none of them is
+//! weaker for being called by an agent.
+//!
+//! What stays un-automatable is a different thing entirely: accepting a
+//! licence. And the eye is the other — "look before you promote" is not a
+//! gate and never was, which is why `render_model` exists beside this door
+//! rather than instead of it.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -37,7 +46,8 @@ use std::time::Duration;
 
 use forge_library::generator_record::RecordKind;
 use forge_library::promote::{
-    PromoteAudio, PromoteClip, Promoted, promote_audio, promote_clip, validate_name,
+    PromoteAudio, PromoteBody, PromoteClip, PromoteModel, Promoted, promote_audio, promote_body,
+    promote_clip, promote_model, validate_name,
 };
 use forge_library::schema::{
     Actor, AnimEvent, AudioRef, ClipRecipe, DEFAULT_FPS, EventOrigin, InPlaceMode, PartialRecipe,
@@ -65,6 +75,11 @@ pub(crate) const ACTOR: &str = "agent:claude";
 /// pathological take, not a generator launch.
 const PROMOTE_TIMEOUT: Duration = Duration::from_mins(5);
 
+/// A rig check spawns a headless Bevy app, loads a body and a clip and
+/// walks the clip on the CPU: seconds on any machine. The ceiling bounds a
+/// binary that never comes back, not the work.
+const RIG_CHECK_TIMEOUT: Duration = Duration::from_mins(5);
+
 /// The heading over the recipe the library held before an overwrite.
 pub(crate) const SHIPPED_RECIPE_HEADING: &str = "shipped recipe";
 /// The heading over the recipe a promote baked with.
@@ -73,6 +88,49 @@ pub(crate) const EFFECTIVE_RECIPE_HEADING: &str = "effective recipe";
 /// This file's tools, for the server to sum.
 pub(crate) fn router() -> ToolRouter<ForgeServer> {
     ForgeServer::promote_router()
+}
+
+/// A rigged body or a normalised model to file, with the records that say
+/// how it was made.
+///
+/// One argument type for both doors: `prop_record` is a model's and
+/// `rig_record`/`export_record` are a body's, and each is refused when it
+/// names a run of the wrong kind. Splitting them into two types would give
+/// an agent two schemas to learn for one shape of work and would not stop
+/// the mistake either type is guarding against.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct PromoteBodyArgs {
+    /// `snake_case` name for the asset, e.g. `vex_runner`. Becomes the file
+    /// stem and the key everything else refers to it by.
+    pub(crate) name: String,
+    /// Path to the exported, self-contained `.glb`. A relative path is read
+    /// against the project root.
+    pub(crate) glb: String,
+    /// The committed `.blend` it was exported from, under the project. It
+    /// is the provenance claim: hashed into the record, and `verify`
+    /// expects it to still be there.
+    pub(crate) blend: Option<String>,
+    /// The TRELLIS.2 lift's record (`<name>.lift.json`). With it the
+    /// generator block is recorded; without it there is none, and the
+    /// record says `reconstructed`, which is the truth.
+    pub(crate) lift_record: Option<String>,
+    /// The skinner's record (`<name>.rig.json`) — a body only.
+    pub(crate) rig_record: Option<String>,
+    /// The export's record — a body only.
+    pub(crate) export_record: Option<String>,
+    /// The prop normaliser's record — a model only.
+    pub(crate) prop_record: Option<String>,
+    /// What it is, in plain English. Omitted, the lift's own prompt stands;
+    /// nothing is invented.
+    pub(crate) prompt: Option<String>,
+    /// Curation tags. Omitted, an existing asset's tags survive the
+    /// re-promote.
+    pub(crate) tags: Option<Vec<String>>,
+    /// Anything the next reader should know.
+    pub(crate) note: Option<String>,
+    /// Allow replacing an existing asset of this name. Default false,
+    /// because guessing a name that is taken costs somebody else's asset.
+    pub(crate) overwrite: Option<bool>,
 }
 
 /// Which take to keep, what to call it, and how to cut it.
@@ -492,6 +550,316 @@ impl ForgeServer {
         }
         util::report(text)
     }
+
+    /// File a rigged body, now, behind the gates.
+    #[tool(
+        description = "Copy a rigged, exported .glb into the library as a body, with its \
+                       record. THIS WRITES THE LIBRARY DIRECTLY — there is no review queue — \
+                       and it runs three gates first: the export gate on the file (a \
+                       self-contained container, one armature, every contract bone, at most \
+                       four influences), `forge rig check` on the profile's reference clip \
+                       (names, depths, rest rotations, the weights, stature, feet on the \
+                       ground, the planted foot's own lowest vertex, and that all the driven \
+                       bones actually bind), and a name that is already taken, which is \
+                       refused unless you pass overwrite:true and then echoes the record it \
+                       replaced. LOOK FIRST ANYWAY: render_model draws the body from every \
+                       angle and render_clip_strip poses a clip on it — numbers say a body is \
+                       wired, a picture says what it is. The sidecar records this body's OWN \
+                       bone lengths and its motion_scale, re-derived from the .glb being \
+                       filed, so what the record claims is re-derivable from the file it \
+                       describes. Pass the rig and export records so the provenance is \
+                       recorded rather than reconstructed."
+    )]
+    pub(crate) async fn promote_body(
+        &self,
+        Parameters(args): Parameters<PromoteBodyArgs>,
+    ) -> CallToolResult {
+        self.promote_mesh(Kind::Body, &args).await
+    }
+
+    /// File a static mesh, now.
+    #[tool(
+        description = "Copy a normalised .glb into the library as a model — a prop, a \
+                       fixture, a held weapon — with its record. THIS WRITES THE LIBRARY \
+                       DIRECTLY — there is no review queue — after the export gate on the \
+                       file and the taken-name refusal, which is lifted only by \
+                       overwrite:true and then echoes what it replaced. A model stands on no \
+                       rig, so no rig check runs and none should: a prop that could claim the \
+                       contract is a prop a game would try to animate. The mesh must already \
+                       be normalised — metres, the origin where the profile says a thing of \
+                       its kind rests, matte — which is what `forge gen prop` does; this door \
+                       only files. Look at it with render_model first."
+    )]
+    pub(crate) async fn promote_model(
+        &self,
+        Parameters(args): Parameters<PromoteBodyArgs>,
+    ) -> CallToolResult {
+        self.promote_mesh(Kind::Model, &args).await
+    }
+}
+
+/// Which records a mesh promote reads, and what each one is called when it
+/// is the wrong kind.
+const MESH_RECORDS: [(&str, RecordKind); 4] = [
+    ("lift_record", RecordKind::Lift),
+    ("rig_record", RecordKind::Rig),
+    ("export_record", RecordKind::Export),
+    ("prop_record", RecordKind::Prop),
+];
+
+impl ForgeServer {
+    /// The body of both mesh doors: resolve, gate, file, report.
+    ///
+    /// One function for two kinds because everything except the rig check
+    /// and the request type is the same question, and the place two copies
+    /// would drift is exactly the taken-name refusal — the gate that costs
+    /// somebody else's asset when it goes soft.
+    async fn promote_mesh(&self, kind: Kind, args: &PromoteBodyArgs) -> CallToolResult {
+        let project = self.config.project.clone();
+        let name = match validate_name(&args.name) {
+            Ok(name) => name,
+            Err(err) => return util::refuse(err.to_string()),
+        };
+        let glb = resolve_path(&project, &args.glb);
+        if !glb.is_file() {
+            return util::refuse(format!(
+                "no mesh at {} — pass the path the exporter reported. nothing was written.",
+                glb.display()
+            ));
+        }
+
+        let overwrite = args.overwrite.unwrap_or(false);
+        let catalog = Catalog::scan(&project);
+        if let Some(existing) = catalog.resolve(&name, Some(kind))
+            && !overwrite
+        {
+            return util::refuse(format!(
+                "refused: promoting {name} would replace {}, {} created {} by {}. pass \
+                 overwrite: true if replacing it is the intent, or pick another name \
+                 (list_models shows what is taken). nothing was written.",
+                existing.rel_path,
+                existing
+                    .sidecar
+                    .as_ref()
+                    .and_then(|s| s.prompt.clone())
+                    .unwrap_or_else(|| String::from("a mesh with no prompt recorded")),
+                existing
+                    .sidecar
+                    .as_ref()
+                    .map_or_else(|| String::from("?"), |s| s.created.clone()),
+                existing
+                    .sidecar
+                    .as_ref()
+                    .map_or_else(|| String::from("?"), |s| s.created_by.to_string()),
+            ));
+        }
+
+        let mut records: Vec<Option<GeneratorRecord>> = Vec::new();
+        for (flag, expected) in MESH_RECORDS {
+            let stated_path = match flag {
+                "lift_record" => args.lift_record.as_deref(),
+                "rig_record" => args.rig_record.as_deref(),
+                "export_record" => args.export_record.as_deref(),
+                _ => args.prop_record.as_deref(),
+            };
+            match mesh_record(&project, stated_path, expected, flag) {
+                Ok(record) => records.push(record),
+                Err(refusal) => return util::refuse(refusal),
+            }
+        }
+        let [lift, rig, export, prop] = records.try_into().unwrap_or_default();
+
+        // The rig check is the gate that needs an engine, and this crate
+        // links none: it shells out to the same binary that serves this
+        // server, so the findings an agent reads are the findings
+        // `forge rig check` prints.
+        if kind == Kind::Body
+            && let Some(refusal) = self.rig_check(&glb).await
+        {
+            return refusal;
+        }
+
+        let blend = stated(args.blend.as_deref()).map(|blend| resolve_path(&project, &blend));
+        let request = MeshRequest {
+            name: name.clone(),
+            glb_path: glb,
+            blend_path: blend,
+            lift_record: lift,
+            rig_record: rig,
+            export_record: export,
+            prop_record: prop,
+            prompt: stated(args.prompt.as_deref()),
+            tags: args.tags.clone().unwrap_or_default(),
+            note: stated(args.note.as_deref()),
+            created_by: Actor::parse(ACTOR),
+            overwrite,
+        };
+        let filing = tokio::task::spawn_blocking(move || request.file(&project, kind));
+        let promoted = match tokio::time::timeout(PROMOTE_TIMEOUT, filing).await {
+            Ok(Ok(Ok(promoted))) => promoted,
+            Ok(Ok(Err(message))) => {
+                return util::refuse(format!(
+                    "the promote of {name} was refused.\n{message}\n\nnothing was written."
+                ));
+            }
+            Ok(Err(err)) => return util::refuse(format!("the promote task failed: {err}")),
+            Err(_) => {
+                return util::refuse(format!(
+                    "the promote of {name} is still running after {} minutes, so this call \
+                     gave up on it — check list_models before trying again.",
+                    util::minutes(PROMOTE_TIMEOUT)
+                ));
+            }
+        };
+        let mut text = format!(
+            "promoted {name} into {} — no review; it is in the library now.\n{}\n{}",
+            promoted.rel_path,
+            promoted.report,
+            shipped_lines(&self.config.project, &promoted)
+        );
+        if let Some(body) = &promoted.record.body {
+            let _ = writeln!(
+                text,
+                "skeleton: {} bones re-derived from the .glb, motion_scale {:.4} — a consumer \
+                 multiplies the root translation track by that and nothing else",
+                body.bones.len(),
+                body.motion_scale
+            );
+        }
+        if let Some(replaced) = &promoted.replaced {
+            let _ = write!(
+                text,
+                "replaced the {} {} created {} by {}",
+                replaced.kind, replaced.name, replaced.created, replaced.created_by
+            );
+        }
+        util::report(text)
+    }
+
+    /// Run `forge rig check` on a body, and turn a failing report into a
+    /// refusal — or `None` when it passed.
+    async fn rig_check(&self, glb: &std::path::Path) -> Option<CallToolResult> {
+        let mut command = tokio::process::Command::new(&self.config.renderer);
+        command
+            .arg("--project")
+            .arg(&self.config.project.root)
+            .arg("rig")
+            .arg("check")
+            .arg(glb);
+        match util::run(&mut command, RIG_CHECK_TIMEOUT).await {
+            util::Ran::Ok(_) => None,
+            util::Ran::Failed(captured) => Some(util::refuse(format!(
+                "refused: {} does not satisfy the rig contract, so no clip in the library \
+                 would play on it. nothing was written.\n\n{}\n{}",
+                glb.display(),
+                captured.stdout.trim(),
+                captured.stderr_tail()
+            ))),
+            util::Ran::Unlaunchable(err) => Some(util::refuse(format!(
+                "the rig check could not be run ({}: {err}), and a body is not filed on an \
+                 unrun gate. nothing was written.",
+                self.config.renderer.display()
+            ))),
+            util::Ran::TimedOut => Some(util::refuse(format!(
+                "the rig check on {} is still running after {} minutes, so this call gave up \
+                 on it. nothing was written.",
+                glb.display(),
+                util::minutes(RIG_CHECK_TIMEOUT)
+            ))),
+        }
+    }
+}
+
+/// One mesh promote's arguments, before they are split by kind.
+struct MeshRequest {
+    name: String,
+    glb_path: PathBuf,
+    blend_path: Option<PathBuf>,
+    lift_record: Option<GeneratorRecord>,
+    rig_record: Option<GeneratorRecord>,
+    export_record: Option<GeneratorRecord>,
+    prop_record: Option<GeneratorRecord>,
+    prompt: Option<String>,
+    tags: Vec<String>,
+    note: Option<String>,
+    created_by: Actor,
+    overwrite: bool,
+}
+
+impl MeshRequest {
+    /// Hand this to the library's own door for the kind — the same
+    /// function `forge promote body` and `forge promote model` call, so
+    /// what an agent files is byte-for-byte what a human would have.
+    fn file(self, project: &Project, kind: Kind) -> Result<Promoted, String> {
+        match kind {
+            Kind::Body => promote_body(
+                project,
+                &PromoteBody {
+                    name: self.name,
+                    glb_path: self.glb_path,
+                    blend_path: self.blend_path,
+                    lift_record: self.lift_record,
+                    rig_record: self.rig_record,
+                    export_record: self.export_record,
+                    prompt: self.prompt,
+                    tags: self.tags,
+                    note: self.note,
+                    created_by: self.created_by,
+                    overwrite: self.overwrite,
+                },
+            ),
+            _ => promote_model(
+                project,
+                &PromoteModel {
+                    name: self.name,
+                    glb_path: self.glb_path,
+                    blend_path: self.blend_path,
+                    lift_record: self.lift_record,
+                    prop_record: self.prop_record,
+                    prompt: self.prompt,
+                    tags: self.tags,
+                    note: self.note,
+                    created_by: self.created_by,
+                    overwrite: self.overwrite,
+                },
+            ),
+        }
+        .map_err(|e| e.to_string())
+    }
+}
+
+/// One generator record a mesh promote was handed, held to its kind.
+///
+/// A record of the wrong kind is refused rather than ignored: a lift record
+/// passed as the rig's would put the lift's parameters in the sidecar under
+/// a heading that says the rig ran, which is a lie the record shape exists
+/// to make impossible.
+fn mesh_record(
+    project: &Project,
+    stated_path: Option<&str>,
+    expected: RecordKind,
+    flag: &str,
+) -> Result<Option<GeneratorRecord>, String> {
+    let Some(stated_path) = stated(stated_path) else {
+        return Ok(None);
+    };
+    let path = resolve_path(project, &stated_path);
+    if !path.is_file() {
+        return Err(format!(
+            "no record at {} for {flag} — pass the path exactly as the generator reported it. \
+             nothing was written.",
+            path.display()
+        ));
+    }
+    let record = GeneratorRecord::load(&path).map_err(|e| e.to_string())?;
+    if record.kind != expected {
+        return Err(format!(
+            "{} describes a {} run, not {expected}, so it is not {flag}. nothing was written.",
+            path.display(),
+            record.kind
+        ));
+    }
+    Ok(Some(record))
 }
 
 /// The shipped recipe (or identity) with the stated knobs on top, then the
@@ -755,6 +1123,80 @@ fn shipped_lines(project: &Project, promoted: &Promoted) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The taken-name refusal on the mesh doors, which is the gate that
+    /// costs somebody else's asset when it goes soft: a successful frame
+    /// naming the record it would have replaced and the word that gets past
+    /// it. The `overwrite` leg is exercised end to end in `mcp_session`,
+    /// where a real rig check runs.
+    #[tokio::test]
+    async fn a_taken_mesh_name_is_refused_naming_what_it_would_replace() {
+        let (dir, project) = crate::testing::library();
+        let body = project.kind_dir(Kind::Body).join("mannequin.glb");
+        let server = crate::testing::server(project);
+
+        let taken = server
+            .promote_body(Parameters(PromoteBodyArgs {
+                name: String::from("mannequin"),
+                glb: body.display().to_string(),
+                ..PromoteBodyArgs::default()
+            }))
+            .await;
+        let text = util::frame_text(&taken);
+        assert!(
+            text.contains("would replace bodies/mannequin.glb"),
+            "{text}"
+        );
+        assert!(text.contains("overwrite: true"), "{text}");
+        assert!(text.contains("the fixture mannequin"), "{text}");
+        assert!(text.contains("nothing was written"), "{text}");
+
+        // A model of a name no model holds gets past the collision gate and
+        // onto the file, which is where a mesh that is not there stops.
+        let missing = server
+            .promote_model(Parameters(PromoteBodyArgs {
+                name: String::from("barrel"),
+                glb: dir.path().join("nowhere.glb").display().to_string(),
+                ..PromoteBodyArgs::default()
+            }))
+            .await;
+        let text = util::frame_text(&missing);
+        assert!(text.contains("no mesh at"), "{text}");
+        assert!(text.contains("nothing was written"), "{text}");
+    }
+
+    /// A record of the wrong kind is refused rather than filed under a
+    /// heading that says a run happened which did not.
+    #[tokio::test]
+    async fn a_record_of_the_wrong_kind_is_refused_by_name() {
+        let (dir, project) = crate::testing::library();
+        let body = project.kind_dir(Kind::Body).join("mannequin.glb");
+        let record = dir.path().join("wrong.json");
+        std::fs::write(
+            &record,
+            br#"{"forge_record": 2, "kind": "lift", "tool": "trellis2",
+                 "created": "2026-08-30", "created_by": "human",
+                 "backend": {"name": null, "commit": null, "python": null, "torch": null,
+                             "model": null, "model_revision": null},
+                 "inputs": [], "params": {}, "measured": {}, "outputs": [], "fake": false}"#,
+        )
+        .expect("write the record");
+        let server = crate::testing::server(project);
+
+        let refused = server
+            .promote_body(Parameters(PromoteBodyArgs {
+                name: String::from("mannequin"),
+                glb: body.display().to_string(),
+                rig_record: Some(record.display().to_string()),
+                overwrite: Some(true),
+                ..PromoteBodyArgs::default()
+            }))
+            .await;
+        let text = util::frame_text(&refused);
+        assert!(text.contains("describes a lift run"), "{text}");
+        assert!(text.contains("rig_record"), "{text}");
+        assert!(text.contains("nothing was written"), "{text}");
+    }
 
     #[test]
     fn the_overlay_keeps_unstated_knobs_and_the_loop_flag_outranks_it() {

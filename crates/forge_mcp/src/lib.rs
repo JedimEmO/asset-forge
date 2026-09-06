@@ -25,12 +25,13 @@
 //! rendered opaquely by the client and teach it nothing.
 //!
 //! **The server never decides what ships without a human.** There is no
-//! review queue: `promote_clip` and `promote_audio` write the library
-//! directly, and so they refuse a name that is already taken unless told
-//! `overwrite` — a replacement is a decision, never an accident. And there
-//! is no promote for a mesh at all: a body or a model goes through the
-//! genart skills, where a human looks at the lift, the rig and the views
-//! before anything is filed.
+//! review queue: every `promote_*` writes the library directly, and so each
+//! refuses a name that is already taken unless told `overwrite` — a
+//! replacement is a decision, never an accident. The human is in the loop
+//! through the harness that issues every one of these calls, and what
+//! protects the library is the gates rather than a doorman: the export
+//! gate, `forge rig check` on the reference clip, and the refused taken
+//! name, all of which `promote_body` runs before a byte moves.
 //!
 //! # Layout
 //!
@@ -39,11 +40,15 @@
 //! config.rs    where the project is, and the exe-relative renderer rule
 //! server.rs    the state, the instructions text, the sum of the routers
 //! util.rs      refusals, inline images, supervised subprocesses
-//! tools/       one file per verb: list, render, audio, doctor, generate, promote
+//! build.rs     the reference format, generated from the importer's own text
+//! tools/       one file per verb: list, render, audio, doctor, generate,
+//!              mesh, reference, promote
 //! ```
 
 use std::fmt;
+use std::sync::Arc;
 
+use forge_serve::Queue;
 use rmcp::ServiceExt;
 use rmcp::transport::stdio;
 
@@ -53,6 +58,17 @@ mod tools;
 mod util;
 
 pub use config::{Config, ConfigError, PROJECT_ENV};
+
+/// The embedded workflow guide, shared verbatim by the CLI and MCP resource.
+/// Available before a project exists and without runtime documentation files.
+#[must_use]
+pub fn workflow_guide() -> String {
+    format!(
+        "Toolkit version: {}\n\n{}",
+        env!("CARGO_PKG_VERSION"),
+        include_str!("../guides/workflow.md")
+    )
+}
 
 /// Why serving stopped before the client hung up.
 ///
@@ -105,10 +121,10 @@ impl std::error::Error for ServeError {
 /// [`ServeError::Handshake`] when the client never initialises,
 /// [`ServeError::Session`] when the session task ends abnormally. A client
 /// that simply hangs up is not an error.
-pub async fn serve(config: Config) -> Result<(), ServeError> {
+pub async fn serve(config: Config, queue: Arc<dyn Queue>) -> Result<(), ServeError> {
     install_panic_hook();
     eprintln!("{}", config.banner());
-    let service = server::ForgeServer::new(config)
+    let service = server::ForgeServer::new(config, queue)
         .serve(stdio())
         .await
         .map_err(|e| ServeError::Handshake(e.to_string()))?;
@@ -124,12 +140,42 @@ pub async fn serve(config: Config) -> Result<(), ServeError> {
 /// # Errors
 ///
 /// [`ServeError::Runtime`] when tokio will not start, else as [`serve`].
-pub fn run(config: Config) -> Result<(), ServeError> {
+pub fn run(config: Config, queue: Arc<dyn Queue>) -> Result<(), ServeError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(ServeError::Runtime)?;
-    runtime.block_on(serve(config))
+    runtime.block_on(serve(config, queue))
+}
+
+/// One server, ready to answer — what a transport wraps.
+///
+/// The `forge` binary never names an rmcp type: it hands over a [`Config`]
+/// and an `Arc<dyn Queue>` and gets back something that serves, whichever
+/// door it came through.
+#[must_use]
+pub fn handler(config: Config, queue: Arc<dyn Queue>) -> impl rmcp::ServerHandler + 'static {
+    server::ForgeServer::new(config, queue)
+}
+
+/// The same tools over streamable HTTP, as a router the daemon nests at
+/// `/mcp`.
+///
+/// **The router does not move and is not duplicated.** This is the same
+/// `ForgeServer`, the same tool sum and the same instructions text `forge
+/// mcp` serves over stdio, holding the same queue the daemon's worker is
+/// draining. Same tools, same frames, whichever door the client came
+/// through.
+pub fn http_service(config: Config, queue: Arc<dyn Queue>) -> axum::Router {
+    use rmcp::transport::streamable_http_server::StreamableHttpService;
+    use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+
+    let service = StreamableHttpService::new(
+        move || Ok(server::ForgeServer::new(config.clone(), Arc::clone(&queue))),
+        LocalSessionManager::default().into(),
+        rmcp::transport::streamable_http_server::StreamableHttpServerConfig::default(),
+    );
+    axum::Router::new().fallback_service(service)
 }
 
 /// Report panics on stderr. A panic message on stdout would be
@@ -163,10 +209,21 @@ pub(crate) mod testing {
             .join(relative)
     }
 
-    /// An empty project with the humanoid profile installed.
+    /// An empty project with the humanoid profile installed, and **no
+    /// backends**.
+    ///
+    /// The backends directory is pinned inside the tempdir and never
+    /// created, so `Backends::discover` reads the same empty machine here as
+    /// on a runner. Left unpinned it falls through to the toolkit
+    /// checkout's own `backends/`, where a developer who has adopted
+    /// TRELLIS.2 carries a `.checkout` — and every "this door is off, call
+    /// doctor" assertion then passes on CI and fails on the machine that
+    /// installed the backend, which is a test measuring the developer's
+    /// disk instead of the door.
     pub(crate) fn empty_project() -> (tempfile::TempDir, Project) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let project = Project::init(dir.path(), "mcp_test").expect("init");
+        let mut project = Project::init(dir.path(), "mcp_test").expect("init");
+        project.backends_dir = Some(dir.path().join("backends-none"));
         project
             .install_profile(&toolkit("rigs/humanoid"))
             .expect("install the profile");
@@ -222,12 +279,26 @@ pub(crate) mod testing {
 
     /// A server over a project, with a renderer that does not exist — so a
     /// test that reaches the renderer gets an unlaunchable refusal rather
-    /// than a Bevy window.
+    /// than a Bevy window — and a queue of its own that spawns nothing.
+    ///
+    /// The queue is real: it writes rows under the project's `out/serve/`
+    /// the way every other door does. What it is not given is a launcher
+    /// that exists, so a job admitted in a test stays a row.
     pub(crate) fn server(project: Project) -> ForgeServer {
-        ForgeServer::new(Config::with_renderer(
-            project,
-            PathBuf::from("/nonexistent/forge-for-tests"),
-        ))
+        let queue = forge_serve::LocalQueue::open(
+            &project,
+            forge_serve::LocalQueueOptions {
+                forge: PathBuf::from("/nonexistent/forge-for-tests"),
+                launcher: Some(vec![String::from("/nonexistent/forge-gen-for-tests")]),
+                run_worker: false,
+                ..forge_serve::LocalQueueOptions::default()
+            },
+        )
+        .expect("a queue over the test project");
+        ForgeServer::new(
+            Config::with_renderer(project, PathBuf::from("/nonexistent/forge-for-tests")),
+            queue,
+        )
     }
 }
 
@@ -236,42 +307,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_tool_surface_is_exactly_the_read_only_set_plus_the_stubs() {
+    fn the_tool_surface_is_the_thirty_names_mcp_check_pins() {
         let (_dir, project) = testing::empty_project();
         let server = testing::server(project);
-        let mut expected = vec![
+        // The list is asserted rather than counted so a rename shows up as a
+        // diff of names, which is what `just mcp-check` compares against and
+        // what `mcp_session.rs` asserts over both transports.
+        let thirty = [
+            "audit",
+            "cancel",
             "doctor",
+            "export_body",
+            "export_bundle",
+            "generate_audio",
+            "generate_clips",
+            "generate_mesh",
+            "import_reference",
+            "init_project",
             "inspect_audio",
+            "licences",
             "list_audio",
             "list_clips",
             "list_models",
+            "list_runs",
+            "manifest_check",
+            "prepare_body",
+            "prepare_prop",
+            "promote_audio",
+            "promote_body",
+            "promote_clip",
+            "promote_model",
             "render_clip_strip",
             "render_model",
+            "setup",
+            "skin_body",
+            "status",
+            "verify",
+            "wait",
         ];
-        // The other agent's files contribute whatever they export; the
-        // read-only set is pinned and the rest is reported, not refused.
         let mut names = server.tool_names();
-        let extra: Vec<String> = names
-            .iter()
-            .filter(|n| !expected.contains(&n.as_str()))
-            .cloned()
-            .collect();
-        for name in &extra {
-            assert!(
-                name.starts_with("generate_") || name.starts_with("promote_"),
-                "{name} is neither read-only nor a generate/promote tool"
-            );
-        }
-        expected.extend(extra.iter().map(String::as_str));
-        expected.sort_unstable();
         names.sort();
-        assert_eq!(names, expected);
-        assert!(
-            !names
-                .iter()
-                .any(|n| n == "promote_mesh" || n == "promote_body" || n == "promote_model"),
-            "a mesh has no promote door here: {names:?}"
-        );
+        assert_eq!(names, thirty, "the surface drifted from mcp-check's pin");
     }
 
     #[test]
@@ -288,15 +364,24 @@ mod tests {
             "inspect_audio",
             "generate_clips",
             "generate_audio",
+            "import_reference",
+            "generate_mesh",
+            "prepare_body",
+            "skin_body",
             "promote_clip",
             "promote_audio",
+            "promote_body",
+            "promote_model",
             "doctor",
         ] {
             assert!(text.contains(verb), "instructions do not mention {verb}");
         }
         assert!(text.contains("direct write"), "{text}");
         assert!(text.contains("overwrite"), "{text}");
-        assert!(text.contains("no promote for a body or a model"), "{text}");
+        // The sentence that used to say a mesh had no door here is gone,
+        // and its going is a decision worth pinning: Phase 2 opened the
+        // door and moved the guard from a doorman to the gates.
+        assert!(!text.contains("no promote for a body or a model"), "{text}");
         assert!(text.contains("LOOK BEFORE YOU PROMOTE"), "{text}");
     }
 

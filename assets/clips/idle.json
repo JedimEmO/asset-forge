@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "kind": "clip",
   "name": "idle",
   "prompt": "A person stands, looking around and turning their head.",
@@ -303,6 +303,7 @@
     },
     "mesh": null
   },
+  "body": null,
   "events": [],
   "content_hash": "sha256:cc0a31f5765f2beda2505fe9320f5d4ea67dab173b483420aff9ff83255af838",
   "note": "migrated from the old repository's gen_idle (sweep file idle_look__d10_c2_s0_1.npz; no take record survives, so seed, cfg and duration are unknown); trims found by the old loop search"

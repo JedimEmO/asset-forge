@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "frozen_date": "2026-09-05",
+  "status": "briefs frozen; no fresh real-model trials run yet",
+  "rules": {
+    "attempts_per_case": 2,
+    "timeout_per_attempt_s": 1200,
+    "automatic_retries": 0,
+    "promotion": "Only reviewed passing candidates; no automatic promotion",
+    "evidence": "Retain every command, return code, elapsed time, generator record, output hash, review sheet and rejection reason",
+    "judgment": "Missing listening or visual evidence remains unreviewed, never passed"
+  },
+  "cases": [
+    {
+      "id": "prop_magnet",
+      "kind": "prop",
+      "reference": "assets-src/refs/props/scrapyard_magnet.png",
+      "brief": "A complete scrapyard magnet pickup, normalized to 0.5 metres tall with floor origin.",
+      "seeds": [
+        101,
+        102
+      ],
+      "review": [
+        "Complete front and invented back, no hollow shell or disconnected debris",
+        "Readable pickup silhouette from the angled arena camera",
+        "Height 0.5 m within 1%; lowest Y within 1 mm; valid GLB and truthful records"
+      ],
+      "reference_sha256": "39876cd31e5071e35fe8720f29eef6cefc87c785db15c4d8eb8a95ea124e9b22"
+    },
+    {
+      "id": "humanoid_rusher",
+      "kind": "character",
+      "reference": "assets-src/refs/characters/scrapyard_rusher.png",
+      "brief": "A rigged scrapyard robot rusher using the humanoid profile, 1.8 metres tall.",
+      "seeds": [
+        101,
+        102
+      ],
+      "review": [
+        "Closed head and torso; one limb per side; no lifted floor",
+        "Export and rig gates pass with no record edits",
+        "Review front/back/side poses and hands on the actual body"
+      ],
+      "reference_sha256": "af5fcae05e3a7cf7ee3b0c36678510b56e56e393b61412e7594dd1f21654d596"
+    },
+    {
+      "id": "rusher_clips",
+      "kind": "clips",
+      "brief": "One idle loop, one forward run, and one forward melee swipe for the actual rusher body.",
+      "seeds": [
+        101,
+        102
+      ],
+      "review": [
+        "Each action reads correctly on the body, not only on the stick sheet",
+        "Idle has no unintended travel; run feet contact the floor",
+        "Swipe is a single readable action; no persistent limb/body penetration",
+        "Full audit and manifest checks pass"
+      ]
+    },
+    {
+      "id": "rifle_shot",
+      "kind": "sfx",
+      "brief": "A single short mechanical sci-fi rifle shot, immediate sharp attack, metallic body, short clean decay. No speech, music or background noise.",
+      "duration_s": 0.5,
+      "seeds": [
+        101,
+        102
+      ],
+      "measured_limits": {
+        "lead_silence_max_s": 0.05,
+        "absolute_dc_offset_max": 0.01,
+        "longest_clip_run_max": 2
+      },
+      "review": [
+        "Matches a rifle shot rather than ambience or several shots",
+        "Tail ends without a click or an abrupt low-frequency cutoff"
+      ]
+    },
+    {
+      "id": "arena_music",
+      "kind": "music",
+      "brief": "Instrumental scrapyard sci-fi arena combat loop, driving industrial percussion and gritty synth bass at 120 BPM. Consistent energy, no vocals, no intro, no fadeout.",
+      "duration_s": 30,
+      "bpm": 120,
+      "gain_db": -3,
+      "seeds": [
+        101,
+        102
+      ],
+      "measured_limits": {
+        "absolute_dc_offset_max": 0.01,
+        "longest_clip_run_max": 2,
+        "absolute_loop_seam_db_max": 3
+      },
+      "review": [
+        "Combat energy and requested instrumentation",
+        "Listen across repeated loop joins for rhythmic or harmonic discontinuity",
+        "A level-matched seam alone does not prove a seamless musical loop"
+      ]
+    },
+    {
+      "id": "voice_line",
+      "kind": "voice",
+      "brief": "Original designed adult scavenger voice, clear and urgent, speaking: Hold the scrap line.",
+      "seeds": [
+        101,
+        102
+      ],
+      "review": [
+        "Exact words intelligible with no babble or added speech",
+        "No silence/clipping, natural timing and complete word endings"
+      ],
+      "known_blocker": "Pinned MOSS-TTS runtime previously produced silence/babble under host transformers 5; do not label supported from doctor or designed-voice success alone."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "1": {
+    "class_type": "MossSoundEffectV2EngineNode",
+    "_meta": { "title": "MOSS-SoundEffect v2.0: PATCH:steps=inference_steps PATCH:cfg=cfg_scale" },
+    "inputs": {
+      "model": "MOSS-SoundEffect-v2.0",
+      "device": "auto",
+      "dtype": "auto",
+      "inference_steps": 100,
+      "cfg_scale": 4.0,
+      "sigma_shift": 5.0,
+      "negative_prompt": ""
+    }
+  },
+  "2": {
+    "class_type": "UnifiedSoundEffectsNode",
+    "_meta": { "title": "PATCH:prompt=description PATCH:seconds=duration_seconds PATCH:seed — enable_audio_cache is off on purpose" },
+    "inputs": {
+      "TTS_engine": ["1", 0],
+      "description": "",
+      "duration_seconds": 3.0,
+      "seed": 0,
+      "crossfade_seconds": 1.0,
+      "enable_audio_cache": false
+    }
+  },
+  "3": {
+    "class_type": "SaveAudio",
+    "_meta": { "title": "PATCH:filename_prefix — SaveAudio writes FLAC; the client transcodes to the PCM WAV the record measures" },
+    "inputs": { "audio": ["2", 0], "filename_prefix": "audio/forge" }
+  }
+}

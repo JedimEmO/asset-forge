@@ -377,6 +377,7 @@ pub fn render_clip_sheet(stage: &Stage, request: &SheetRequest) -> Result<Shot, 
     let (lo, hi) = frame_subject(&mut app, anim_root, node, &times);
     let (centre, radius) = enclosing(lo, hi);
     let mut cells = capture_poses(&mut app, anim_root, node, request, &times, centre, radius)?;
+    let frozen = poses_frozen(&cells, times.len());
     if request.head_row {
         let (focus, head_radius) = head_sphere(&mut app, lo, hi);
         cells.extend(capture_head_row(
@@ -388,11 +389,6 @@ pub fn render_clip_sheet(stage: &Stage, request: &SheetRequest) -> Result<Shot, 
             head_radius,
         )?);
     }
-
-    let frozen = cells.len() > 1
-        && cells
-            .windows(2)
-            .all(|w| mean_abs_diff(&w[0].image, &w[1].image) < FROZEN_EPSILON);
 
     let header = format!(
         "{} / {}  {:.2}S  {} BONES DRIVEN",
@@ -416,6 +412,22 @@ pub fn render_clip_sheet(stage: &Stage, request: &SheetRequest) -> Result<Shot, 
         frozen,
         bounds: (lo, hi),
     })
+}
+
+/// Compare temporal poses within each camera band. Neighbor-only comparisons
+/// miss gradual motion when each small step falls below the pixel threshold;
+/// comparing different viewpoints can conversely make a frozen pose pass.
+/// Head close-ups are appended only after this check and are never motion.
+fn poses_frozen(cells: &[SheetCell], poses_per_view: usize) -> bool {
+    poses_per_view > 1
+        && !cells.is_empty()
+        && cells.chunks_exact(poses_per_view).all(|band| {
+            band.iter().enumerate().all(|(i, a)| {
+                band[i + 1..]
+                    .iter()
+                    .all(|b| mean_abs_diff(&a.image, &b.image) < FROZEN_EPSILON)
+            })
+        })
 }
 
 /// Render the stage's model from every requested angle.
@@ -852,6 +864,50 @@ fn short(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn solid_cell(value: u8) -> SheetCell {
+        // Four pixels; mean_abs_diff samples the first one at its stride.
+        let image = Image {
+            data: Some([value, 0, 0, 255].repeat(4)),
+            ..Image::default()
+        };
+        SheetCell {
+            image,
+            label: String::new(),
+        }
+    }
+
+    #[test]
+    fn slow_accumulated_motion_is_not_frozen_when_neighbors_are_similar() {
+        let cells = [
+            solid_cell(100),
+            solid_cell(101),
+            solid_cell(102),
+            solid_cell(103),
+        ];
+        assert!(
+            cells
+                .windows(2)
+                .all(|pair| mean_abs_diff(&pair[0].image, &pair[1].image) < FROZEN_EPSILON)
+        );
+        assert!(!poses_frozen(&cells, 4));
+    }
+
+    #[test]
+    fn different_camera_angles_do_not_disguise_a_frozen_clip() {
+        let cells = [
+            solid_cell(20),
+            solid_cell(20),
+            solid_cell(200),
+            solid_cell(200),
+        ];
+        assert!(poses_frozen(&cells, 2));
+        assert!(
+            !poses_frozen(&cells, 1),
+            "one temporal sample cannot establish motion"
+        );
+        assert!(!poses_frozen(&[], 2));
+    }
 
     #[test]
     fn sample_times_span_the_window_inclusively() {

@@ -1,4 +1,4 @@
-//! The record a generator writes: `forge_record: 1`, read here, written by
+//! The record a generator writes: `forge_record: 2`, read here, written by
 //! Python.
 //!
 //! Two schemas with a clean boundary — **Python writes generator records,
@@ -26,18 +26,35 @@ use serde::{Deserialize, Serialize};
 use crate::schema::{AceStepParams, ArdyParams, LiftParams, SoundEffectParams, SpeechParams};
 use crate::{LibraryError, Result, read_bytes};
 
-/// The generator record schema this build reads.
-pub const RECORD_SCHEMA: u64 = 1;
+/// The generator record schema this build **writes**.
+pub const RECORD_SCHEMA: u64 = 2;
+
+/// The oldest schema this build reads.
+///
+/// **Both readers accept 1 and 2, and only 2 is ever written.** Nothing
+/// under `assets/` or `assets-src/` was rewritten when the schema went to 2:
+/// adding four nulls to a shipped sidecar is churn with no new fact in it,
+/// and the library sidecar stays `schema: 1`. A v1 generator record simply
+/// has no `executor`, `comfyui_commit`, `workflow_sha256` or `packs` — which
+/// is what `null` already means everywhere else in this type.
+pub const RECORD_SCHEMA_MIN: u64 = 1;
 
 /// What kind of run a record describes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordKind {
+    /// A reference import: a drawn PNG in, the same bytes under
+    /// `assets-src/refs/` out. Nothing generated it; it was brought.
+    Ref,
     /// A TRELLIS.2 lift: PNG in, raw textured mesh out.
     Lift,
     /// A prop normalize: raw lift in, metres-and-matte prop out.
     Prop,
-    /// An auto-rig: raw lift in, rigged `.blend` out.
+    /// A prepare: raw lift in, normalised mesh plus a bare skeleton out,
+    /// which `forge gen skin` then hashes as its `mesh` input.
+    Prepare,
+    /// A skin: prepared glb in, rigged `.blend` on a skeleton fitted to
+    /// this body out.
     Rig,
     /// A body export: rigged `.blend` in, self-contained `.glb` out.
     Export,
@@ -59,8 +76,10 @@ impl RecordKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Ref => "ref",
             Self::Lift => "lift",
             Self::Prop => "prop",
+            Self::Prepare => "prepare",
             Self::Rig => "rig",
             Self::Export => "export",
             Self::Take => "take",
@@ -95,6 +114,27 @@ pub struct RecordBackend {
     pub model: Option<String>,
     /// The model revision, when the hub names one.
     pub model_revision: Option<String>,
+    /// How the run was executed: `env` (the backend's own interpreter) or
+    /// `comfy` (a graph on the `ComfyUI` host). Written for **every**
+    /// `forge_record: 2` record, `env` ones included — a record that says
+    /// nothing about its executor is one nobody can group later — and
+    /// `None` on a v1 record, which predates the question.
+    #[serde(default)]
+    pub executor: Option<String>,
+    /// The host's `ComfyUI` commit, for a `comfy` run.
+    #[serde(default)]
+    pub comfyui_commit: Option<String>,
+    /// `sha256:…` of the **tracked template file** the graph was loaded
+    /// from — never of the patched graph. A reader can go and find a
+    /// tracked file; nobody can check a hash of bytes that were never
+    /// written down. What was patched into it lives in `params`.
+    #[serde(default)]
+    pub workflow_sha256: Option<String>,
+    /// The custom node packs the host carried, `{repo: commit}`; an empty
+    /// map for native nodes, `None` for an `env` run. A sorted map, so
+    /// re-serialising a record gives the bytes Python wrote.
+    #[serde(default)]
+    pub packs: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// One thing the run was handed.
@@ -172,6 +212,10 @@ impl GeneratorRecord {
     /// know. The schema check runs before the typed parse so the error says
     /// "you are behind" rather than "missing field".
     ///
+    /// [`RECORD_SCHEMA_MIN`] through [`RECORD_SCHEMA`] are accepted; only
+    /// [`RECORD_SCHEMA`] is written. A v1 record keeps its `forge_record: 1`
+    /// through a round trip, so reading one does not quietly promote it.
+    ///
     /// # Errors
     ///
     /// The bytes are not JSON, declare another `forge_record`, or do not
@@ -179,11 +223,20 @@ impl GeneratorRecord {
     pub fn from_slice(bytes: &[u8], path: &Path) -> Result<Self> {
         let value: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|e| LibraryError::json(path, e))?;
+        if value.get("kind").and_then(serde_json::Value::as_str) == Some("music")
+            && let Some(recipe) = value
+                .get("params")
+                .and_then(|params| params.get("loop"))
+                .filter(|recipe| !recipe.is_null())
+        {
+            let _: crate::schema::MusicLoopParams = serde_json::from_value(recipe.clone())
+                .map_err(|error| LibraryError::json(path, error))?;
+        }
         match value
             .get("forge_record")
             .and_then(serde_json::Value::as_u64)
         {
-            Some(RECORD_SCHEMA) => {
+            Some(schema) if (RECORD_SCHEMA_MIN..=RECORD_SCHEMA).contains(&schema) => {
                 serde_json::from_value(value).map_err(|e| LibraryError::json(path, e))
             }
             Some(other) => Err(LibraryError::UnsupportedSchema {
@@ -391,6 +444,13 @@ impl GeneratorRecord {
             timesignature: self.param_str("timesignature"),
             genres: self.param_str("genres"),
             lyrics: self.param_str("lyrics"),
+            gain_db: self.param_i64("gain_db"),
+            thinking: self.param_bool("thinking"),
+            format: self.param_str("format"),
+            r#loop: self
+                .params
+                .get("loop")
+                .and_then(|value| serde_json::from_value(value.clone()).ok()),
             duration_s: self.param_f32("duration_s"),
         }
     }
@@ -424,7 +484,7 @@ mod tests {
     /// is pinned here against this transcription and again in P2 against a
     /// capture from `records.py` itself.
     const LIFT: &str = r#"{
-  "forge_record": 1,
+  "forge_record": 2,
   "kind": "lift",
   "tool": "trellis2",
   "created": "2026-08-23",
@@ -435,7 +495,11 @@ mod tests {
     "python": "3.11.9",
     "torch": "2.6.0+cu124",
     "model": "microsoft/TRELLIS.2-4B",
-    "model_revision": null
+    "model_revision": null,
+    "executor": "env",
+    "comfyui_commit": null,
+    "workflow_sha256": null,
+    "packs": null
   },
   "inputs": [
     {
@@ -498,15 +562,95 @@ mod tests {
         );
     }
 
+    /// The same lift as `forge_record: 1`: no `executor`, no
+    /// `comfyui_commit`, no `workflow_sha256`, no `packs`. One of these is
+    /// under `assets/` beside every shipped body, model and sound, and none
+    /// of them was rewritten when the schema went to 2.
+    const LIFT_V1: &str = r#"{
+  "forge_record": 1,
+  "kind": "lift",
+  "tool": "trellis2",
+  "created": "2026-08-23",
+  "created_by": "human",
+  "backend": {
+    "name": "trellis2",
+    "commit": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+    "python": "3.11.9",
+    "torch": "2.6.0+cu124",
+    "model": "microsoft/TRELLIS.2-4B",
+    "model_revision": null
+  },
+  "inputs": [],
+  "params": {"seed": 42},
+  "outputs": [{"path": "out/lifts/barrel.glb", "sha256": "sha256:5833", "bytes": 1234}],
+  "measured": {},
+  "fake": false,
+  "note": null
+}
+"#;
+
+    #[test]
+    fn both_schemas_are_read_and_only_the_newest_is_written() {
+        // A v1 record reads, projects, and keeps its own schema number: a
+        // reader that promoted it would be claiming the four keys were
+        // absent on purpose rather than absent because nobody asked yet.
+        let old = GeneratorRecord::from_slice(LIFT_V1.as_bytes(), Path::new("v1.json"))
+            .expect("v1 still reads");
+        assert_eq!(old.forge_record, 1);
+        assert_eq!(old.backend.executor, None, "null means unknown");
+        assert_eq!(old.backend.packs, None);
+        assert_eq!(old.lift_params().seed, Some(42));
+
+        let new =
+            GeneratorRecord::from_slice(LIFT.as_bytes(), Path::new("v2.json")).expect("v2 reads");
+        assert_eq!(new.forge_record, RECORD_SCHEMA);
+        assert_eq!(new.backend.executor.as_deref(), Some("env"));
+        assert_eq!(
+            new.backend.workflow_sha256, None,
+            "an env run genuinely has no workflow"
+        );
+    }
+
     #[test]
     fn a_newer_or_absent_schema_is_refused() {
-        let newer = LIFT.replacen("\"forge_record\": 1", "\"forge_record\": 2", 1);
+        let newer = LIFT.replacen("\"forge_record\": 2", "\"forge_record\": 3", 1);
         let error =
             GeneratorRecord::from_slice(newer.as_bytes(), Path::new("x.json")).expect_err("refuse");
-        assert!(error.to_string().contains("schema 2"), "{error}");
+        assert!(error.to_string().contains("schema 3"), "{error}");
         let error = GeneratorRecord::from_slice(b"{\"kind\": \"lift\"}", Path::new("x.json"))
             .expect_err("refuse");
         assert!(error.to_string().contains("forge_record"), "{error}");
+    }
+
+    #[test]
+    fn a_comfy_record_carries_its_host_its_template_and_its_packs() {
+        let text = r#"{"forge_record": 2, "kind": "sfx", "tool": "moss_sound_effect",
+            "created": "2026-08-30", "created_by": "agent:claude",
+            "backend": {"name": "moss_sfx", "commit": null, "executor": "comfy",
+                        "comfyui_commit": "169fcf35a2fc163fec31338b816503ddac0d3fcf",
+                        "workflow_sha256": "sha256:9f1c",
+                        "packs": {"https://github.com/b": "2b", "https://github.com/a": "1a"}},
+            "inputs": [{"role": "prompt", "prompt": "a heavy iron door"}],
+            "params": {"workflow": "sfx.api.json", "seed": 815273},
+            "outputs": [{"path": "out/audio/sfx/door.wav"}]}"#;
+        let record =
+            GeneratorRecord::from_slice(text.as_bytes(), Path::new("s.json")).expect("reads");
+        assert_eq!(record.backend.executor.as_deref(), Some("comfy"));
+        assert_eq!(
+            record.backend.commit, None,
+            "a comfy backend has no checkout of its own"
+        );
+        let packs = record.backend.packs.as_ref().expect("packs");
+        assert_eq!(
+            packs.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["https://github.com/a", "https://github.com/b"],
+            "a free-form map is sorted, like params"
+        );
+        assert_eq!(
+            record.param_str("workflow").as_deref(),
+            Some("sfx.api.json"),
+            "the patch is knobs, and knobs live in params"
+        );
     }
 
     #[test]

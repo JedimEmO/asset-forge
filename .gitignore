@@ -14,9 +14,13 @@ __pycache__/
 # of it is source, all of it is machine-local, and backends.local.toml is
 # this machine's interpreter overrides.
 backends/*/.env
+backends/*/.toolchain
 backends/*/.checkout
 backends/*/.text-encoders
 backends/*/installed.json
 backends/*/.checkpoints
 backends.local.toml
 python/.venv
+
+# Workflow agents' worktrees (tool state, never source)
+.claude/worktrees/

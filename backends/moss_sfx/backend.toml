@@ -1,35 +1,97 @@
 # MOSS-SoundEffect v2: one sound effect from a prompt (a 1.3B DiT + DAC VAE +
-# Qwen3 prompter, packaged diffusers-style). Lives in a subdirectory of the
-# MOSS-TTS repository with its own pins — torch 2.9.0, transformers 4.57.1,
-# numpy 1.26 — which is why it is its own backend with its own venv and not a
-# second entry module of moss_tts. `install.sh` clones the repository once
-# ($PREFIX/../moss-tts, shared with moss_tts) and links .checkout at the
-# subdirectory; the inner module runs from there.
+# Qwen3 prompter). `forge gen sfx`.
+#
+# It runs **on the ComfyUI host** through the TTS-Audio-Suite pack (MIT), not
+# in a venv of its own: no clone, no `.env`, no second torch pin to keep
+# beside the host's. `workflows/sfx.api.json` is the graph, and the weights
+# the pack downloads land in the **host's own base directory**,
+# `$PREFIX/data/models/TTS/moss_soundeffect_v2/` (10.46 GB, measured there
+# 2026-08-30) — not in the HF cache, which is where this comment and the
+# model row below both said to look until doctor read `partial` on a machine
+# that had just rendered an effect.
+#
+# Two facts the move brought with it, both dated 2026-08-30 in
+# designs/hosting.md under "ComfyUI":
+#   - the pack ships **no unload node** at this pin, so `unload_node` is
+#     absent, and `POST /free` does not give the card back after it has
+#     loaded a model: the unit restart is the only lever (measured
+#     2026-08-30);
+#   - the engine `torch.compile`s its DiT on first use, which is what this
+#     backend's old `TORCHDYNAMO_DISABLE = "1"` existed to prevent. That
+#     value died with the venv; the choice is the host's now, and it belongs
+#     in `forge-comfy.service`.
+
 name = "moss_sfx"
 role = "sfx"
-upstream = "https://github.com/OpenMOSS/MOSS-TTS.git"
-commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
-# The part of the clone this backend is; .checkout points here, not at the root.
-subdir = "moss_soundeffect_v2"
-license = "Apache-2.0"
-env_kind = "venv"
-python = "3.12"
-cuda = "12.8"
-# Estimate: ~6–8 GB at 30 s of latent, bf16. Not resident after the call.
-vram_gb = 8
+executor = "comfy"
+host = "comfy"
+upstream = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"   # the pack, v5.8.7, 2026-08-28
+license = "Apache-2.0 (MOSS-SoundEffect-v2.0 weights); TTS-Audio-Suite: MIT; ComfyUI: GPL-3.0-or-later"
+# The budget `card_is_held` and `just gpu` size the card against, so it sits
+# **above** the measured peak and not on it: 10.0 GB over a 1.2 GB floor for
+# a 3 s effect at 100 steps (nvidia-smi at 10 Hz, 2026-08-30 —
+# designs/hosting.md, "the first real run of the audio path"). The 8 that
+# stood here was a budget nobody had sampled and it read 2 GB light, which
+# is a blocked-rather-than-OOM gate admitting a job that OOMs.
+vram_gb = 11
 entry = "audio.sfx"
-cwd = "checkout"
-resident = false
 
-[env]
-PYTHONNOUSERSITE = "1"
-# The first call otherwise torch.compile()s the DiT for minutes and the
-# compiled kernel dies with the process; one-shot generation never pays that
-# back. A user who exports TORCHDYNAMO_DISABLE=0 wins (setdefault semantics).
-TORCHDYNAMO_DISABLE = "1"
+[comfy]
+workflows = ["sfx.api.json"]
+# Captured from the running host's GET /object_info on 2026-08-30, never
+# written from memory: the pack's shape is engine node -> unified node.
+nodes = ["MossSoundEffectV2EngineNode", "UnifiedSoundEffectsNode", "SaveAudio"]
+# No `unload_node`: there is no unload, free or release class anywhere in
+# the 58 the pack registers at this pin — and `POST /free` does not unload
+# what this pack loaded either (22.85 → 15.07 GB free across an sfx job,
+# measured 2026-08-30). `systemctl --user restart forge-comfy` returns the
+# card, 4.4 s; that is what `forge_serve`'s ladder does at step 4.
 
+[[comfy.packs]]
+repo = "https://github.com/diodiogod/TTS-Audio-Suite"
+commit = "fab00263fbdcdaddd4c721d1b560e1a08b6025ea"
+dir = "TTS-Audio-Suite"
+license = "MIT"
+# Registration is free — all 58 classes come up with the venv untouched —
+# but MOSS-SoundEffect v2 does not *load* without these three: the engine
+# imports diffusers (AutoencoderOobleck, ConfigMixin, ModelMixin), ftfy (the
+# WAN prompter) and audiotools (the DAC VAE), each a hard import that fails
+# at POST /prompt with the card already leased. Measured on the first real
+# `forge gen sfx`, 2026-08-30. Neither the pack's requirements.txt (numpy
+# <2.3.0, which would downgrade the host's 2.5.2) nor descript-audiotools'
+# own dependencies (protobuf <3.20, which would downgrade the host's, and
+# tensorboard and transformers both want it well above that) may be
+# installed: audiotools goes in with
+# --no-deps and the seven modules its import chain reaches follow it.
+# Unpinned because what is pinned is the pack; the versions that ran are in
+# every record. designs/hosting.md, "ComfyUI", 2026-08-30.
+pips = [
+    "diffusers", "ftfy",
+    "descript-audiotools",   # --no-deps
+    "flatten-dict", "julius", "soundfile", "ffmpy", "importlib-resources",
+    "tensorboard", "randomname",
+]
+nodes = ["MossSoundEffectV2EngineNode", "UnifiedSoundEffectsNode"]
+
+# NOT `store = "hf"`: TTS-Audio-Suite downloads into the host's own base
+# directory, `$PREFIX/data/models/TTS/moss_soundeffect_v2/`, and never into
+# the hub cache. While this row said `hf`, doctor looked in
+# ~/.cache/huggingface and read `partial` on a machine that had just
+# rendered an effect — and offered a stranger a download the installer
+# cannot do (2026-08-30).
 [[models]]
 id = "OpenMOSS-Team/MOSS-SoundEffect-v2.0"
-store = "hf"
+store = "comfy:models/TTS/moss_soundeffect_v2"
+local = "MOSS-SoundEffect-v2.0"
 license = "Apache-2.0"
-note = "~11 GB on disk (5.3 GB DiT, 3.8 GB Qwen3 text encoder, 1.4 GB DAC VAE; measured 2026-08-23); downloaded by install.sh, or by the first `forge gen sfx` (~100 s)"
+gb = 10.46
+note = "10.46 GB on disk, measured 2026-08-30 in the host's own models/TTS/moss_soundeffect_v2/MOSS-SoundEffect-v2.0 (5.3 GB DiT, 3.8 GB Qwen3 text encoder, 1.4 GB DAC VAE). The pack fetches it there on first use; nothing puts it in the HF cache."
+
+[[notices]]
+title = "ffmpeg"
+text = "ComfyUI v0.34.2 has no WAV save node (SaveAudio writes FLAC; SaveAudioAdvanced offers flac, mp3 and opus), so `forge gen sfx` fetches the FLAC and transcodes it to 16-bit PCM before anything measures it. ffmpeg is required where the old venv path wrote the WAV itself with soundfile."
+
+[[notices]]
+title = "torch.compile"
+text = "the sound-effect DiT compiles itself on first use and can spend several minutes doing it; the pack says the artifact is cached across ComfyUI sessions, which the old one-shot venv could not do. TORCHDYNAMO_DISABLE=1 in forge-comfy.service restores the old behaviour at the cost of every effect being slower."

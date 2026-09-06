@@ -1,0 +1,35 @@
+# Isolated speech; voice design remains on moss_tts / ComfyUI.
+name = "moss_speech"
+role = "speech"
+executor = "env"
+upstream = "https://github.com/OpenMOSS/MOSS-TTS"
+commit = "58b20a0d5fcc6766658d50967a90a9d890009a46"
+license = "Apache-2.0"
+env_kind = "venv"
+python = "3.12"
+cuda = "12.8"
+vram_gb = 14 # conservative budget, not a measurement
+entry = "audio.speech_isolated"
+cwd = "none"
+resident = false
+
+[env]
+HF_HUB_OFFLINE = "1"
+
+[[models]]
+id = "MOSS-TTS-Local-Transformer"
+store = "checkpoints_dir"
+revision = "12aa734e4f11a7b3fdf4eb0ad2aa2029675ffc2e"
+license = "Apache-2.0"
+gb = 5.72
+
+[[models]]
+id = "MOSS-Audio-Tokenizer"
+store = "checkpoints_dir"
+revision = "3cd226ba2947efa357ef453bcad111b6eafba782"
+license = "Apache-2.0"
+gb = 6.61
+
+[[notices]]
+title = "isolated runtime"
+text = "Speech uses transformers 5.0.0 and torch 2.9.1+cu128. Do not upgrade the shared ComfyUI environment to repair speech. Existing model directories may be adopted with --adopt-checkpoints; generation stays offline. Model revisions in this descriptor pin new downloads; adopted files are hashed by each run and never assumed to be at those revisions."

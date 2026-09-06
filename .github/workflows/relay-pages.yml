@@ -1,0 +1,54 @@
+name: Relay Run Pages
+on:
+  push:
+    branches: [main]
+    paths: ['demos/relay-runner/**', '.github/workflows/relay-pages.yml', 'rust-toolchain.toml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: relay-pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser-build:
+    if: github.event_name == 'workflow_dispatch' || vars.RELAY_PAGES_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: toolchain
+        run: echo "channel=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: demos/relay-runner -> ../../target
+          shared-key: relay-webgpu
+      - run: python3 demos/relay-runner/web/package.py --check
+      - run: cargo build --locked --release --target wasm32-unknown-unknown --manifest-path demos/relay-runner/Cargo.toml
+        env:
+          CARGO_TARGET_DIR: target
+      - name: Install matching wasm-bindgen
+        run: |
+          version=$(python3 -c 'import tomllib; d=tomllib.load(open("demos/relay-runner/Cargo.lock","rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: wasm-bindgen --target web --out-name relay_run --out-dir out/relay-wasm target/wasm32-unknown-unknown/release/relay-runner.wasm
+      - run: python3 demos/relay-runner/web/package.py --wasm-dir out/relay-wasm --output out/relay-pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/relay-pages
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RELAY_PAGES_ENABLED == 'true'
+    needs: browser-build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment

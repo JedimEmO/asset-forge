@@ -1,0 +1,725 @@
+{
+  "schema": 2,
+  "forge_version": "0.1.0",
+  "library_version": "0.1.0",
+  "generated": "2026-09-06",
+  "rig": {
+    "profile": "humanoid",
+    "version": 1,
+    "bone_count": 55,
+    "glb_sha256": "sha256:0387ec13c06130cd0984569d0cf1a509249df783a4f1fe14c191001e13ea7970",
+    "bones": [
+      {
+        "name": "LeftToeBase",
+        "parent": 1,
+        "driven": true
+      },
+      {
+        "name": "LeftFoot",
+        "parent": 2,
+        "driven": true
+      },
+      {
+        "name": "LeftLeg",
+        "parent": 3,
+        "driven": true
+      },
+      {
+        "name": "LeftUpLeg",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "RightToeBase",
+        "parent": 5,
+        "driven": true
+      },
+      {
+        "name": "RightFoot",
+        "parent": 6,
+        "driven": true
+      },
+      {
+        "name": "RightLeg",
+        "parent": 7,
+        "driven": true
+      },
+      {
+        "name": "RightUpLeg",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "LeftHandEnd",
+        "parent": 24,
+        "driven": true
+      },
+      {
+        "name": "LeftHandIndex3",
+        "parent": 10,
+        "driven": false
+      },
+      {
+        "name": "LeftHandIndex2",
+        "parent": 11,
+        "driven": false
+      },
+      {
+        "name": "LeftHandIndex1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle3",
+        "parent": 13,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle2",
+        "parent": 14,
+        "driven": false
+      },
+      {
+        "name": "LeftHandMiddle1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky3",
+        "parent": 16,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky2",
+        "parent": 17,
+        "driven": false
+      },
+      {
+        "name": "LeftHandPinky1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing3",
+        "parent": 19,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing2",
+        "parent": 20,
+        "driven": false
+      },
+      {
+        "name": "LeftHandRing1",
+        "parent": 24,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb3",
+        "parent": 22,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb2",
+        "parent": 23,
+        "driven": false
+      },
+      {
+        "name": "LeftHandThumb1",
+        "parent": 24,
+        "driven": true
+      },
+      {
+        "name": "LeftHand",
+        "parent": 25,
+        "driven": true
+      },
+      {
+        "name": "LeftForeArm",
+        "parent": 26,
+        "driven": true
+      },
+      {
+        "name": "LeftArm",
+        "parent": 27,
+        "driven": true
+      },
+      {
+        "name": "LeftShoulder",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "Head",
+        "parent": 29,
+        "driven": true
+      },
+      {
+        "name": "Neck",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "RightHandEnd",
+        "parent": 46,
+        "driven": true
+      },
+      {
+        "name": "RightHandIndex3",
+        "parent": 32,
+        "driven": false
+      },
+      {
+        "name": "RightHandIndex2",
+        "parent": 33,
+        "driven": false
+      },
+      {
+        "name": "RightHandIndex1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle3",
+        "parent": 35,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle2",
+        "parent": 36,
+        "driven": false
+      },
+      {
+        "name": "RightHandMiddle1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky3",
+        "parent": 38,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky2",
+        "parent": 39,
+        "driven": false
+      },
+      {
+        "name": "RightHandPinky1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing3",
+        "parent": 41,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing2",
+        "parent": 42,
+        "driven": false
+      },
+      {
+        "name": "RightHandRing1",
+        "parent": 46,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb3",
+        "parent": 44,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb2",
+        "parent": 45,
+        "driven": false
+      },
+      {
+        "name": "RightHandThumb1",
+        "parent": 46,
+        "driven": true
+      },
+      {
+        "name": "RightHand",
+        "parent": 47,
+        "driven": true
+      },
+      {
+        "name": "RightForeArm",
+        "parent": 48,
+        "driven": true
+      },
+      {
+        "name": "RightArm",
+        "parent": 49,
+        "driven": true
+      },
+      {
+        "name": "RightShoulder",
+        "parent": 50,
+        "driven": true
+      },
+      {
+        "name": "Spine3",
+        "parent": 51,
+        "driven": true
+      },
+      {
+        "name": "Spine2",
+        "parent": 52,
+        "driven": true
+      },
+      {
+        "name": "Spine1",
+        "parent": 53,
+        "driven": true
+      },
+      {
+        "name": "Spine",
+        "parent": 54,
+        "driven": true
+      },
+      {
+        "name": "Hips",
+        "parent": null,
+        "driven": true
+      }
+    ],
+    "sockets": [
+      {
+        "name": "back",
+        "bone": "Spine3",
+        "translation": [
+          -0.055,
+          0.12,
+          -0.115
+        ],
+        "rotation": [
+          0.6903455,
+          0.1530459,
+          -0.6903455,
+          0.1530459
+        ]
+      },
+      {
+        "name": "hand_l",
+        "bone": "LeftHand",
+        "translation": [
+          0.0,
+          0.055,
+          0.005
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      {
+        "name": "hand_r",
+        "bone": "RightHand",
+        "translation": [
+          0.0,
+          0.055,
+          0.005
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      {
+        "name": "head",
+        "bone": "Head",
+        "translation": [
+          0.0,
+          0.12,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "hip_l",
+        "bone": "Hips",
+        "translation": [
+          0.14,
+          -0.03,
+          -0.02
+        ],
+        "rotation": [
+          -0.7263839,
+          0.0,
+          0.0,
+          0.6872892
+        ]
+      }
+    ]
+  },
+  "bodies": [],
+  "models": [
+    {
+      "name": "relay_cargo",
+      "path": "models/relay_cargo.glb",
+      "sha256": "sha256:fd8d4cbddef94171e3696a5476f1309bcb3f27b2b23111a2ceb6819400c470b6",
+      "tags": [
+        "experimental"
+      ],
+      "bounds_m": [
+        [
+          -0.7615389,
+          0.0,
+          -0.33341616
+        ],
+        [
+          0.7615389,
+          0.76,
+          0.33341616
+        ]
+      ]
+    },
+    {
+      "name": "relay_cruiser",
+      "path": "models/relay_cruiser.glb",
+      "sha256": "sha256:edcc8375d8029e89c6a1795ac4d47e7f73e4db82f4ece675015e443b54f1a468",
+      "tags": [
+        "experimental",
+        "ship"
+      ],
+      "bounds_m": [
+        [
+          -0.16509368,
+          -0.14488512,
+          -0.5
+        ],
+        [
+          0.16509368,
+          0.14488512,
+          0.5
+        ]
+      ]
+    },
+    {
+      "name": "relay_drone",
+      "path": "models/relay_drone.glb",
+      "sha256": "sha256:3e0f49c3c70564729a0341286739bd77f1b4139c232eb8aa0abd89dd27e6bf92",
+      "tags": [
+        "experimental"
+      ],
+      "bounds_m": [
+        [
+          -0.74999994,
+          -0.47312373,
+          -0.7314251
+        ],
+        [
+          0.74999994,
+          0.47312373,
+          0.7314251
+        ]
+      ]
+    },
+    {
+      "name": "relay_freighter",
+      "path": "models/relay_freighter.glb",
+      "sha256": "sha256:7d703ab3960c18f7d6f46a557dd5d77e0c3aa6302e2de0149900405869bd7990",
+      "tags": [
+        "experimental",
+        "ship"
+      ],
+      "bounds_m": [
+        [
+          -0.20069498,
+          -0.11273563,
+          -0.50000006
+        ],
+        [
+          0.20069498,
+          0.11273563,
+          0.50000006
+        ]
+      ]
+    },
+    {
+      "name": "relay_heavy",
+      "path": "models/relay_heavy.glb",
+      "sha256": "sha256:8c1f8416c758159c5156bb6e5ea168a8db9fb2f186f739f78f61d5a5a73c204c",
+      "tags": [
+        "experimental",
+        "enemy"
+      ],
+      "bounds_m": [
+        [
+          -0.6029365,
+          -0.2903785,
+          -0.75
+        ],
+        [
+          0.6029365,
+          0.2903785,
+          0.75
+        ]
+      ]
+    },
+    {
+      "name": "relay_interceptor",
+      "path": "models/relay_interceptor.glb",
+      "sha256": "sha256:fcb27efd2d5fac43afcbfd8e601e55c7779a0a74f161eb5a83ee80dac73707ef",
+      "tags": [
+        "experimental",
+        "ship"
+      ],
+      "bounds_m": [
+        [
+          -0.43480086,
+          -0.124536954,
+          -0.5
+        ],
+        [
+          0.43480086,
+          0.124536954,
+          0.5
+        ]
+      ]
+    },
+    {
+      "name": "relay_radar",
+      "path": "models/relay_radar.glb",
+      "sha256": "sha256:a8d2d7564f9ae36b713b51236f50b159bd87ccaee4a4879f843dad404db05f67",
+      "tags": [
+        "experimental",
+        "landmark"
+      ],
+      "bounds_m": [
+        [
+          -0.39799798,
+          0.0,
+          -0.34572175
+        ],
+        [
+          0.39799798,
+          1.0,
+          0.34572175
+        ]
+      ]
+    },
+    {
+      "name": "relay_reactor",
+      "path": "models/relay_reactor.glb",
+      "sha256": "sha256:b2a4298d95455bcf4521341583db061066d2aace7688dc35a501a0b7cf929e49",
+      "tags": [
+        "experimental",
+        "landmark"
+      ],
+      "bounds_m": [
+        [
+          -0.70955205,
+          0.0,
+          -0.5903353
+        ],
+        [
+          0.70955205,
+          1.0,
+          0.5903353
+        ]
+      ]
+    },
+    {
+      "name": "relay_station",
+      "path": "models/relay_station.glb",
+      "sha256": "sha256:b310888cfd005586455e2adb21398be9136f333da143f96043b7a51c4ac1071d",
+      "tags": [
+        "experimental"
+      ],
+      "bounds_m": [
+        [
+          -0.8499137,
+          0.0,
+          -0.8527509
+        ],
+        [
+          0.8499137,
+          3.1999998,
+          0.8527509
+        ]
+      ]
+    }
+  ],
+  "clips": [
+    {
+      "name": "relay_reload",
+      "path": "clips/relay_reload.glb",
+      "sha256": "sha256:5d6e1877c6195afe79113db077c8f31a0da6e5ae791fb4d3045ec567b76c4362",
+      "duration_s": 1.3,
+      "fps": 20.0,
+      "frames": 27,
+      "looped": false,
+      "tags": [],
+      "root_motion": {
+        "mode": "strip",
+        "avg_speed_mps": 0.089760914,
+        "fps": 20.0,
+        "track_xz_m": [
+          [
+            -0.0,
+            -0.0
+          ],
+          [
+            -0.008,
+            0.005
+          ],
+          [
+            -0.015,
+            0.006
+          ],
+          [
+            -0.023,
+            0.008
+          ],
+          [
+            -0.029,
+            0.008
+          ],
+          [
+            -0.031,
+            0.005
+          ],
+          [
+            -0.031,
+            0.004
+          ],
+          [
+            -0.029,
+            0.002
+          ],
+          [
+            -0.027,
+            -0.003
+          ],
+          [
+            -0.028,
+            -0.009
+          ],
+          [
+            -0.027,
+            -0.016
+          ],
+          [
+            -0.024,
+            -0.021
+          ],
+          [
+            -0.019,
+            -0.02
+          ],
+          [
+            -0.017,
+            -0.014
+          ],
+          [
+            -0.015,
+            -0.007
+          ],
+          [
+            -0.016,
+            -0.004
+          ],
+          [
+            -0.018,
+            -0.006
+          ],
+          [
+            -0.016,
+            -0.003
+          ],
+          [
+            -0.016,
+            0.001
+          ],
+          [
+            -0.017,
+            -0.001
+          ],
+          [
+            -0.019,
+            -0.001
+          ],
+          [
+            -0.017,
+            -0.004
+          ],
+          [
+            -0.012,
+            -0.008
+          ],
+          [
+            -0.01,
+            -0.01
+          ],
+          [
+            -0.011,
+            -0.011
+          ],
+          [
+            -0.012,
+            -0.012
+          ],
+          [
+            -0.011,
+            -0.013
+          ]
+        ]
+      },
+      "events": [
+        {
+          "name": "magazine_seated",
+          "time_s": 0.771,
+          "audio": null
+        }
+      ]
+    }
+  ],
+  "audio": [
+    {
+      "name": "relay_free_fire",
+      "path": "audio/voice/relay_free_fire.wav",
+      "sha256": "sha256:d135f25306b5b4c6cba48049af37848e5015d1b82688713f376568ef5d2b3009",
+      "kind": "voice",
+      "duration_s": 4.72,
+      "tags": [
+        "audition"
+      ]
+    },
+    {
+      "name": "relay_multikill",
+      "path": "audio/voice/relay_multikill.wav",
+      "sha256": "sha256:a4e5892f3487c6778fca901c2de8a7f572b66552e93185eb1f8d749bc574fec3",
+      "kind": "voice",
+      "duration_s": 2.32,
+      "tags": []
+    },
+    {
+      "name": "relay_plasma",
+      "path": "audio/sfx/relay_plasma.wav",
+      "sha256": "sha256:00b9263d970696fdf38d7553abbbd1c8ae0e2c0143a0aa90c9d4286a1d0bc725",
+      "kind": "sfx",
+      "duration_s": 2.0,
+      "tags": []
+    },
+    {
+      "name": "relay_reload",
+      "path": "audio/sfx/relay_reload.wav",
+      "sha256": "sha256:a24ba4bb5f7ec1985b6585e2889676eb637a6a10dada82cf039cd499ff0d7eeb",
+      "kind": "sfx",
+      "duration_s": 1.3,
+      "tags": []
+    }
+  ]
+}

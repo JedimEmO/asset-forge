@@ -185,7 +185,7 @@ fn no_project_is_a_refusal_naming_the_search_start() {
 /// `forge mcp` driven the way a client drives it: newline-delimited JSON-RPC
 /// on stdin, frames and nothing else on stdout, the banner on stderr. The
 /// tool surface is pinned here by name — it is what the skills are written
-/// against — and it holds no promote for a mesh.
+/// against — and since Phase 3 that surface includes the mesh doors.
 #[test]
 fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
     use std::io::Write as _;
@@ -245,29 +245,99 @@ fn mcp_handshakes_over_stdio_and_lists_exactly_its_tools() {
         }
     }
     listed.sort();
-    assert_eq!(
-        listed,
-        [
-            "doctor",
-            "generate_audio",
-            "generate_clips",
-            "inspect_audio",
-            "list_audio",
-            "list_clips",
-            "list_models",
-            "promote_audio",
-            "promote_clip",
-            "render_clip_strip",
-            "render_model",
-        ],
-        "--- stdout\n{out}\n--- stderr\n{err}"
+    // Twenty-seven of the thirty `mcp-check` pins: `init_project`,
+    // `licences` and `setup` land with tools/setup.rs. Anything else
+    // appearing here is a surface change the skills are not written against.
+    let mine = [
+        "audit",
+        "cancel",
+        "doctor",
+        "export_body",
+        "export_bundle",
+        "generate_audio",
+        "generate_clips",
+        "generate_mesh",
+        "import_reference",
+        "inspect_audio",
+        "list_audio",
+        "list_clips",
+        "list_models",
+        "list_runs",
+        "manifest_check",
+        "prepare_body",
+        "prepare_prop",
+        "promote_audio",
+        "promote_body",
+        "promote_clip",
+        "promote_model",
+        "render_clip_strip",
+        "render_model",
+        "skin_body",
+        "status",
+        "verify",
+        "wait",
+    ];
+    for name in mine {
+        assert!(
+            listed.iter().any(|listed| listed == name),
+            "{name} is missing --- stdout\n{out}\n--- stderr\n{err}"
+        );
+    }
+    for name in &listed {
+        assert!(
+            mine.contains(&name.as_str())
+                || matches!(name.as_str(), "init_project" | "licences" | "setup"),
+            "{name} is not one of the thirty --- stdout\n{out}"
+        );
+    }
+    // The mesh doors are here now, and their being here is the decision:
+    // what protects the library is the export gate, the rig check and the
+    // refused taken name, all of which promote_body runs — not a missing
+    // door that only made an agent ask a human to type its own command.
+    assert!(
+        listed.iter().any(|name| name == "promote_body")
+            && listed.iter().any(|name| name == "promote_model"),
+        "the mesh doors are part of the surface: {listed:?}"
     );
 
-    // No project is the same refusal every other verb gives, before any
-    // frame is read.
+    // No project is a **session**, not a refusal: this is where a stranger
+    // with no shell starts, and the tool that makes a project is inside the
+    // server. It used to exit 2 here with a shell command as the way out,
+    // which made `init_project` reachable only from a server already bound
+    // to some other project (2026-08-30). The handshake completes; the
+    // banner says which three tools answer.
     let empty = tempfile::tempdir().expect("tempdir");
-    let text = exits(empty.path(), &["mcp"], 2);
-    assert!(text.contains("no forge.toml above"), "{text}");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .arg("mcp")
+        .current_dir(empty.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn forge mcp with no project");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        for frame in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli-test","version":"0"}}}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_audio","arguments":{}}}"#,
+        ] {
+            writeln!(stdin, "{frame}").expect("write a frame");
+        }
+    }
+    let output = child.wait_with_output().expect("forge mcp");
+    let err = stderr(&output);
+    assert_eq!(code(&output), 0, "{err}");
+    assert!(err.contains("no forge.toml at"), "{err}");
+    assert!(
+        err.contains("init_project, licences and doctor"),
+        "the banner names what still answers: {err}"
+    );
+    let refusal = stdout(&output);
+    assert!(
+        refusal.contains("init_project") && refusal.contains("isError"),
+        "a tool that needs a library refuses by naming the one that fixes it:\n{refusal}"
+    );
 }
 
 /// The looks that need no GPU: the binding report, the rig check without a
@@ -746,6 +816,18 @@ fn help_and_refusals_reach_outside_a_project() {
 }
 
 #[test]
+fn generator_help_inside_a_project_does_not_create_jobs() {
+    let (_dir, root) = init_project();
+    let output = forge(&root, &["gen", "mesh", "--help"]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(stdout(&output).contains("usage:"));
+    assert!(
+        !root.join("out/serve").exists(),
+        "help must not open the queue"
+    );
+}
+
+#[test]
 fn export_contract_refused_on_a_glb_names_the_profile_directory() {
     let (_dir, root) = init_project();
     std::fs::write(root.join("out/rig.glb"), b"glb").expect("write");
@@ -810,4 +892,225 @@ fn export_contract_reproduces_the_shipped_profile_byte_for_byte() {
         2,
     );
     assert!(text.contains("motion_skeleton.json"), "{text}");
+}
+
+/// A `daemon.json` naming a process that is not there — or one that is
+/// alive and was born at another moment — is a stale file, not a daemon:
+/// it is removed and the run proceeds in this process.
+///
+/// The failure this retires is a queue that hangs waiting on a port
+/// nothing is listening to, with a file on disk insisting otherwise.
+#[test]
+fn a_stale_daemon_json_falls_back_in_process() {
+    let (dir, project) = init_project();
+    let serve = project.join("out/serve");
+    std::fs::create_dir_all(&serve).expect("mkdir");
+    let write_daemon = |pid: u32, start_ticks: u64| {
+        std::fs::write(
+            serve.join("daemon.json"),
+            format!(
+                "{{\"forge_serve\":1,\"pid\":{pid},\"start_ticks\":{start_ticks},\"port\":41773,\
+                 \"token\":\"t0ken\",\"url\":\"http://127.0.0.1:41773\",\"version\":\"0.1.0\",\
+                 \"project\":\"{}\",\"started\":\"2026-08-30T14:20:02Z\"}}",
+                project.display()
+            ),
+        )
+        .expect("write daemon.json");
+    };
+
+    // A pid nothing owns.
+    write_daemon(0x00ff_ffff, 918_273);
+    let out = ok(&project, &["jobs"]);
+    assert!(out.contains("no jobs yet"), "{out}");
+    assert!(
+        !serve.join("daemon.json").exists(),
+        "a daemon.json naming a dead pid is removed rather than left to mislead the next call"
+    );
+
+    // A pid that is alive — this test process — but born at another tick:
+    // a stranger who inherited the number, which is exactly what a pidfile
+    // with no start time cannot tell.
+    write_daemon(std::process::id(), 1);
+    let out = ok(&project, &["jobs"]);
+    assert!(out.contains("no jobs yet"), "{out}");
+    assert!(!serve.join("daemon.json").exists());
+
+    // And with no daemon at all, a generate still runs in this process and
+    // still leaves a row, so `forge jobs` and `list_runs` see it later.
+    //
+    // FORGE_FAKE=1, not a missing backend: `moss_sfx` runs in the comfy
+    // executor now, so on a developer's own machine — where the ComfyUI unit
+    // is up — an unqualified `forge gen sfx` here posted a real graph and
+    // spent the card inside `just ci`. A gate never touches a real
+    // generator. A fake job is an ordinary job (`designs/serve.md` §1.2): it
+    // takes the queue and the lease and writes its row like any other, which
+    // is the thing this leg is about.
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a door",
+            "--out",
+            "out/audio/sfx/door.wav",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&project)
+        .output()
+        .expect("run forge");
+    assert_eq!(
+        code(&output),
+        0,
+        "--- stdout\n{}\n--- stderr\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    let rows = ok(&project, &["jobs", "--json"]);
+    assert!(
+        rows.contains("generate_audio.sfx"),
+        "an in-process run writes a row anyway: {rows}"
+    );
+    drop(dir);
+}
+
+/// `forge job` refuses an id nobody has by naming the ids that do exist,
+/// and `forge serve --status` says plainly when nothing is up.
+#[test]
+fn a_job_id_nobody_has_is_refused_with_the_ids_that_do() {
+    let (_dir, project) = init_project();
+    let text = exits(&project, &["job", "show", "j-nope"], 2);
+    assert!(text.contains("no job j-nope"), "{text}");
+    let out = ok(&project, &["serve", "--status"]);
+    assert!(out.contains("daemon    down"), "{out}");
+    assert!(
+        out.contains("every forge gen still runs"),
+        "the answer says what still works without one: {out}"
+    );
+}
+
+/// Tier `fake` is the answer the project gave, and no environment variable
+/// is needed to make it true.
+///
+/// `serve.md` §5: *fake sets `FORGE_FAKE=1` for every job the project runs,
+/// as a first-class answer and not an environment trick.* It was not:
+/// every door built its queue options with `..default()`, so `tier` was
+/// always `"full"`, and a `--tier fake` project with `FORGE_FAKE` unset ran
+/// the **real** sfx path — against a live host it would have leased the
+/// card on a project whose doctor says every row is `off`. `ci-fake` and
+/// `mcp-session` could not see it because both export `FORGE_FAKE=1`, so
+/// this leg removes it from the environment on purpose.
+///
+/// It also pins the other half of the same defect: the row names the
+/// backend the command line runs on, which is what gives a terminal job the
+/// budget, the admission refusal and the card ladder the agent's door had.
+#[test]
+fn a_tier_fake_project_writes_a_placeholder_with_no_forge_fake_in_the_environment() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("game");
+    let out = ok(
+        dir.path(),
+        &[
+            "init",
+            "--project",
+            to_str(&root),
+            "--name",
+            "game",
+            "--make",
+            "sfx",
+            "--tier",
+            "fake",
+            "--yes",
+        ],
+    );
+    assert!(out.contains("rig profile humanoid installed"), "{out}");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a heavy iron door",
+            "--seconds",
+            "1",
+            "--out",
+            "out/audio/sfx/door.wav",
+            "--record",
+            "out/audio/sfx/door.json",
+        ])
+        .env_remove("FORGE_FAKE")
+        // A host that is not there, so a run that reached the real path
+        // fails loudly instead of quietly succeeding on the developer's own
+        // ComfyUI.
+        .env("FORGE_COMFY_URL", "http://127.0.0.1:9")
+        .current_dir(&root)
+        .output()
+        .expect("run forge");
+    assert_eq!(
+        code(&output),
+        0,
+        "tier fake must not need FORGE_FAKE\n--- stdout\n{}\n--- stderr\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert!(
+        root.join("out/audio/sfx/door.wav").is_file(),
+        "the placeholder is on disk"
+    );
+    let record = std::fs::read_to_string(root.join("out/audio/sfx/door.json")).expect("the record");
+    assert!(
+        record.contains("\"fake\": true"),
+        "the record says it is a placeholder: {record}"
+    );
+    let rows = ok(&root, &["jobs", "--json"]);
+    assert!(
+        rows.contains("\"backend\":\"moss_sfx\""),
+        "the terminal door names the backend the MCP door names: {rows}"
+    );
+    assert!(
+        rows.contains("\"fake\":true"),
+        "and the row says the job was a fake one: {rows}"
+    );
+    drop(dir);
+}
+
+/// `forge job log <id>` is the verb, and it works on a row that exists.
+///
+/// The `just job-log` recipe called `forge jobs log`, which does not parse
+/// — `error: unexpected argument 'log' found` — and nothing in the gate ran
+/// it. This is the verb the recipe now spells, held to a row a real run
+/// wrote.
+#[test]
+fn a_job_s_log_is_read_by_its_own_verb() {
+    let (dir, project) = init_project();
+    let output = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args([
+            "gen",
+            "sfx",
+            "--prompt",
+            "a door",
+            "--seconds",
+            "1",
+            "--out",
+            "out/audio/sfx/door.wav",
+        ])
+        .env("FORGE_FAKE", "1")
+        .current_dir(&project)
+        .output()
+        .expect("run forge");
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let rows: serde_json::Value =
+        serde_json::from_str(&ok(&project, &["jobs", "--json"])).expect("rows");
+    let id = rows[0]["id"].as_str().expect("an id").to_owned();
+    let log = ok(&project, &["job", "log", &id]);
+    assert!(
+        log.contains("forge gen sfx"),
+        "the log opens with the command line it ran: {log}"
+    );
+    // A listing is a read: it leaves every row exactly as it found it.
+    let before = std::fs::read(project.join(format!("out/serve/jobs/{id}.json"))).expect("row");
+    let _ = ok(&project, &["jobs"]);
+    let _ = ok(&project, &["job", "show", &id]);
+    let after = std::fs::read(project.join(format!("out/serve/jobs/{id}.json"))).expect("row");
+    assert_eq!(before, after, "a read verb rewrites nothing");
+    drop(dir);
 }

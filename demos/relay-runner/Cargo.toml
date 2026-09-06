@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+[package]
+name = "relay-runner"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[dependencies]
+# Bevy derive macros discover the crate in this table, not target tables.
+bevy = { version = "=0.19.0", default-features = false }
+serde_json = "1"
+bevy_hanabi = { version = "=0.19.0", default-features = false, features = ["3d"] }
+# Keep the accepted native feature set. The browser uses WebGPU because the
+# Hanabi particles need compute shaders; enabling WebGL would remove that path.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { version = "=0.19.0", features = ["jpeg", "bevy_gltf", "tonemapping_luts", "wav", "flac", "mp3"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = { version = "=0.19.0", default-features = false, features = [
+    "std", "default_app", "3d_bevy_render", "ui_bevy_render", "scene",
+    "bevy_winit", "default_font", "keyboard", "mouse", "audio", "webgpu",
+    "web", "jpeg", "wav", "flac", "mp3",
+] }
+wasm-bindgen = "0.2"
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+debug-assertions = false
+[profile.dev.package.wgpu-types]
+debug-assertions = true
+[profile.dev.build-override]
+debug = false
+
+# Bevy systems declare each independent query/resource as a parameter.
+[lints.clippy]
+too_many_arguments = "allow"

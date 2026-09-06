@@ -31,6 +31,14 @@ pub struct Options {
     pub foot_tolerance_m: f32,
     /// [`Contract::rest_rotation_tolerance`].
     pub rest_rotation_tolerance: f32,
+    /// [`Contract::rest_direction_tolerance_deg`].
+    pub rest_direction_tolerance_deg: f32,
+    /// [`Contract::length_ratio_min`].
+    pub length_ratio_min: f32,
+    /// [`Contract::length_ratio_max`].
+    pub length_ratio_max: f32,
+    /// [`Contract::contact_foot_tolerance_m`].
+    pub contact_foot_tolerance_m: f32,
     /// [`Contract::reference_clip`].
     pub reference_clip: String,
     /// The rig glb, relative to the profile directory.
@@ -52,6 +60,10 @@ impl Options {
             stature_m: contract.stature_m,
             foot_tolerance_m: contract.foot_tolerance_m,
             rest_rotation_tolerance: contract.rest_rotation_tolerance,
+            rest_direction_tolerance_deg: contract.rest_direction_tolerance_deg,
+            length_ratio_min: contract.length_ratio_min,
+            length_ratio_max: contract.length_ratio_max,
+            contact_foot_tolerance_m: contract.contact_foot_tolerance_m,
             reference_clip: contract.reference_clip.clone(),
             glb: contract.sources.glb.clone(),
             blend: contract.sources.blend.clone(),
@@ -131,6 +143,10 @@ pub fn build(dir: &Path, motion: &MotionSkeleton, options: &Options) -> Result<C
         stature_m: options.stature_m,
         foot_tolerance_m: options.foot_tolerance_m,
         rest_rotation_tolerance: options.rest_rotation_tolerance,
+        rest_direction_tolerance_deg: options.rest_direction_tolerance_deg,
+        length_ratio_min: options.length_ratio_min,
+        length_ratio_max: options.length_ratio_max,
+        contact_foot_tolerance_m: options.contact_foot_tolerance_m,
         driven_layout: motion.name.clone(),
         reference_clip: options.reference_clip.clone(),
         sources: Sources {

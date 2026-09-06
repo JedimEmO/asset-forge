@@ -1,0 +1,33 @@
+{
+  "schema": 2,
+  "kind": "sfx",
+  "name": "scrapyard_upgrade",
+  "prompt": null,
+  "tags": [
+    "scrapyard",
+    "synthesized"
+  ],
+  "created": "2026-09-04",
+  "created_by": "agent:codex",
+  "provenance": "unknown",
+  "rig": null,
+  "generator": null,
+  "source": {
+    "path": null,
+    "sha256": null,
+    "skeleton": null
+  },
+  "recipe": null,
+  "measured": {
+    "frames": null,
+    "fps": null,
+    "duration_s": 1.0,
+    "avg_speed_mps": null,
+    "root_motion": null,
+    "mesh": null
+  },
+  "body": null,
+  "events": null,
+  "content_hash": "sha256:02dd87f57c5c489dfc72681d0e3a2dab28fb9385e289cce4fd2b9927aa1eb94c",
+  "note": "Original analytic synthesis; no sampled or model-generated audio inputs. Source: assets-src/audio/scrapyard_synth.py. Source/output hashes: designs/scrapyard/batch-02/audio-source-manifest.json. Forge backend provenance intentionally unknown because this authoring script is not a registered backend."
+}

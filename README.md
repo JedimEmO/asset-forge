@@ -1,440 +1,213 @@
-# asset-forge
+# Asset Forge
 
-A local toolkit for **agentic game asset creation**: meshes and rigged
-characters, animation clips, and sound — generated on your own GPU from a
-reference image or a prompt, judged by a human *and* an AI agent, and
-shipped as engine-agnostic files (glTF, WAV/OGG, PNG, JSON) under one
-manifest. Nothing is modelled, animated or recorded by hand; the repo is one
-path from "describe it" to "it is in the library", with a gate at every step
-that fails loudly.
+Make, review and deliver game assets on your own GPU. Forge provides a CLI,
+MCP tools and agent skills for static models, rigged characters, animation,
+sound effects, music and speech. Games receive glTF and audio files with
+records and a checked `assets/library.json` manifest.
 
-The generating half is the easy half — plenty of models produce meshes,
-motion and audio. The judging half is the point. An agent cannot orbit a
-mesh, watch an animation or listen to a sound, so this turns all three into
-things it *can* inspect: rendered contact sheets, plots, and numbers that
-fail loudly. Claude Code drives it through committed skills and an MCP
-server; a terminal drives it through one binary, `forge`, and a `justfile`.
+Bring reference PNGs from your preferred image tool. Forge imports their
+original bytes and provenance; it does not include an image generator.
+Generated assets are reviewed through mesh views, animation strips and audio
+plots, with human visual and listening review where available. Passing a
+technical check does not establish artistic quality.
 
-Every generator runs locally. The one thing this repo does not make is the
-reference image: bring a PNG, and the record claims the file's integrity
-rather than pretending it could paint it again.
+**[Relay Run](demos/relay-runner/README.md)** is the current showcase: a
+third-person combat runner using generated characters, animation, audio,
+enemies, scenery and passing ships. Its native game and WebGPU browser build
+use the same game code. [Build the browser version](demos/relay-runner/web/README.md)
+from the committed assets. Public hosting is pending; there is no live play
+link yet.
 
-```
-make                                judge                               ship
-PNG → TRELLIS.2 → auto-rig          views, rig check, the walk sheet    promote body → sidecar + manifest
-PNG → TRELLIS.2 → prop normalize    views, the studio                   promote model → sidecar + manifest
-ARDY motion → native bake           review table, strip on the body     promote clip → sidecar + manifest
-ACE-Step, MOSS → audio              waveform, spectrogram, loudness     promote audio → sidecar + manifest
-```
+## Install from source
 
-## Quickstart
+The current development target is Linux with an NVIDIA GPU for real generation.
+The full register targets a 24 GB card; the lean register targets 16 GB.
+Use the fake tier for workflow tests without loading models. Headless visual
+review still needs a graphics adapter; software Vulkan can serve that role.
+See [backend setup](backends/README.md) for measured memory use, selected
+models and installation requirements.
 
-Before the first `just`, the build prerequisites:
-
-- **Rust, via [rustup](https://rustup.rs)** — `rust-toolchain.toml` pins
-  1.96.1 and rustup fetches it on the first build. That first build links
-  Bevy and takes minutes; after that, seconds.
-- **`just`** — `cargo install just`, or the distro package.
-- **Bevy's system headers** (Debian/Ubuntu):
-  `sudo apt install libasound2-dev libudev-dev pkg-config`.
-- **python3 ≥ 3.11** on PATH, for the generator launcher (stdlib only).
-- **Disk for the backends**: ~80 GB for all five (trellis2 ~20 GB, ardy
-  ~35 GB, acestep ~10 GB, moss_sfx ~12 GB, moss_tts ~13 GB), under
-  `~/.cache/asset-forge/` and the Hugging Face cache. `just setup` prints
-  that bill and refuses to fetch it without `--yes`; `--no-models` defers
-  each backend's weights to its first generate.
-- **A GPU only for generating** — 24 GB for the 1024³ lifts, 16 GB for
-  clips and audio. Without one you can still run everything below except
-  the generators: `just ci-fake` (the five generate pipelines end to end
-  on placeholders — no GPU, no backend, no Blender), the viewer, the
-  sheets and the shipped sample library all run on CPU (llvmpipe).
-
-Every recipe builds and runs `./target/debug/forge` itself; `just install`
-puts a release `forge` on PATH (`~/.cargo/bin`) for shells outside the
-checkout.
+You need Rust via [rustup](https://rustup.rs), `just`, and Python 3.11 or newer.
+The checked-in `rust-toolchain.toml` selects the Rust version. On Debian/Ubuntu,
+install the Bevy build headers first:
 
 ```sh
-git clone https://github.com/JedimEmO/asset-forge && cd asset-forge
-just ci-fake                  # before installing anything: the whole pipeline on placeholders
-just setup trellis2 --yes     # one backend; `just setup` alone runs all five (~80 GB — it prints
-                              # the bill and wants --yes). --yes also accepts nvdiffrast's
-                              # non-commercial licence (it is printed either way)
-just doctor                   # trellis2 `ok`; the four backends you have not installed say
-                              # `missing`, and doctor exits 1 until every one of them is in
+sudo apt install libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config
+cargo install just
+
+git clone https://github.com/JedimEmO/asset-forge
+cd asset-forge
+just install
+export FORGE_HOME="$PWD"
+forge --version
 ```
 
-Already have TRELLIS.2, ARDY, ACE-Step or MOSS installed? Adopt them instead
-of rebuilding: `bash backends/<name>/install.sh --adopt-env DIR
---adopt-checkout DIR` ([backends/README.md](backends/README.md)).
+`just install` builds Forge and installs the executable in `~/.cargo/bin`.
+Keep `FORGE_HOME` pointing to this checkout when using that executable.
+The Python launcher has no runtime package dependencies; backend installers
+manage their own environments. Blender and other generation prerequisites
+are checked by doctor for the chosen workflow.
 
-A prop, end to end. Drop a PNG, account for it, lift it, look, normalize, look
-again:
+A [staged development installation](release/README.md) instead carries
+`bin/forge` and its runtime resources together. That executable can locate
+its resources without a checkout or `FORGE_HOME`. Clean-install qualification
+and fresh agent release trials remain open in the
+[release handoff](designs/release-handoff.md).
+
+## Start a game project
+
+Keep each game's sources, accepted assets and records in its own directory.
+One toolkit installation and backend store can serve several games.
 
 ```sh
-cp ~/crate.png assets-src/refs/props/crate.png
-# then one row in assets-src/SOURCES.md: | refs/props/crate.png | where it came from | crate | 2026-08-23 |
-just prop crate                                 # TRELLIS.2 → out/lifts/crate.glb + refs/props/crate.lift.json
-just views out/lifts/crate.glb --no-head        # read out/views/crate.png: four sides, culling off
-just prop-import crate --height 0.9             # metres, floor at the origin, matte → assets/models/crate.glb
-just studio --model models/crate.glb            # orbit it yourself
+forge --project ~/my-game init --name my-game
+forge --project ~/my-game setup --dry-run
+forge --project ~/my-game doctor --quick
 ```
 
-A character is the same shape with a rig in the middle; a clip is a sweep, a
-look and a bake. Each is a skill that checks its prerequisites and quotes the
-log lines to read:
+`init` selects what the project makes, its GPU tier and its ComfyUI endpoint
+when needed. For an unattended workflow test, use
+`--tier fake --make none --yes`. Fake outputs are marked placeholders.
+
+Read the licence notices printed by setup before installing selected backends.
+Then run `forge --project ~/my-game setup`; unattended acceptance names each
+required licence explicitly with `--yes <id>`. A bare setup `--yes` is refused.
+Accepted IDs belong to the shared installation, not to hand-edited project
+configuration. Backend downloads default to `~/.cache/asset-forge/backends`,
+overridable with `FORGE_BACKENDS_HOME`.
+
+Initialization writes `.forge/AGENT.md` and `.forge/mcp.json`, plus root
+`AGENTS.md` and `.mcp.json` when absent. Existing instructions and configuration
+are preserved. The generated server entry uses an absolute executable and
+explicit project path; merge it into your client's configuration as needed.
+`forge --project ~/my-game agent-config` adds missing configuration later.
+
+Without `--project`, Forge searches upward from the working directory for
+`forge.toml`. With it, an agent can work from an unrelated directory without
+selecting another game's library. `FORGE_TOOLKIT` is a legacy alias for
+`FORGE_HOME`; an invalid explicit toolkit path fails rather than falling back.
+
+## Make an asset
+
+The [workflow skills](.agents/skills/) contain the complete recipes and review
+steps. `forge guide` prints the installed workflow guide; `forge --help` and
+subcommand help describe the current CLI.
+
+| Asset | Production path | Review before delivery |
+| --- | --- | --- |
+| Static model | Import reference → lift → normalize → promote model | Raw mesh from multiple angles, then normalized model |
+| Rigged character | Import reference → lift → prepare → skin/fit → export → promote body | Raw mesh, rig checks and animation on the real body |
+| Animation | Generate takes → select and bake with an explicit recipe → promote clip | Sweep results and a rendered strip on the target body |
+| SFX, music, speech | Generate or author → inspect → promote audio | Measurements, plots and listening |
+| Voice identity | Design an audition → review → use its recorded reference for speech | Audition before producing lines |
+
+Import a reference through the recorded door rather than copying it into the
+source tree:
 
 ```sh
-just character hero && just views out/lifts/hero.glb          # then: just rig-mesh hero; just promote-mesh hero
-just sweep "a person walks forward" --duration 2 --samples 4  # then: just promote-clip walk <take.npz> --loop
-just sfx door_slam "heavy oak door slams shut"                # then: just audio …; just promote-audio sfx …
-just voice warden "Deep, slow, weathered male voice, grave and calm"   # then: just speech greet "…" --voice warden
+forge --project ~/my-game ref import ~/crate.png \
+  --name crate --kind prop --source "Original drawing by me"
 ```
 
-`.claude/skills/forge-character`, `forge-clip`, `forge-audio` and
-`forge-voice` are the full paths; `just` on its own lists every recipe.
-No GPU yet? `FORGE_FAKE=1` makes every `forge gen` write branded
-placeholders through the same doors and validators — `just ci-fake` is
-exactly that, end to end in a throwaway project.
+Use the [prop skill](.agents/skills/forge-prop/SKILL.md) for the remaining
+steps. The standard backend paths use TRELLIS.2, SkinTokens, ARDY and the
+ComfyUI audio integrations. Pixal3D assets in Relay Run are a documented
+[experimental evaluation](designs/pixal3d-evaluation.md), not a registered
+replacement for Forge's mesh backend.
 
-## What is in the box
+The GPU is shared. Check `forge --project ~/my-game gpu` before generation;
+do not run competing model loads. Backend budgets and observed peaks are
+distinct. The [hosting notes](designs/hosting.md) record unloading behavior
+and installation traps.
 
-Three asset classes, one door each into `assets/`, and a refusal at every
-door that names what would have passed.
+## Review, records and delivery
 
-| Class | Make | Judge | Ship | Refuses |
-|---|---|---|---|---|
-| Bodies and models | `just character` / `just prop` (TRELLIS.2), `just rig-mesh` (headless Blender auto-rig), `just prop-import` (normalize) | `just views`, `just check-mesh`, the studio | `just promote-mesh`, `just prop-import` (→ `forge promote body` / `model`) | a mesh not near the T-pose (the message names the reference image); a bind that leaves a fifth of the mesh weightless; a prop over the tri budget; an existing name without `--overwrite` |
-| Clips | `just sweep` (ARDY, many takes in one load) | `just review` table + sheet, `just sheet` on the real body, `just bones` | `just promote-clip` (native bake, no Blender) | a clip that drives no bone or never moves (`sheet` exits 1); an unstated recipe knob (every knob is echoed) |
-| Audio | `just sfx`, `just music`, `just speech` (MOSS, ACE-Step) — always to `out/audio/`; `just voice` designs a character's voice from a description into `assets-src/voices/<name>/` (MOSS-VoiceGenerator), so a project never has to bring a reference clip, and every line is cloned from it by name | `just audio` plot + numbers, `just audio-list` | `just promote-audio` | a silent or clipped file; a sound with no record ships as `unknown` provenance and says so; a voice clip with neither its record nor a ledger row fails `verify` |
+Fix defects at their source or through the production commands. Do not repair
+a generated mesh, baked clip or shipped sidecar by hand. Keep rejected trials
+and review evidence separate from accepted library entries.
 
-Every promote writes a `<name>.json` sidecar beside the file and `just
-manifest` projects the sidecars into `assets/library.json`, the one file a
-game reads.
-
-## Hardware and platforms
-
-| Need | What |
-|---|---|
-| OS | Linux. Everything is tested on one machine; nothing is tested elsewhere yet |
-| GPU | NVIDIA, ≥ 16 GB for clips and audio; 24 GB for 1024³ lifts (the body and prop registers) |
-| CUDA | 12.4 (the TRELLIS.2 env pins its own toolkit; see `designs/hosting.md`) |
-| Blender | ≥ 4.2, headless, only for the rig, export and prop-normalize steps |
-| Judging and the viewer | CPU is enough: headless sheets and views need a wgpu adapter and llvmpipe qualifies; no display server |
-| Python | 3.11+ system interpreter for the launcher (stdlib only); each backend brings its own env |
-| Rust and `just` | rustup (the repo pins 1.96.1), `just`, and Bevy's headers — the prerequisites block above the Quickstart |
-| Disk | ~80 GB for all five backends' envs and weights (the per-backend split is in the Quickstart and `.claude/skills/forge-setup`); `just setup` prints the bill before fetching |
-
-The generators do not share the card: TRELLIS.2 at 1024³ takes ~22 GB alone,
-ARDY ~16 GB, MOSS 6–12 GB, and the ACE-Step server stays resident at ~8–10 GB
-until `forge gen music --stop-server`. `just gpu` says who holds it and
-whether the largest backend would fit.
-
-## The reference image
-
-The reference PNG is an **input**. No image model ships here; the lift record
-(`<name>.lift.json`, beside the PNG) claims the file's sha256 and a row in
-[`assets-src/SOURCES.md`](assets-src/SOURCES.md) — where it came from, on
-what terms — never its regeneration. A PNG without a row fails `just verify`.
-
-What the lift needs from the picture, judged by eye before any GPU minute:
-
-| Rule | Why |
-|---|---|
-| Strict T-pose: arms straight out, horizontal, one arm per side | the rig's rest pose is frozen; the auto-rig refuses reach outside 0.80–1.45 of wrist span or arm tips more than 0.15 m off wrist height, and names the image as the fix |
-| Arm span ≈ height | same gate, the other axis |
-| Flat, light, uniform background; no cast shadow | the launcher keys the alpha itself (no background-removal model is installed) |
-| Uncropped, the whole figure, front view | one view underdetermines the back; cropping loses the feet the stature is measured from |
-| Thick, simple shapes; no thin straps or floating parts | anything under 2.5 cm becomes dust the rig step drops; detached shells are re-weighted to what they sit on |
-| Props: alone, three-quarter from slightly above | the far side and the top exist only if the picture implies them |
-
-Judge the register before blaming the image: a 1 500-vertex lift melts hands
-into cones, and the same PNG at the 25 000-vertex body register brings them
-back. The seed is a knob too — sweep it for a hollow skull before touching
-the drawing. [`designs/style-guide-template.md`](designs/style-guide-template.md)
-is the art-direction doc a project fills in for what the picture should show.
-
-## The rig profile
-
-A rig is a directory of data, not a table in source: `rigs/humanoid/` holds
-`contract.json` (every bone, its parent, whether clips drive it, rest
-transform — generated from `rig.glb`, never edited), `sockets.json`,
-`motion_skeleton.json`, `profile.toml` (every scalar the gates use) and the
-artifacts `rig.glb` / `rig.blend`. A project names its profile in
-`forge.toml`.
-
-**The one rule: never add a parent above the root bone.** An engine binds a
-curve by hashing the bone's full name path and reports nothing when the hash
-finds no target — the character holds its T-pose forever. Leaf bones are
-allowed and reported; a renamed bone, an inserted bone, a `Root` above `Hips`
-are refused.
-
-The shipped profile is a strict superset of ARDY's 27-joint skeleton — same
-names, same hierarchy, rest pose preserved — so a raw take binds 27 of 27
-curves with zero orphaned and **no retargeting exists anywhere** in the
-toolkit. `just rig` re-derives the contract from `rig.glb` and writes the
-fixture mannequin every test stands on; `just check-mesh <glb>` holds one
-body to it; `just check-bodies` holds the library.
-[`designs/rig-contract.md`](designs/rig-contract.md) is the contract;
-[`rigs/humanoid/README.md`](rigs/humanoid/README.md) the shipped profile.
-
-## What a record is allowed to claim
-
-Two record kinds, one rule. Generator records (`forge_record: 1`, written by
-Python beside every output) and library sidecars (`schema: 1`, written by Rust
-beside every shipped file) both hold to **`null` means unknown, and a default
-is never written as a measurement**. Provenance is
-`recorded | reconstructed | unknown` and only moves down. Clips claim reproduction — `just audit`
-rebuilds every one from its record, by bytes and then by pose to under a
-millimetre. Bodies, models and audio claim integrity only: TRELLIS.2,
-Blender's exporter, MOSS and ACE-Step are not bit-reproducible, so the record
-says "this is the file that was checked", plus the seed and the `.blend`
-hash where they exist. Every lift record names its texture baker, because
-that is a licence fact. [`designs/records.md`](designs/records.md) has both
-schemas field by field and what `forge verify` checks.
-
-## Why the judging half has to exist
-
-Bevy — and it is not alone — binds animation curves to bones **purely by
-hashed name path**, has no retargeting, and when a clip's names do not match
-the skeleton it reports **nothing at all**: no warning, no error, a character
-standing in its rest pose. That is indistinguishable from a bad export, a
-paused player, or a clip with no motion.
-
-So the tools answer two different questions, and the difference matters:
-
-- **Is it wired up?** `just bones walk` — driven / at rest / orphaned counts,
-  no GPU. `just check-mesh` ends with `reference clip: 27 bone(s) driven`.
-- **Does it read as the action?** `just sheet walk` — a picture, on the real
-  body. This is what catches a "pistol shoot" clip that is really walking
-  forward at 0.94 m/s while folding at the waist; every numeric gate passed it.
-
-Audio has the same split. `just audio-list` measures a library — a bark 20 LU
-below its neighbours is obvious in a column and invisible per file — and
-`just audio <file>` draws one, because clipping reads as flat-topping, dead air
-as a gap, a truncated tail as a cliff. Two notes learned the hard way:
-**clipping is a run, not a count** (peak-normalising to 0 dBFS puts a sample
-at the rail by construction; only sustained flat-topping warns), and
-**loudness is approximate and says so** (K-weighting is a high-pass stand-in,
-enough to compare one library, not to certify a master).
-
-Meshes, likewise: every gate passed a body whose skull was hollow from behind,
-because a gate measures what is there. `just views` with culling off is the
-orbit a reviewer would do, run before the rig minute is spent.
-
-## The studio
-
-`just studio` opens one window with five parts: the **library browser**
-(bodies, models, clips, audio; filter and tags), the **stage** (orbit, swap
-the model, the same lights and lens every headless sheet uses), the
-**transport** (scrub and play a clip on the body), the **audio view**
-(waveform, spectrogram, playback — `just play` opens straight there) and the
-**metadata panel** (the record, the rig findings, the audio numbers).
-`--take x.npz` puts a raw ARDY take on the real body before it is baked;
-`--screenshot out/studio.png` captures and quits.
-
-The sheets, views and turntables need no window at all: a wgpu adapter
-(llvmpipe qualifies) and no display server. `just smoke` proves it;
-`just ci` runs on that.
-
-## For agents
-
-Seven skills under `.claude/skills/`, each with prerequisites checked, the
-commands in order, the log lines to read, and a seen → consequence → fix
-table:
-
-| Skill | Ships |
-|---|---|
-| `forge-setup` | backends installed or adopted, `just doctor` green |
-| `forge-prop` | a static model from a PNG |
-| `forge-character` | a rigged body from a PNG, starting with the reference checklist |
-| `forge-clip` | a clip from a prompt: sweep, review, promote with a recipe, strip on the body |
-| `forge-audio` | a sound, a track or a line, plotted and promoted |
-| `forge-voice` | a character's voice designed from a description — the source every line of that character is cloned from |
-| `forge-review` | how to read a sheet: wiring → mechanics → picture; gates versus hints |
-
-The CLI is one binary:
-
-```
-forge init | catalog | manifest [--check] | verify | audit [--fit] | rebake | migrate
-      promote clip|body|model|audio        (direct; refuse an existing name unless --overwrite)
-      audio inspect|list                   rig export-contract|fixture|check
-      gen <cmd…>                           (mesh, prop, rig, export, rig-build, motion sweep|keys|review, sfx, music, speech, voice, doctor)
-      doctor | gpu | sheet | views | turntable | bones | studio | mcp
-```
-
-`forge mcp` serves eleven tools over stdio, registered in
-[`.mcp.json`](.mcp.json). That file launches `./target/debug/forge`, which
-a fresh clone does not have — run any `just` recipe once (`just doctor` is
-the usual first) to build it before the MCP server can start. Images come
-back inline under the size vision
-models downscale past; a refusal is a **successful frame** naming what does
-exist, so a wrong name costs one turn, not a guess.
-
-| Tool | What it does |
-|---|---|
-| `list_models` | bodies and models with prompt, tags, provenance, measured size |
-| `list_clips` | clips with measured length, record and the recipe's non-identity knobs |
-| `list_audio` | sounds with cached measurements; a mark on anything defective |
-| `render_model` | `forge views` — a mesh from every angle; a path under `out/` renders culling off |
-| `render_clip_strip` | `forge sheet` — poses across a clip on a body; 0 bones driven comes back as an error with the picture |
-| `inspect_audio` | numbers, the record, a waveform-over-spectrogram plot |
-| `generate_clips` | `forge gen motion sweep` + `review`; refuses with the doctor line when ARDY is absent |
-| `generate_audio` | sfx, music or speech to `out/audio/`, never the library; `voice` names a designed voice or a brought clip |
-| `promote_clip` | bake one take with a recipe stated in full; refuses a taken name unless `overwrite`, then echoes what it replaced |
-| `promote_audio` | file an auditioned sound as sfx, music or voice |
-| `doctor` | what this machine can run |
-
-There is **no promote for a mesh**: a body or a model goes through the skills
-with a human looking at the lift, the views and the rig before anything is
-filed. `just mcp-check` handshakes the server and holds the tool list to
-exactly these eleven.
-
-## Backends and licences
-
-**The texture baker is non-commercial.** TRELLIS.2 bakes its textures
-through nvdiffrast 0.4.0, which ships under the NVIDIA Source Code License —
-research and evaluation only, no commercial use. Everything else in the lift
-(TRELLIS.2 code and weights, CuMesh, FlexGEMM, utils3d) is MIT, but a mesh
-textured through this pipeline passed through nvdiffrast. The installer
-requires explicit consent with the licence printed, `forge doctor` warns
-while it is installed, every lift record carries
-`texture_baker: "nvdiffrast (NVIDIA Source Code License, non-commercial)"`,
-and a replacement baker is an open follow-up. Decide whether that fits your project before you lift
-anything you mean to sell.
-
-Nothing below is vendored; the installers fetch it under
-`~/.cache/asset-forge/backends/` and the tree holds only links. Verified from
-the files on disk, 2026-08-23:
-
-| Component | Licence | Note |
-|---|---|---|
-| **nvdiffrast 0.4.0** | **NVIDIA Source Code License — NON-COMMERCIAL** | consent-gated install; doctor warns; the lift record names it |
-| nvdiffrec `renderutils` | NVIDIA, non-commercial | **never installed** — nothing here needs it |
-| `briaai/RMBG-2.0` | commercially restrictive | **never downloaded** — stubbed; references are flat-background by contract |
-| TRELLIS.2 code, `microsoft/TRELLIS.2-4B` weights | MIT | |
-| `facebook/dinov3-vitl16-pretrain-lvd1689m` | DINOv3 License (Meta) — gated | accept on the model page, then `hf auth login --token <tok>`; doctor prints both |
-| CuMesh, FlexGEMM, utils3d | MIT | |
-| flash-attn | BSD-3 | optional; `ATTN_BACKEND=sdpa` fallback |
-| ARDY code / `ARDY-Core-RP-20FPS-Horizon40` weights | Apache-2.0 / NVIDIA Open Model License | |
-| Meta-Llama-3-8B-Instruct (ARDY's text encoder base) | Llama 3 Community License | attribution: "Built with Meta Llama 3" |
-| LLM2Vec | MIT | |
-| ACE-Step 1.5 code + weights | MIT | |
-| MOSS-TTS family, MOSS-SoundEffect-v2 | Apache-2.0 | MOSS-SoundEffect weights are ~11 GB |
-| `OpenMOSS-Team/MOSS-VoiceGenerator` (1.7B) | Apache-2.0 | the voice designer behind `just voice`; ~4 GB, the same env as MOSS-TTS |
-| Blender | GPL | a tool; nothing of it ships in an asset |
-
-[backends/README.md](backends/README.md) has the install order, the adopt
-flags, the VRAM matrix and the launcher rules;
-[designs/hosting.md](designs/hosting.md) the traps, dated per backend.
-
-## Crates
-
-| Crate | One line |
-|---|---|
-| [`forge_manifest`](crates/forge_manifest) | the consumer contract: the typed, versioned `library.json` a game reads |
-| [`forge_rig`](crates/forge_rig) | a rig profile as data: contract, sockets, driven layout; derive from a `.glb`, check drift, measure a file |
-| [`forge_motion`](crates/forge_motion) | ARDY takes as data: read, edit, derive footsteps, bake a `.glb` clip on a rig |
-| [`forge_library`](crates/forge_library) | sidecars, catalog, project, the four promote doors, manifest projection, verify, audit, rebake |
-| [`forge_audio`](crates/forge_audio) | decode, measure and plot a sound; no output backend |
-| [`forge_capture`](crates/forge_capture) | windowless Bevy frame capture and contact-sheet composition |
-| [`forge_raster`](crates/forge_raster) | a CPU canvas with a 5×7 font, for labelled review images |
-| [`forge_studio`](crates/forge_studio) | headless sheets and views, the viewer window, `rig check`, `bones`, `audit`'s posed half — `publish = false` |
-| [`forge_mcp`](crates/forge_mcp) | the MCP tools as a library, served by `forge mcp` — `publish = false` |
-| [`forge`](crates/forge) | the binary — `publish = false` |
-
-None of the crates is published to crates.io, and none will be — the
-names collide with existing registry crates, and a toolkit that ships a
-binary, a Python layer and a rig profile together is honestly depended on
-as one thing: use a git or path dependency into the checkout
-(`designs/decisions.md` has the entry). `just publish-check` stays as the
-packaging-hygiene gate: each of the seven library crates packages and
-builds in isolation. Six of those seven link no engine at all — only
-`forge_capture` pulls in Bevy — so `cargo test -p forge_library` never
-pays for it. Bevy is pinned to `=0.19.0`: its `AnimationTargetId` hashing
-changed in 0.19 and nothing here persists those ids.
-
-## Layout
-
-```
-forge.toml  justfile  CLAUDE.md  .mcp.json      the project root marker, the recipes, the rules, the server
-crates/        forge_{raster,audio,capture,rig,motion,manifest,library,studio,mcp}, forge
-python/        forge_gen: the generator launcher, one module per command, the Blender steps
-backends/      one directory per generator: backend.toml, install.sh, probe.py (envs live outside the tree)
-rigs/humanoid/ the rig profile: contract.json, sockets.json, motion_skeleton.json, profile.toml, rig.glb, rig.blend
-assets/        the library: bodies/ models/ clips/ audio/{sfx,music,voice}/, one .json beside each file, library.json
-assets-src/    what assets are made from: refs/{characters,props}/<name>.png + .lift.json, SOURCES.md, takes/, blender/, voices/<name>/{ref.wav,voice.json}
-designs/       decisions.md (the lessons ledger; it wins), records.md, rig-contract.md, style-guide-template.md, hosting.md
-.claude/skills/ forge-{setup,prop,character,clip,audio,voice,review}
-out/           gitignored: lifts/ props/ export/ sweeps/ sheets/ views/ audio/
-```
-
-## Using it from your game
+- Bodies, models and audio claim file integrity. Clips additionally support
+  reproduction checks with `forge audit`.
+- Unknown measurements remain `null`. Provenance is `recorded`,
+  `reconstructed` or `unknown`; a guess never becomes a measurement.
+- After adding or removing library entries through the appropriate doors,
+  regenerate the manifest and check it. The manifest is what a consumer reads.
 
 ```sh
-just install                            # or: cargo install --path crates/forge --locked
-export FORGE_TOOLKIT=~/src/asset-forge  # where the clone lives; forge init copies the rig profile from it
-cd ~/my-game && forge init --name my-game
+forge --project ~/my-game verify
+forge --project ~/my-game audit
+forge --project ~/my-game manifest --check
 ```
 
-`just install` puts a release `forge` on PATH (`~/.cargo/bin`). Outside
-the toolkit checkout, `forge init` needs `FORGE_TOOLKIT` (or `FORGE_HOME`)
-pointing at the clone so it can install the rig profile — it exits 2 and
-says so when it cannot. `forge init` writes `forge.toml`, the `assets/`
-and `assets-src/` directories, the reference ledger's header, an empty
-manifest, and a copy of the rig profile under `assets-src/rigs/`. Every
-`forge` verb walks up from the working directory to the nearest
-`forge.toml`, so the `just` recipes run from your project against its
-library:
+The [consumer contract](designs/consumer-contract.md) defines units, axes,
+sockets, root motion, grounding and accompanying notices. The
+[external Bevy fixture](release/consumer/README.md) exercises those contracts
+without changing accepted assets. `forge bundle` exports a body and named
+clips into a self-contained GLB with a bundle record; companion models and
+audio need their own delivery, as the fixture demonstrates.
+
+## Agents and documentation
+
+Use the generated game configuration for asset production. The repository's
+`.mcp.json` and `.codex/config.toml` instead target this development checkout;
+build `target/debug/forge` with `cargo build -p forge` before connecting.
+MCP is available over stdio and through `forge serve` at `/mcp`.
+Its embedded guide is available at `forge://guides/v1/workflow`; `tools/list`
+provides this build's exact tool schemas. Oversized review images currently
+need a client that can read the returned local path.
+
+| Document | Purpose |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Repository editing, provenance, GPU and verification rules |
+| [CLAUDE.md](CLAUDE.md) | Claude entry point to the repository instructions |
+| [.agents/skills](.agents/skills/) | Asset workflow recipes; Claude compatibility lives under `.claude/skills/` |
+| [Backend guide](backends/README.md) | Installation, adoption, diagnostics and model environments |
+| [Record contract](designs/records.md) | Record schemas and what verification establishes |
+| [Decisions](designs/decisions.md) | Dated implementation lessons; wins over older specifications |
+| [Release handoff](designs/release-handoff.md) | Completed evidence and remaining qualification gates |
+| [Changelog](CHANGELOG.md) | Historical changes, not current setup instructions |
+
+## Develop and verify
 
 ```sh
-just --justfile ~/src/asset-forge/justfile --working-directory . sheet walk
+python3 -m venv python/.venv
+python/.venv/bin/pip install './python[dev]'
+PATH="$PWD/python/.venv/bin:$PATH" just ci
+just publish-check
 ```
 
-(The dev recipes — `fmt`, `check`, `test`, `pytest`, `ci`, … — are the
-exception: run that way they still act on the toolkit checkout, never on
-your game.)
+Before opening or updating a PR, run both commands above locally and record
+the results in the PR. `just ci` covers formatting, Clippy, rustdoc, Rust and
+Python tests, headless smoke, asset integrity, clip reproduction, manifests,
+MCP sessions and fake production pipelines. `just publish-check` packages seven
+library crates and builds them in isolation; it does not publish them.
 
-Your game reads one file, `assets/library.json`, through
-[`forge_manifest`](crates/forge_manifest) (serde only, no engine; a git or
-path dependency — the crates are not on crates.io): the rig
-(profile, bone table, sockets, the `.glb` hash), bodies, models with their
-bounds in metres, clips with duration, loop flag, root-motion mode and
-events, and audio — every entry with its `sha256`. A newer manifest than the
-crate understands is refused by number, so an old build says "behind" rather
-than "corrupt".
+Hosted CI deliberately keeps only formatting, Python checks and browser asset
+metadata validation. Native-CLI and optional-image tests may skip there; the
+local full suite is mandatory. Relay Run also needs its standalone checks when
+changed. Full library contact sheets run locally with `just sheets`; real
+generation, Blender authoring and human review remain separate checks.
+Browser compilation is an explicit Pages workflow run, or part of an enabled
+Pages deployment, rather than a check on every PR. Crates are currently used
+through Git or path dependencies.
 
-Props attach at the profile's sockets — offsets from contract bones, in the
-bone's own space, carrying a prop authored grip-at-origin, long axis +Y,
-front −Z:
+Checkout recipes build `target/debug/forge`. To run a production recipe from
+a game, use `just --justfile "$FORGE_HOME/justfile" --working-directory . <recipe>`.
+Development recipes always check the toolkit; CLI validation with an explicit
+`--project` checks the game.
 
-| Socket | Bone | For |
-|---|---|---|
-| `hand_r`, `hand_l` | `RightHand`, `LeftHand` | the grip, blade along the bone |
-| `back` | `Spine3` | stowed, hilt over the right shoulder |
-| `hip_l` | `Hips` | a scabbard, drawn across the body |
-| `head` | `Head` | hats and helmets, front turned to face forward |
+The tree separates toolkit code (`crates/`, `python/`, `backends/`, `rigs/`),
+the sample library and its inputs (`assets/`, `assets-src/`), and the Relay Run
+showcase (`demos/relay-runner/`). `release/` holds distribution tooling and
+consumer checks. Build output, model installations and local review runs are
+excluded from Git. The older Scrapline demo and its review media are preserved
+in [the archive](designs/scrapyard/README.md); shared asset inputs remain active.
 
-No runtime crate ships: spawning a body, playing a clip by name and attaching
-at a socket are a few dozen lines in any engine that loads glTF, and the
-manifest has everything they need.
+## Licences
 
-## Licence
-
-MIT OR Apache-2.0, at your option — **for the code**. The sample assets
-under `assets/` and `assets-src/` are not covered by the code licence:
-they are governed by [`assets-src/SOURCES.md`](assets-src/SOURCES.md),
-summarised per kind in [`assets/LICENSE.md`](assets/LICENSE.md). In
-particular, the three lifted sample meshes' textures passed through
-nvdiffrast (non-commercial — see above) and are **not for commercial
-use**.
-
-The sample library under `assets/` and `assets-src/` is shipped so the tools
-have something to show on a fresh clone. Its meshes were lifted with
-TRELLIS.2 (MIT, code and weights) out of reference images made with a cloud
-image model before this repository existed; its clips come from
-[ARDY](https://github.com/nv-tlabs/ardy) (code Apache-2.0, checkpoints under
-the NVIDIA Open Model License; outputs are usable); its sounds from MOSS and
-ACE-Step (Apache-2.0 and MIT). The per-image record, the licence answer for
-the reference images, and what each record is and is not allowed to claim
-are in [`assets-src/SOURCES.md`](assets-src/SOURCES.md). Every lifted texture
-in the sample passed through nvdiffrast; see above.
+The code is MIT OR Apache-2.0. Asset terms are separate: consult
+[asset notices](assets/LICENSE.md), the [source ledger](assets-src/SOURCES.md)
+and each asset's records. The current texture-baking path retains a
+non-commercial nvdiffrast notice. Relay Run carries its own
+[delivery notices](demos/relay-runner/web/NOTICES.md), including experimental
+asset provenance. Setup prints the selected backend notices before acceptance.
